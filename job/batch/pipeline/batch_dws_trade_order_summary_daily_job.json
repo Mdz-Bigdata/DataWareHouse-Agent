@@ -1,0 +1,28 @@
+{
+  "name": "batch_dws_trade_order_summary_daily_job",
+  "type": "BATCH",
+  "scheduler": {
+    "cron": "0 2 * * *",
+    "startTime": "2026-07-09T00:00:00Z",
+    "retryPolicy": {
+      "maxAttempts": 3,
+      "interval": 300
+    }
+  },
+  "nodes": [
+    {
+      "name": "node_dws_trade_order_summary_daily",
+      "type": "DorisSql",
+      "properties": {
+        "scriptName": "etl_dws_trade_order_summary_daily.sql",
+        "scriptArgs": [
+          {
+            "name": "run_date",
+            "value": "#{Job.planTime(yyyy-MM-dd)}"
+          }
+        ],
+        "connectionName": "DORIS-DW"
+      }
+    }
+  ]
+}

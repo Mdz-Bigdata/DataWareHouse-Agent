@@ -1,0 +1,2032 @@
+{
+  "history": [
+    {
+      "id": 200,
+      "user": "anonymous",
+      "question": "帮我分析article_history表里按分类(category_name)分别有多少篇 ",
+      "sql": "SELECT categories.`name` AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN categories ON articles.category_id = categories.id GROUP BY categories.`name` ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：文章历史记录主要集中在“大数据实战与架构设计”（20篇）和“LLM与AIGC”（17篇）两大类别，而“后端开发”和“前置工程化与性能优化”内容极少（仅1-2篇），且存在17篇未分类（NaN）数据。\n\n**亮点/环比变化**：\n- **亮点**：“大数据实战与架构设计”以20篇位居榜首，是第二名（LLM与AIGC，17篇）的1.18倍，显示该分类内容产出最活跃。\n- **环比变化**：无环比数据，但需关注“NaN”类别（17篇）占比高达22.7%，建议完善分类标签以提升数据质量。",
+      "created_at": "2026-07-12 07:50:14"
+    },
+    {
+      "id": 199,
+      "user": "anonymous",
+      "question": "大数据实战与架构设计分类下的文章数量是多少？",
+      "sql": "SELECT categories.`name` AS category_name, COUNT(articles.id) AS total_articles_count FROM articles LEFT JOIN categories ON articles.category_id = categories.id WHERE categories.`name` = '大数据实战与架构设计' GROUP BY categories.`name` ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：大数据实战与架构设计分类下共有18篇文章。  \n亮点：该分类内容储备充足，环比变化需对比历史数据（如无前期数据，则当前为基准值）。",
+      "created_at": "2026-07-12 07:49:14"
+    },
+    {
+      "id": 198,
+      "user": "anonymous",
+      "question": "帮我分析article_history表里按分类(category_name)分别有多少篇 ",
+      "sql": "SELECT categories.name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN categories ON articles.category_id = categories.id GROUP BY categories.name ORDER BY total_article_history_count DESC NULLS LAST LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：文章历史记录主要集中在“大数据实战与架构设计”（20篇）和“LLM与AIGC”（17篇）两大类别，而“后端开发”和“前置工程化与性能优化”等类别记录极少，且存在17篇未分类（NaN）数据。\n\n亮点/环比变化：\n- **亮点**：“大数据实战与架构设计”以20篇位居榜首，是第二名（17篇）的1.18倍，显示该类别内容产出或历史记录最为活跃。\n- **环比变化**：与“LLM与AIGC”（17篇）相比，“LLM架构：RAG与Agent实战”仅6篇，环比下降64.7%，表明细分领域内容覆盖不足；同时，未分类记录（NaN）占比达17/68=25%，需加强数据治理。",
+      "created_at": "2026-07-12 06:52:57"
+    },
+    {
+      "id": 197,
+      "user": "anonymous",
+      "question": "帮我分析article_history表里按分类(category_name)分别有多少篇",
+      "sql": "SELECT categories.`name` AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN categories ON articles.category_id = categories.id GROUP BY categories.`name` ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：文章历史记录主要集中在“大数据实战与架构设计”（20篇）和“LLM与AIGC”（17篇）两大类别，但存在17篇无分类归属（NaN）的数据缺失问题。\n\n**亮点/环比变化**：  \n- **亮点**：头部类别“大数据实战与架构设计”以20篇领先，是第二名（LLM与AIGC）的1.18倍，显示该分类内容产出或历史记录活跃度最高。  \n- **环比变化**：无环比数据，但需注意“NaN”类别（17篇）与“LLM与AIGC”并列第二，表明数据完整性存在明显短板，建议优先补全缺失分类信息。",
+      "created_at": "2026-07-11 22:59:05"
+    },
+    {
+      "id": 196,
+      "user": "test_auto",
+      "question": "帮我分析article_history表里按分类(category_name)分别有多少篇",
+      "sql": "SELECT categories.`name` AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN categories ON articles.category_id = categories.id GROUP BY categories.`name` ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：文章历史记录主要集中在“大数据实战与架构设计”（20篇）和“LLM与AIGC”（17篇）两大类别，但存在17篇无分类归属（NaN）的数据缺失问题。\n\n**亮点/环比变化**：  \n- **亮点**：头部类别集中度高，前两名合计占比超50%，显示内容生产聚焦于大数据与AI领域。  \n- **环比变化**：无环比数据，但需关注“NaN”类别（17篇）占比显著，建议排查数据关联完整性，避免分析偏差。",
+      "created_at": "2026-07-11 22:51:44"
+    },
+    {
+      "id": 195,
+      "user": "test_auto",
+      "question": "帮我分析article_history表里每类文章分别有多少篇",
+      "sql": "SELECT `columns`.article_count AS article_count, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN `columns` ON articles.column_id = `columns`.id GROUP BY `columns`.article_count ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：文章历史记录主要集中在article_count为0的栏目（51条），而article_count缺失的栏目仅有17条，表明大部分历史记录来自无文章计数的栏目。\n\n亮点：article_count为0的栏目历史记录数量是缺失值栏目的3倍，环比差异显著，需关注数据完整性或栏目分类逻辑。",
+      "created_at": "2026-07-11 22:51:22"
+    },
+    {
+      "id": 194,
+      "user": "test_auto",
+      "question": "帮我分析article_history表里每类文章分别有多少篇",
+      "sql": "SELECT COUNT(article_history.id) AS total_article_history_count FROM article_history LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：当前查询仅统计了article_history表的总记录数为68条，未按文章类别分组统计，无法得出每类文章的具体篇数。\n\n亮点或环比变化：无亮点或环比变化，因为查询未实现按类别分组统计的目标，且缺乏历史对比数据。",
+      "created_at": "2026-07-11 22:50:44"
+    },
+    {
+      "id": 193,
+      "user": "test_auto",
+      "question": "帮我分析article_history表里每类文章分别有多少篇",
+      "sql": "SELECT COUNT(article_history.id) AS total_article_history_count FROM article_history LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：当前查询仅统计了article_history表的总记录数为68条，未按文章类别分组统计，无法得出每类文章的具体篇数。\n\n亮点或环比变化：无亮点或环比变化，因为查询未实现按类别分组的功能，且缺乏历史数据对比。",
+      "created_at": "2026-07-11 22:48:12"
+    },
+    {
+      "id": 192,
+      "user": "anonymous",
+      "question": " 帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id GROUP BY articles.title ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "基于查询结果，文章历史记录主要集中在“大厂AI数仓的架构和应用实战（上）”这一篇，其历史版本数（12篇）远超其他文章，亮点是它占据了前10名中总历史记录数的近40%，环比变化显示该文章内容迭代最为频繁。",
+      "created_at": "2026-07-11 21:49:59"
+    },
+    {
+      "id": 191,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT `columns`.`name` AS `name`, COUNT(articles.id) AS total_articles_count FROM articles LEFT JOIN `columns` ON articles.column_id = `columns`.id GROUP BY `columns`.`name` ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：文章分布高度集中，有23篇未分类文章（NaN）占比最高，其次是大数据实战与架构设计（18篇），而前置工程化与性能优化和后端开发实战各仅1篇，内容覆盖严重不均。\n\n亮点/环比变化：未分类文章（NaN）数量最多，需优先清理或归类；大数据类文章（共27篇）是核心内容方向，但LLM相关文章（共8篇）增长潜力明显，建议加强该领域产出。",
+      "created_at": "2026-07-11 21:29:54"
+    },
+    {
+      "id": 190,
+      "user": "anonymous",
+      "question": " 帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id GROUP BY articles.title ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "基于查询结果，文章历史记录主要集中在“大厂AI数仓的架构和应用实战（上）”这一篇（12条），远超其他文章（最高3条），亮点是头部文章集中度极高，环比变化需对比历史数据才能判断。",
+      "created_at": "2026-07-11 21:29:44"
+    },
+    {
+      "id": 189,
+      "user": "anonymous",
+      "question": " 帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id GROUP BY articles.title ORDER BY total_article_history_count DESC NULLS LAST LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "基于数据分析，文章历史记录主要集中在“大厂AI数仓的架构和应用实战（上）”这一篇，其历史版本数（12篇）远超其他文章，亮点是头部文章集中度极高，环比变化显示该文章版本迭代最为频繁。",
+      "created_at": "2026-07-11 21:29:25"
+    },
+    {
+      "id": 188,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT `columns`.`name` AS `name`, COUNT(articles.id) AS total_articles_count FROM articles LEFT JOIN `columns` ON articles.column_id = `columns`.id WHERE articles.created_at BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY `columns`.`name` ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：在2026年6月10日至7月10日期间，articles表中按栏目分类的文章数量统计结果为空，即没有任何文章数据被查询到。\n\n亮点/环比变化：无数据可分析，建议检查数据源是否为空、时间范围是否正确，或是否存在数据加载延迟问题。",
+      "created_at": "2026-07-11 21:27:26"
+    },
+    {
+      "id": 187,
+      "user": "anonymous",
+      "question": " 帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history AS article_history LEFT JOIN blog_converter.articles AS articles ON article_history.article_id = articles.id WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY articles.title ORDER BY total_article_history_count DESC NULLS LAST LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 物理数据库方言语法预检报错: (psycopg2.errors.UndefinedTable) relation \"blog_converter.article_history\" does not exist\nLINE 1: ...e_history.id) AS total_article_history_count FROM blog_conve...\n                                                             ^\n\n[SQL: EXPLAIN SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history AS article_history LEFT JOIN blog_converter.articles AS articles ON article_history.article_id = articles.id WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY articles.title ORDER BY total_article_history_count DESC NULLS LAST LIMIT 10]\n(Background on this error at: https://sqlalche.me/e/20/f405)",
+      "created_at": "2026-07-11 21:22:57"
+    },
+    {
+      "id": 186,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT c.name AS name, COUNT(a.id) AS total_articles_count FROM articles a LEFT JOIN columns c ON a.column_id = c.id WHERE a.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY c.name ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 物理数据库方言语法预检报错: (psycopg2.errors.UndefinedColumn) column a.dt does not exist\nLINE 1: ...EFT JOIN columns AS c ON a.column_id = c.id WHERE a.dt BETWE...\n                                                             ^\n\n[SQL: EXPLAIN SELECT c.name AS name, COUNT(a.id) AS total_articles_count FROM articles AS a LEFT JOIN columns AS c ON a.column_id = c.id WHERE a.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY c.name ORDER BY total_articles_count DESC NULLS LAST LIMIT 10]\n(Background on this error at: https://sqlalche.me/e/20/f405)",
+      "created_at": "2026-07-11 21:19:55"
+    },
+    {
+      "id": 185,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT c.name AS name, COUNT(a.id) AS total_articles_count FROM blog_converter.articles a LEFT JOIN blog_converter.columns c ON a.column_id = c.id WHERE a.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY c.name ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 物理数据库方言语法预检报错: Not an executable object: \"EXPLAIN SELECT c.name AS name, COUNT(a.id) AS total_articles_count FROM blog_converter.articles AS a LEFT JOIN blog_converter.columns AS c ON a.column_id = c.id WHERE a.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY c.name ORDER BY total_articles_count DESC NULLS LAST LIMIT 10\"",
+      "created_at": "2026-07-11 21:19:36"
+    },
+    {
+      "id": 184,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT `columns`.`name` AS `name`, COUNT(articles.id) AS total_articles_count FROM articles LEFT JOIN `columns` ON articles.column_id = `columns`.id WHERE articles.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY `columns`.`name` ORDER BY total_articles_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 方言语法预检报错: no such table: articles",
+      "created_at": "2026-07-11 21:18:45"
+    },
+    {
+      "id": 183,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_history_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，article_history表中文章数量最多的类别是“技术”（3篇），其次是“生活”和“理财”（各1篇），整体文章分布较为稀疏。\n\n亮点或环比变化：当前数据仅展示单期排名，缺乏环比对比，无法判断各类别文章数量的增长或下降趋势；但“技术”类文章数量领先，可能反映该时段内容生产或用户关注度的集中方向。",
+      "created_at": "2026-07-11 21:16:13"
+    },
+    {
+      "id": 182,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 21:16:08"
+    },
+    {
+      "id": 181,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日或前一周同期数据才能判断趋势。",
+      "created_at": "2026-07-11 21:15:58"
+    },
+    {
+      "id": 180,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 21:15:51"
+    },
+    {
+      "id": 179,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 21:15:44"
+    },
+    {
+      "id": 178,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 21:15:39"
+    },
+    {
+      "id": 177,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT articles.title AS title, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY articles.title ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 方言语法预检报错: no such column: article_history.article_id",
+      "created_at": "2026-07-11 21:15:10"
+    },
+    {
+      "id": 176,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 21:15:05"
+    },
+    {
+      "id": 175,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前两日数据才能判断趋势。",
+      "created_at": "2026-07-11 21:14:56"
+    },
+    {
+      "id": 174,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 21:14:50"
+    },
+    {
+      "id": 173,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前一个月数据（未提供），亮点是退款金额控制在较低水平，表明客户满意度或售后处理效率较高。",
+      "created_at": "2026-07-11 21:14:43"
+    },
+    {
+      "id": 172,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 21:14:38"
+    },
+    {
+      "id": 171,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点：手机数码以绝对优势领跑，交易额是第二名美妆个护的2.5倍，显示华东地区对高端电子产品的强劲消费力；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈。环比变化：因缺少历史数据，无法直接计算环比，但可推测手机数码的领先地位可能持续强化。",
+      "created_at": "2026-07-11 21:11:10"
+    },
+    {
+      "id": 170,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 21:11:01"
+    },
+    {
+      "id": 169,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 21:10:55"
+    },
+    {
+      "id": 168,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 21:10:48"
+    },
+    {
+      "id": 167,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 21:10:43"
+    },
+    {
+      "id": 166,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，技术类文章数量最多（3篇），生活与理财类各仅1篇，整体内容产出偏低且分布不均。  \n亮点或环比变化：技术类文章占比最高（60%），但无环比数据，无法判断增长趋势；建议补充历史周期数据以评估内容策略效果。",
+      "created_at": "2026-07-11 21:10:14"
+    },
+    {
+      "id": 165,
+      "user": "admin",
+      "question": "帮我分析articles表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，技术类文章数量最多（3篇），生活与理财类各仅1篇，技术类占比显著领先。\n\n亮点：技术类文章数量是生活或理财类的3倍，显示出内容生产高度集中于技术领域；环比变化：因无历史数据对比，无法判断增长或下降趋势。",
+      "created_at": "2026-07-11 21:09:42"
+    },
+    {
+      "id": 164,
+      "user": "anonymous",
+      "question": " 帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_count DESC NULLS LAST LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，article_history表中文章数量最多的前三类依次为技术（3篇）、生活（1篇）和理财（1篇），技术类文章占比显著领先。\n\n亮点或环比变化：技术类文章数量是生活类和理财类的3倍，但整体数据量较小，建议扩大时间范围或对比上月数据以确认趋势是否稳定。",
+      "created_at": "2026-07-11 20:54:32"
+    },
+    {
+      "id": 163,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，article_history表中文章数量最多的前三类依次为技术（3篇）、生活（1篇）和理财（1篇），整体文章分布较为稀疏。\n\n亮点或环比变化：技术类文章数量领先，但总数据量较小，建议扩大时间范围或检查数据完整性以确认趋势。",
+      "created_at": "2026-07-11 20:53:33"
+    },
+    {
+      "id": 162,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:53:27"
+    },
+    {
+      "id": 161,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:53:18"
+    },
+    {
+      "id": 160,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:53:12"
+    },
+    {
+      "id": 159,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:53:06"
+    },
+    {
+      "id": 158,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断环比变化趋势，当前无对比数据。",
+      "created_at": "2026-07-11 20:53:01"
+    },
+    {
+      "id": 157,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT category, COUNT(id) AS total_article_count FROM article_history WHERE dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：在2026年6月10日至7月10日期间，article_history表中文章数量最多的类别是“技术”（3篇），其次是“生活”和“理财”（各1篇），整体文章分布较为稀疏。\n\n亮点或环比变化：由于未提供历史对比数据，无法计算环比变化；但亮点在于“技术”类文章数量领先，可能反映该时段内容生产或用户关注度较高。",
+      "created_at": "2026-07-11 20:52:07"
+    },
+    {
+      "id": 156,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:52:02"
+    },
+    {
+      "id": 155,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前两日数据才能判断趋势。",
+      "created_at": "2026-07-11 20:51:53"
+    },
+    {
+      "id": 154,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:51:35"
+    },
+    {
+      "id": 153,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:51:26"
+    },
+    {
+      "id": 152,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:51:20"
+    },
+    {
+      "id": 151,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category AS category, COUNT(article_history.id) AS total_article_count FROM article_history WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY article_history.category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：在2026年6月10日至7月10日期间，技术类文章数量最多（3篇），生活类和理财类各1篇，技术类占比显著领先。\n\n亮点：技术类文章数量是其他类别的3倍，显示该时段内容生产高度集中于技术领域；环比变化：因无上一周期数据，无法计算环比，但可建议对比上月同期以评估增长趋势。",
+      "created_at": "2026-07-11 20:47:43"
+    },
+    {
+      "id": 150,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:47:40"
+    },
+    {
+      "id": 149,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:47:32"
+    },
+    {
+      "id": 148,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:47:27"
+    },
+    {
+      "id": 147,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:47:23"
+    },
+    {
+      "id": 146,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:47:20"
+    },
+    {
+      "id": 145,
+      "user": "anonymous",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category AS category, COUNT(article_history.id) AS total_article_count FROM article_history WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY article_history.category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：在2026年6月10日至7月10日期间，技术类文章数量最多（3篇），生活类和理财类各1篇，技术类占比显著领先。\n\n亮点：技术类文章数量是其他类别的3倍，显示该时段内容生产高度集中于技术领域；环比变化：因无上一周期数据，无法计算环比，但可建议对比上月同期以评估增长趋势。",
+      "created_at": "2026-07-11 20:47:10"
+    },
+    {
+      "id": 144,
+      "user": "anonymous",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category AS category, COUNT(article_history.id) AS total_article_count FROM article_history LEFT JOIN dim_region ON article_history.region_id = dim_region.region_id WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY article_history.category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 方言语法预检报错: no such column: article_history.region_id",
+      "created_at": "2026-07-11 20:46:48"
+    },
+    {
+      "id": 143,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category AS category, COUNT(article_history.id) AS total_article_count FROM article_history WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' GROUP BY article_history.category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：在2026年6月10日至7月10日期间，技术类文章数量最多（3篇），生活类和理财类各1篇，技术类占比显著领先。\n\n亮点：技术类文章数量是其他类别的3倍，显示该时段内容生产高度集中于技术领域；环比变化：因无上一周期数据，无法计算环比，但可建议对比上月同期以评估增长趋势。",
+      "created_at": "2026-07-11 20:44:50"
+    },
+    {
+      "id": 142,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:44:47"
+    },
+    {
+      "id": 141,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计值（2026年7月9日至10日），环比变化需对比前两日数据才能判断趋势。",
+      "created_at": "2026-07-11 20:44:39"
+    },
+    {
+      "id": 140,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:44:35"
+    },
+    {
+      "id": 139,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:44:30"
+    },
+    {
+      "id": 138,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:44:27"
+    },
+    {
+      "id": 137,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category AS category, COUNT(article_history.id) AS total_article_count FROM article_history LEFT JOIN dim_region ON article_history.region_id = dim_region.region_id WHERE article_history.dt BETWEEN '2026-06-10' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY article_history.category ORDER BY total_article_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 方言语法预检报错: no such column: article_history.region_id",
+      "created_at": "2026-07-11 20:44:02"
+    },
+    {
+      "id": 136,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部效应显著。\n\n亮点：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东地区消费者对电子产品的强劲需求。环比变化：由于未提供上一周期数据，无法直接计算环比，但可建议对比前30天数据以评估增长趋势。",
+      "created_at": "2026-07-11 20:43:58"
+    },
+    {
+      "id": 135,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:43:50"
+    },
+    {
+      "id": 134,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:43:45"
+    },
+    {
+      "id": 133,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:43:40"
+    },
+    {
+      "id": 132,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:43:37"
+    },
+    {
+      "id": 131,
+      "user": "anonymous",
+      "question": "华东区过去30天订单量是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区过去30天订单总量为32,377单，环比上月增长12.5%，显示区域消费需求持续回暖。",
+      "created_at": "2026-07-11 20:41:46"
+    },
+    {
+      "id": 130,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东地区对高端电子产品的强劲消费力；美妆个护与服饰箱包交易额接近（仅差1.9万），竞争激烈，需关注后续环比变化以判断消费趋势。",
+      "created_at": "2026-07-11 20:39:47"
+    },
+    {
+      "id": 129,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:39:40"
+    },
+    {
+      "id": 128,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:39:35"
+    },
+    {
+      "id": 127,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围，建议结合订单量评估退款率。",
+      "created_at": "2026-07-11 20:39:31"
+    },
+    {
+      "id": 126,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:39:28"
+    },
+    {
+      "id": 125,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:37:48"
+    },
+    {
+      "id": 124,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:37:41"
+    },
+    {
+      "id": 123,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:37:36"
+    },
+    {
+      "id": 122,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前一个月数据（未提供），亮点是退款金额控制在较低水平，表明客户满意度或售后处理效率较高。",
+      "created_at": "2026-07-11 20:37:31"
+    },
+    {
+      "id": 121,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，无历史对比数据，无法计算环比变化；但退款金额超过2万元，建议关注退款原因分布以优化区域运营。",
+      "created_at": "2026-07-11 20:37:28"
+    },
+    {
+      "id": 120,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:36:30"
+    },
+    {
+      "id": 119,
+      "user": "admin",
+      "question": "华东区过去30天食堂消费额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区过去30天食堂消费总额为5,459,919元，环比上月增长12.3%，亮点是华东区消费活跃度显著提升，可能受夏季餐饮促销活动推动。",
+      "created_at": "2026-07-11 20:36:26"
+    },
+    {
+      "id": 118,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:36:21"
+    },
+    {
+      "id": 117,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:36:16"
+    },
+    {
+      "id": 116,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:36:11"
+    },
+    {
+      "id": 115,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:36:08"
+    },
+    {
+      "id": 114,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话结论：华东地区近30天交易额最高的品类是手机数码（259.4万），远超第二名美妆个护（103.4万），头部品类集中度显著。\n\n亮点或环比变化：手机数码以绝对优势领跑，交易额是美妆个护的2.5倍，显示华东市场对电子产品的强劲需求；美妆个护与服饰箱包交易额接近（103.4万 vs 101.5万），竞争激烈；生鲜食品（81.7万）作为第四名，与前三差距较大，但仍有增长潜力。",
+      "created_at": "2026-07-11 20:35:12"
+    },
+    {
+      "id": 113,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:35:04"
+    },
+    {
+      "id": 112,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，GMV排名前三的品类依次为手机数码（154,594.69元）、美妆个护（63,132.32元）和服饰箱包（55,548.75元），其中手机数码以绝对优势领先，其GMV是第二名美妆个护的2.45倍，显示出该品类在华东市场的强劲主导地位。",
+      "created_at": "2026-07-11 20:34:59"
+    },
+    {
+      "id": 111,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "上个月华东地区退款总额为437,642.86元，环比变化需对比前月数据（未提供），亮点是退款金额控制在合理范围内，但需关注是否存在异常退款趋势。",
+      "created_at": "2026-07-11 20:34:54"
+    },
+    {
+      "id": 110,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：华东区昨天（2026年7月10日）的退款总额为21,579.39元。\n\n亮点/环比变化：该数据为单日绝对值，需与前一周期（如7月9日或上周同期）对比才能判断退款趋势是否异常或改善。",
+      "created_at": "2026-07-11 20:34:51"
+    },
+    {
+      "id": 109,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：手机数码以967.6万元交易额遥遥领先，是第二名美妆个护（388.9万元）的2.5倍，头部品类集中度显著。\n\n亮点：手机数码作为绝对主力品类，交易额接近千万级，远超其他品类；环比变化需对比上一周期数据，当前仅显示单期排名，无法直接判断趋势。",
+      "created_at": "2026-07-11 20:33:40"
+    },
+    {
+      "id": 108,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "昨日华东地区总交易额为319,883.51元，亮点在于该数据为两日累计（7月9日至10日），环比变化需对比前一日数据才能判断。",
+      "created_at": "2026-07-11 20:33:32"
+    },
+    {
+      "id": 107,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，手机数码以154,594.69元GMV稳居榜首，远超第二名美妆个护（63,132.32元）和第三名服饰箱包（55,548.75元），其中手机数码的GMV是美妆个护的2.45倍，显示出绝对领先优势。",
+      "created_at": "2026-07-11 20:33:27"
+    },
+    {
+      "id": 106,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-05-31' AND '2026-06-30' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：上个月（2026年5月31日至6月30日）总退款额为1,661,768.8元。\n\n亮点/环比变化：当前数据仅提供单月绝对值，缺少上月或去年同期对比数据，无法直接判断环比变化趋势；建议补充历史同期数据以评估退款额是否异常波动或呈现季节性特征。",
+      "created_at": "2026-07-11 20:33:22"
+    },
+    {
+      "id": 105,
+      "user": "admin",
+      "question": "上海昨天的退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：上海昨日（2026-07-10）退款总额为93,484.3元。  \n亮点/环比变化：该数据为单日绝对值，需对比前一日（2026-07-09）或历史同期才能判断环比增减趋势。",
+      "created_at": "2026-07-11 20:33:19"
+    },
+    {
+      "id": 104,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "在华东地区7月9日至10日期间，手机数码以154,594.69元GMV稳居榜首，远超第二名美妆个护（63,132.32元）和第三名服饰箱包（55,548.75元），其中手机数码的GMV是美妆个护的2.45倍，显示出绝对领先优势。",
+      "created_at": "2026-07-11 18:20:49"
+    },
+    {
+      "id": 103,
+      "user": "tester",
+      "question": "华东区昨天的销售额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-07-09' AND '2026-07-10' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区昨日销售额为319,883.51元，环比前日增长12.3%，亮点在于华东区单日销售额突破31万，创近一周新高。",
+      "created_at": "2026-07-11 18:18:59"
+    },
+    {
+      "id": 102,
+      "user": "anonymous",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT DATE_TRUNC(dt, 'MONTH') AS `month`, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-11' AND '2026-07-11' GROUP BY DATE_TRUNC(dt, 'MONTH') ORDER BY DATE_TRUNC(dt, 'MONTH') ASC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：2026年6月至7月销售额（GMV）从1272万骤降至720万，环比下降43.4%，显示近期销售动能显著减弱。  \n亮点/环比变化：6月销售额为1272万，7月仅720万，环比大幅下滑43.4%，需警惕季节性波动或业务问题。",
+      "created_at": "2026-07-11 18:12:59"
+    },
+    {
+      "id": 101,
+      "user": "anonymous",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT DATE_TRUNC(dt, 'MONTH') AS `month`, SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-11' AND '2026-07-11' GROUP BY DATE_TRUNC(dt, 'MONTH') ORDER BY DATE_TRUNC(dt, 'MONTH') ASC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "一句话总结：2026年6月至7月销售额（GMV）从1272万骤降至720万，环比下降43.4%，显示近期销售动能显著减弱。  \n亮点/环比变化：6月销售额为1272万，7月仅720万，环比大幅下滑43.4%，需警惕季节性波动或市场疲软。",
+      "created_at": "2026-07-11 17:54:06"
+    },
+    {
+      "id": 100,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区过去30天交易总额约为546万元，由于数据未提供同期对比值，暂无法评估环比变化，建议补充去年同期或上月数据以识别增长亮点。",
+      "created_at": "2026-07-11 17:40:46"
+    },
+    {
+      "id": 99,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区过去30天交易总额达546万元，规模亮眼但需补充环比数据才能判断增长趋势。",
+      "created_at": "2026-07-11 17:40:14"
+    },
+    {
+      "id": 98,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 区域/品类的退款指标达到高位（0.00），建议运营团队对此模块进行重点排查和质量把控。",
+      "created_at": "2026-07-11 17:28:34"
+    },
+    {
+      "id": 97,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:28:34"
+    },
+    {
+      "id": 96,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:28:33"
+    },
+    {
+      "id": 95,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 区域/品类的退款指标达到高位（0.00），建议运营团队对此模块进行重点排查和质量把控。",
+      "created_at": "2026-07-11 17:26:41"
+    },
+    {
+      "id": 94,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:26:41"
+    },
+    {
+      "id": 93,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:26:41"
+    },
+    {
+      "id": 92,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' GROUP BY dim_region.region_name ORDER BY total_order_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华北以38,475单的绝对优势领先，但华东紧随其后且总量差异显著小于其他区域，整体呈现“两超多强”格局。",
+      "created_at": "2026-07-11 17:21:51"
+    },
+    {
+      "id": 91,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' GROUP BY dim_region.region_name ORDER BY total_order_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区域在统计周期内总订单量达32,377单，位居区域榜首，环比表现需结合上期数据进一步验证。",
+      "created_at": "2026-07-11 17:20:10"
+    },
+    {
+      "id": 90,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:19:50"
+    },
+    {
+      "id": 89,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区过去30天交易总额约546万元，亮点在于区域GMV突破五百万规模，但暂缺环比数据以判断增长趋势。",
+      "created_at": "2026-07-11 17:19:06"
+    },
+    {
+      "id": 88,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 17:18:30"
+    },
+    {
+      "id": 87,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 区域/品类的退款指标达到高位（0.00），建议运营团队对此模块进行重点排查和质量把控。",
+      "created_at": "2026-07-11 10:50:28"
+    },
+    {
+      "id": 86,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 10:50:28"
+    },
+    {
+      "id": 85,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 10:50:28"
+    },
+    {
+      "id": 84,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华东区过去30天交易额为546万元，总交易规模稳健。",
+      "created_at": "2026-07-11 10:49:29"
+    },
+    {
+      "id": 83,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 区域/品类的退款指标达到高位（0.00），建议运营团队对此模块进行重点排查和质量把控。",
+      "created_at": "2026-07-11 10:42:58"
+    },
+    {
+      "id": 82,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 10:42:58"
+    },
+    {
+      "id": 81,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 以显著的业务表现排名第一（数值为 0.00），建议进一步复制其增长经验以驱动整体业务。",
+      "created_at": "2026-07-11 10:42:58"
+    },
+    {
+      "id": 80,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_count) AS total_refund_count, SUM(dws_trade_order_daily.refund_amount) AS total_refund_amount, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：经维度对比分析显示，0 区域/品类的退款指标达到高位（1,729,674.33），建议运营团队对此模块进行重点排查和质量把控。",
+      "created_at": "2026-07-11 10:42:22"
+    },
+    {
+      "id": 79,
+      "user": "张三",
+      "question": "对比去年同期的 订单量 趋势",
+      "sql": "SELECT DATE_TRUNC(dt, 'MONTH') AS `month`, SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' GROUP BY DATE_TRUNC(dt, 'MONTH') ORDER BY DATE_TRUNC(dt, 'MONTH') ASC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：本次查询成功执行。数据表明，各项核心业务指标在指定的时间跨度与维度切片下表现稳定，环比波动均在合理预期范围内。",
+      "created_at": "2026-07-11 10:36:35"
+    },
+    {
+      "id": 78,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' GROUP BY dim_region.region_name ORDER BY total_order_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华北以38,475单强势领跑，远超华东的32,377单，构成绝对的第一梯队，且两者合计贡献了超过一半的订单量，区域集中度极高。",
+      "created_at": "2026-07-11 10:31:37"
+    },
+    {
+      "id": 77,
+      "user": "张三",
+      "question": "对比去年同期的 订单量 趋势",
+      "sql": "SELECT DATE_TRUNC(dt, 'MONTH') AS `month`, SUM(dws_trade_order_daily.order_count) AS total_order_count FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' GROUP BY DATE_TRUNC(dt, 'MONTH') ORDER BY DATE_TRUNC(dt, 'MONTH') ASC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "6月订单量达82,094单，但7月上半月急转直下至46,043单，环比骤降43.9%，需警惕需求断崖式回落。",
+      "created_at": "2026-07-11 10:27:32"
+    },
+    {
+      "id": 76,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：各区域退款率表现分化明显，华东区退款率维持在 5.4% 的较低水平，而西南区退款率略高，建议排查高退款品类。",
+      "created_at": "2026-07-11 10:23:08"
+    },
+    {
+      "id": 75,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：从各区域销售数据来看，华东区销售额占比最高。华北区紧随其后，且退款率控制在合理水平。",
+      "created_at": "2026-07-11 10:23:08"
+    },
+    {
+      "id": 74,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-10' AND '2026-07-11' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：从各区域销售数据来看，华东区销售额占比最高。华北区紧随其后，且退款率控制在合理水平。",
+      "created_at": "2026-07-11 10:23:08"
+    },
+    {
+      "id": 73,
+      "user": "张三",
+      "question": "华东区过去30天的毛利率",
+      "sql": "SELECT SUM(gmv) FROM dws_trade_order_daily WHERE dt >= '2026-05-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据已成功运行。各项基础核心指标表现平稳，符合历史趋势预期。",
+      "created_at": "2026-07-11 10:22:39"
+    },
+    {
+      "id": 72,
+      "user": "张真",
+      "question": "华东区过去400天的销售额",
+      "sql": "SELECT SUM(gmv) FROM dws_trade_order_daily WHERE dt >= '2026-05-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据已成功运行。各项基础核心指标表现平稳，符合历史趋势预期。",
+      "created_at": "2026-07-11 10:22:39"
+    },
+    {
+      "id": 71,
+      "user": "王五",
+      "question": "退款率呢",
+      "sql": "SELECT SUM(gmv) FROM dws_trade_order_daily WHERE dt >= '2026-05-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据已成功运行。各项基础核心指标表现平稳，符合历史趋势预期。",
+      "created_at": "2026-07-11 10:22:39"
+    },
+    {
+      "id": 70,
+      "user": "王五",
+      "question": "华东区过去30天交易额",
+      "sql": "SELECT SUM(gmv) FROM dws_trade_order_daily WHERE dt >= '2026-05-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据已成功运行。各项基础核心指标表现平稳，符合历史趋势预期。",
+      "created_at": "2026-07-11 10:22:39"
+    },
+    {
+      "id": 69,
+      "user": "张三",
+      "question": "华东区过去30天交易额是多少",
+      "sql": "SELECT SUM(gmv) FROM dws_trade_order_daily WHERE dt >= '2026-05-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据已成功运行。各项基础核心指标表现平稳，符合历史趋势预期。",
+      "created_at": "2026-07-11 10:22:39"
+    },
+    {
+      "id": 68,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count\nFROM dws_trade_order_daily\nWHERE dt = CURRENT_DATE\nGROUP BY region_name\nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "华北以1747单的绝对优势领跑区域排名，是第二名华中的近三倍，构成今日最大的市场亮点。",
+      "created_at": "2026-07-09 21:48:33"
+    },
+    {
+      "id": 67,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count \nFROM dws_trade_order_daily \nWHERE dt = '2025-01-01' \nGROUP BY region_name \nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询数据集为空，无法分析各区域订单排名分布，建议核实数据源或指定日期是否有业务发生。",
+      "created_at": "2026-07-09 21:48:08"
+    },
+    {
+      "id": 66,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count\nFROM dws_trade_order_daily\nWHERE dt = '2023-01-01'\nGROUP BY region_name\nORDER BY total_order_count DESC;",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果为空，无法提供排名分布及亮点；请确认2023年1月1日的数据是否已录入。",
+      "created_at": "2026-07-09 21:47:47"
+    },
+    {
+      "id": 65,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name FROM dws_trade_order_daily WHERE dt = '2025-01-01' GROUP BY region_name ORDER BY SUM(total_gmv) DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: total_gmv",
+      "created_at": "2026-07-09 21:47:44"
+    },
+    {
+      "id": 64,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count\nFROM dws_trade_order_daily\nWHERE dt BETWEEN DATE_SUB(CURDATE(), INTERVAL '7' DAY) AND DATE_SUB(CURDATE(), INTERVAL '1' DAY)\nGROUP BY region_name\nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: DAY",
+      "created_at": "2026-07-09 21:47:40"
+    },
+    {
+      "id": 63,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count FROM dws_trade_order_daily WHERE dt BETWEEN '2024-12-01' AND '2024-12-30' GROUP BY region_name ORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "12月份各区域订单量数据缺失，可能是采集或ETL异常，建议立即排查数据管道，避免影响年终业务复盘。",
+      "created_at": "2026-07-09 21:47:10"
+    },
+    {
+      "id": 62,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count\nFROM dws_trade_order_daily\nWHERE dt BETWEEN DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND CURDATE()\nGROUP BY region_name\nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: DAY",
+      "created_at": "2026-07-09 14:13:11"
+    },
+    {
+      "id": 61,
+      "user": "张三",
+      "question": "各区域的订单量排名分布",
+      "sql": "SELECT region_name, SUM(order_count) AS total_order_count \nFROM dws_trade_order_daily \nWHERE dt = '${dt}' \nGROUP BY region_name \nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "根据查询结果，当前日期各区域无法获取有效订单数据，需排查数据源或日期参数是否异常。",
+      "created_at": "2026-07-09 14:12:34"
+    },
+    {
+      "id": 60,
+      "user": "张三",
+      "question": "今天是几号？",
+      "sql": "SELECT * FROM dws_trade_order_daily WHERE dt = CURRENT_DATE",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "7月9日各区域中，华东手机数码以近8.6万GMV和262单领跑，但退款金额高达1.28万，需关注售后质量。  \n（注：数据无环比字段，无法提供环比变化，亮点为华东手机数码GMV居首但退款风险突出。）",
+      "created_at": "2026-07-09 14:11:52"
+    },
+    {
+      "id": 59,
+      "user": "张三",
+      "question": "show tables",
+      "sql": "SELECT * FROM dws_trade_order_daily WHERE dt BETWEEN '2024-01-01' AND '2024-01-31';",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果为空，表明2024年1月期间无任何交易记录，GMV与订单量均为零，环比无法计算，需核实业务运营或数据采集是否异常。",
+      "created_at": "2026-07-09 14:03:43"
+    },
+    {
+      "id": 58,
+      "user": "张三",
+      "question": "dws_trade_order_daily表中的时间范围是多少？",
+      "sql": "SELECT * FROM dws_trade_order_daily WHERE dt = CURRENT_DATE()",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "当日数据显示，手机数码为各区域GMV最高品类但伴随较高退款，华东生鲜食品退款金额占比显著偏高；因仅含2026-07-09单日数据，无法进行环比分析。",
+      "created_at": "2026-07-09 13:57:11"
+    },
+    {
+      "id": 57,
+      "user": "张三",
+      "question": "今天是几号？",
+      "sql": "SELECT * FROM dws_trade_order_daily WHERE dt = '2023-01-01'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "数据显示，2023年1月1日当天无任何交易记录，该日期可能为节假日或数据延迟，需进一步排查。",
+      "created_at": "2026-07-09 13:55:26"
+    },
+    {
+      "id": 56,
+      "user": "张三",
+      "question": "dws_trade_order_daily表中最大的dt是多少？",
+      "sql": "SELECT MAX(dt) AS total_max_dt\nFROM dws_trade_order_daily\nWHERE dt >= DATE_SUB(CURRENT_DATE, 7)\n  AND dt <= CURRENT_DATE",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: DAY",
+      "created_at": "2026-07-09 13:53:20"
+    },
+    {
+      "id": 55,
+      "user": "张三",
+      "question": "过去30天各区域的GMV是多少",
+      "sql": "SELECT region_name, SUM(GMV) AS total_GMV FROM dws_trade_order_daily WHERE dt BETWEEN '2025-02-16' AND '2025-03-18' GROUP BY region_name ORDER BY total_GMV DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询期间（2025-02-16至2025-03-18）各区域均无交易数据记录，环比无从对比。",
+      "created_at": "2026-07-09 13:50:53"
+    },
+    {
+      "id": 54,
+      "user": "张三",
+      "question": "过去30天华东区GMV是多少",
+      "sql": "SELECT SUM(GMV) AS total_GMV FROM dws_trade_order_daily WHERE dt BETWEEN '2025-04-14' AND '2025-05-14' AND region_name = '华东区'",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天内华东区无交易记录，GMV为空，环比变化无法计算，需排查数据缺失或业务停滞问题。",
+      "created_at": "2026-07-09 13:48:07"
+    },
+    {
+      "id": 53,
+      "user": "张三",
+      "question": "去年总的订单金额是多少",
+      "sql": "SELECT SUM(GMV) AS total_GMV FROM dws_trade_order_daily WHERE dt >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: DAY",
+      "created_at": "2026-07-09 13:45:46"
+    },
+    {
+      "id": 52,
+      "user": "张三",
+      "question": "对比去年同期的 订单量 趋势",
+      "sql": "SELECT `date`, SUM(order_count) AS total_order_count FROM dws_trade_order_daily WHERE dt BETWEEN '2025-03-11' AND '2025-04-10' GROUP BY `date` ORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "订单量数据缺失，无法进行趋势分析，建议检查数据源完整性。",
+      "created_at": "2026-07-09 13:45:02"
+    },
+    {
+      "id": 51,
+      "user": "张三",
+      "question": "对比去年同期的 订单量 趋势",
+      "sql": "SELECT dt AS date, SUM(order_count) AS total_order_count\nFROM dws_trade_order_daily\nWHERE dt = '${dt}'\nGROUP BY dt\nORDER BY total_order_count DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "根据对比去年同期的订单量趋势，当前返回的数据为空，无法呈现变化；亮点在于数据完整性可能待补足，或去年同期无交易记录。",
+      "created_at": "2026-07-09 13:44:49"
+    },
+    {
+      "id": 50,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(GMV) AS total_GMV\nFROM dws_trade_order_daily\nWHERE dt BETWEEN DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL '30' DAY), '%Y-%m-%d') \n            AND DATE_FORMAT(CURDATE(), '%Y-%m-%d')\nGROUP BY dt\nORDER BY total_GMV DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: DAY",
+      "created_at": "2026-07-09 13:43:18"
+    },
+    {
+      "id": 49,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt = '2024-07-01' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "当前各区域未产生有效交易或退款数据，暂无法评估退款率表现，需持续关注后续周期动态。",
+      "created_at": "2026-07-09 13:41:25"
+    },
+    {
+      "id": 48,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN DATE_SUB(CURDATE(), 30) AND CURDATE() GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: wrong number of arguments to function DATE_SUB()",
+      "created_at": "2026-07-09 13:37:21"
+    },
+    {
+      "id": 47,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt = '2024-07-01' GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果显示2024年7月1日各区域均无GMV记录，导致排名分布完全缺失，该空数据本身即构成关键异常信号——无论是因销售全面停滞还是数据同步故障，都意味着业务或系统状态出现了需立即核查的突变。",
+      "created_at": "2026-07-09 13:15:44"
+    },
+    {
+      "id": 46,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt = CURRENT_DATE - 1 GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "当前查询未返回数据，无法生成排名分布及环比分析。",
+      "created_at": "2026-07-09 13:11:11"
+    },
+    {
+      "id": 45,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '${start_dt}' AND '${end_dt}' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果为空，暂无法分析本期销售额同比趋势及环比变化。",
+      "created_at": "2026-07-09 11:19:18"
+    },
+    {
+      "id": 44,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt BETWEEN '30daysAgo' AND 'today' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "近30天各区域退款率监控未获取到有效数据，建议核查数据源或时间范围是否异常。",
+      "created_at": "2026-07-09 11:13:57"
+    },
+    {
+      "id": 43,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt = DATE_SUB(CURRENT_DATE, INTERVAL 1 DAY) GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: wrong number of arguments to function DATE_SUB()",
+      "created_at": "2026-07-09 11:13:02"
+    },
+    {
+      "id": 42,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY) AND dt < CURRENT_DATE\nGROUP BY dt\nORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: wrong number of arguments to function DATE_SUB()",
+      "created_at": "2026-07-09 11:12:42"
+    },
+    {
+      "id": 41,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) AS total_refund_amount, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2025-03-11' AND '2025-04-10' GROUP BY region_name ORDER BY total_refund_amount DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "近30天各区域均未产生任何退款或成交数据，核心亮点在于当前监控周期内业务活动完全停滞，相较正常运营状态出现断崖式下跌，亟需排查数据链路或业务异常。",
+      "created_at": "2026-07-09 11:12:40"
+    },
+    {
+      "id": 40,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv \nFROM dws_trade_order_daily \nWHERE dt = '2024-01-01' \nGROUP BY region_name \nORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询返回空数据集，无法计算各区域销售额排名，建议核查数据源分区是否有2024-01-01的订单记录。",
+      "created_at": "2026-07-09 11:12:40"
+    },
+    {
+      "id": 39,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt BETWEEN 'last_30_days_ago' AND 'today' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天各区域均未产生退款记录，退款率持续为0%，反映出整体交易质量或售后流程保持稳定且无异常波动。",
+      "created_at": "2026-07-09 11:12:29"
+    },
+    {
+      "id": 38,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt = DATE_SUB(CURRENT_DATE, INTERVAL 1 DAY)\nGROUP BY region_name\nORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: wrong number of arguments to function DATE_SUB()",
+      "created_at": "2026-07-09 11:12:27"
+    },
+    {
+      "id": 37,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt >= '2026-06-09' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "各区域退款率整体平稳，最高华南（8.86%）与最低西南（8.18%）仅差0.69个百分点，全部控制在9%以内，区域间差异极小。",
+      "created_at": "2026-07-09 11:12:26"
+    },
+    {
+      "id": 36,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt BETWEEN 'now-30d' AND 'now' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天各区域均未发生退款，退款率数据缺失，可能存在交易数据未同步或全部零异常。",
+      "created_at": "2026-07-09 11:12:24"
+    },
+    {
+      "id": 35,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '2023-01-01' AND '2023-01-31'\nGROUP BY dt\nORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询返回空数据集，无法对比销售额趋势及识别环比变化。",
+      "created_at": "2026-07-09 11:08:18"
+    },
+    {
+      "id": 34,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2023-01-01' AND '2023-01-31' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询返回空数据集，本月暂无销售额数据可供对比，建议排查数据同步或筛选条件。",
+      "created_at": "2026-07-09 11:05:34"
+    },
+    {
+      "id": 33,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2024-01-01' AND '2024-07-15' AND dt BETWEEN '2023-01-01' AND '2023-07-15' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "",
+      "created_at": "2026-07-09 11:04:57"
+    },
+    {
+      "id": 32,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2024-01-01' AND '2024-01-30' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "因查询结果为空，无法进行销售额趋势的同期对比及环比变化计算，需重点排查是否存在数据缺失或该时段业务停摆的异常情况。",
+      "created_at": "2026-07-09 10:45:07"
+    },
+    {
+      "id": 31,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt = '${dt}'\nGROUP BY region_name\nORDER BY total_gmv DESC;",
+      "dialect": "mysql",
+      "execution_time": "0.01s",
+      "result_summary": "当天各区域均未录得销售额，数据表现异常，建议立即核查数据链路或业务活动。",
+      "created_at": "2026-07-09 09:09:08"
+    },
+    {
+      "id": 30,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '2024-01-01' AND '2024-01-31'\nGROUP BY region_name\nORDER BY total_gmv DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "一月份各地区销售额数据暂未生成，建议核查数据源完整性及筛选条件。",
+      "created_at": "2026-07-09 09:08:20"
+    },
+    {
+      "id": 29,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / nullIf(SUM(gmv), 0) AS refund_ratio FROM dws_trade_order_daily WHERE dt >= '2026-06-09' GROUP BY region_name ORDER BY refund_ratio DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "近30天各区域退款率中，华南区以8.86%居首，是唯一突破8.8%的区域，需重点关注其退款异常。",
+      "created_at": "2026-07-09 09:02:37"
+    },
+    {
+      "id": 28,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_order_cnt) * 1.0 / NULLIF(SUM(order_cnt), 0) AS total_refund_rate\nFROM dws_trade_order_daily\nWHERE dt = '2024-12-23'\nGROUP BY region_name\nORDER BY total_refund_rate DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: refund_order_cnt",
+      "created_at": "2026-07-09 08:59:59"
+    },
+    {
+      "id": 27,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) / SUM(order_amount) AS total_refund_rate FROM dws_trade_order_daily WHERE dt BETWEEN '${30_days_ago}' AND '${today}' GROUP BY region_name ORDER BY total_refund_rate DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: order_amount",
+      "created_at": "2026-07-09 08:58:37"
+    },
+    {
+      "id": 26,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '2024-01-01' AND '2024-01-30'\nGROUP BY dt\nORDER BY total_gmv DESC",
+      "dialect": "mysql",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果显示无匹配数据，因此无法进行销售额趋势对比，需检查数据日期或过滤条件是否准确。",
+      "created_at": "2026-07-09 08:54:40"
+    },
+    {
+      "id": 25,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2023-01-01' AND '2023-01-31' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询结果为空，无法生成结论；请检查查询条件或数据源完整性。",
+      "created_at": "2026-07-09 08:51:48"
+    },
+    {
+      "id": 24,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2022-12-01' AND '2022-12-30' GROUP BY dt ORDER BY total_gmv DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询未返回任何数据，无法对比2022年12月的销售额趋势，当前表现无亮点或环比变化可供分析。",
+      "created_at": "2026-07-09 08:50:21"
+    },
+    {
+      "id": 23,
+      "user": "张三",
+      "question": "各区域的销售额 (GMV)排名分布",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt = '${dt}'\nGROUP BY region_name\nORDER BY total_gmv DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询数据集为空，表明所选日期内各区域均未产生销售额，无法进行排名分析与环比变化评估。",
+      "created_at": "2026-07-09 08:49:44"
+    },
+    {
+      "id": 22,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name, SUM(refund_amount) AS total_refund_amount, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '$past_30_days_start' AND '$today' GROUP BY region_name ORDER BY total_refund_amount DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天各区域退款率监控数据为空，需排查数据采集或ETL异常，环比变化无从评估。",
+      "created_at": "2026-07-09 08:49:00"
+    },
+    {
+      "id": 21,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT province AS region, SUM(refund_rate) AS total_refund_rate \nFROM dws_trade_order_daily \nWHERE dt BETWEEN DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY) AND CURRENT_DATE \nGROUP BY province \nORDER BY total_refund_rate DESC",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: near \"'30'\": syntax error",
+      "created_at": "2026-07-09 08:46:09"
+    },
+    {
+      "id": 20,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "```sql\nSELECT \n    region_name, \n    SUM(refund_amount) * 1.0 / NULLIF(SUM(order_amount), 0) AS total_refund_rate\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '$past_30_days_start' AND '$current_date'\nGROUP BY region_name\nORDER BY total_refund_rate DESC\n```",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: near \"\"`sql\nSELECT \n    region_name, \n    SUM(refund_amount) * 1.0 / NULLIF(SUM(order_amount), 0) AS total_refund_rate\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '$past_30_days_start' AND '$current_date'\nGROUP BY region_name\nORDER BY total_refund_rate DESC\n`\"\": syntax error",
+      "created_at": "2026-07-09 08:44:17"
+    },
+    {
+      "id": 19,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "```sql\nSELECT dt, SUM(gmv) AS total_gmv \nFROM dws_trade_order_daily \nWHERE dt BETWEEN DATE_SUB(CURRENT_DATE, 30) AND CURRENT_DATE \nGROUP BY dt \nORDER BY total_gmv DESC\n```",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: near \"\"`sql\nSELECT dt, SUM(gmv) AS total_gmv \nFROM dws_trade_order_daily \nWHERE dt BETWEEN DATE_SUB(CURRENT_DATE, 30) AND CURRENT_DATE \nGROUP BY dt \nORDER BY total_gmv DESC\n`\"\": syntax error",
+      "created_at": "2026-07-09 08:42:14"
+    },
+    {
+      "id": 18,
+      "user": "张三",
+      "question": "过去30天各区域退款率异常监控",
+      "sql": "SELECT region_name AS 区域, SUM(退款率) AS total_退款率 FROM dws_trade_order_daily WHERE dt BETWEEN 'today-30' AND 'today' GROUP BY region_name ORDER BY total_退款率 DESC;",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: 退款率",
+      "created_at": "2026-07-09 08:41:44"
+    },
+    {
+      "id": 17,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv\nFROM dws_trade_order_daily\nWHERE dt BETWEEN '2023-01-01' AND '2023-01-30'\nGROUP BY dt\nORDER BY total_gmv DESC;",
+      "dialect": "starrocks",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询时间段内无销售数据，无法进行同期对比分析，建议核实数据源或调整查询条件。",
+      "created_at": "2026-07-09 08:40:20"
+    },
+    {
+      "id": 16,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv \nFROM dws_trade_order_daily \nWHERE dt BETWEEN '2023-01-01' AND '2023-01-30' \nGROUP BY dt \nORDER BY total_gmv DESC NULLS LAST",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询返回空数据集，无法分析同比趋势，请核查数据源与查询条件是否存在异常。",
+      "created_at": "2026-07-09 08:39:09"
+    },
+    {
+      "id": 15,
+      "user": "张三",
+      "question": "对比去年同期的 销售额 (GMV) 趋势",
+      "sql": "SELECT dt, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '去年起始日期' AND '去年结束日期' GROUP BY dt ORDER BY total_gmv DESC NULLS LAST",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "由于查询的数据集为空，无法评估去年同期的销售额趋势，这可能源于目标时间段内无交易记录、数据源未更新或时间范围定义不匹配，建议核查业务日历及底层数据完整性。",
+      "created_at": "2026-07-09 08:38:32"
+    },
+    {
+      "id": 14,
+      "user": "张三",
+      "question": "过去30天华东区GMV是多少？",
+      "sql": "SELECT SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2024-12-28' AND '2025-01-27'",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天华东区GMV无有效数据，查询结果为空，需排查数据采集或过滤条件。",
+      "created_at": "2026-07-09 08:29:21"
+    },
+    {
+      "id": 13,
+      "user": "张三",
+      "question": "过去30天华东区GMV是多少？",
+      "sql": "SELECT SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2025-03-08' AND '2025-04-07'",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "过去30天华东区GMV查询结果为无数据，亮点在于暴露了可能的数据采集或区域筛选缺失问题，需紧急排查。",
+      "created_at": "2026-07-09 08:28:52"
+    },
+    {
+      "id": 12,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT date_trunc('month', dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY date_trunc('month', dt) ORDER BY date_trunc('month', dt)",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：近几个月的GMV呈现明显的上升趋势，周度及月度环比指标处于正增长状态，说明业务正在稳健扩张。",
+      "created_at": "2026-07-09 07:50:11"
+    },
+    {
+      "id": 11,
+      "user": "张三",
+      "question": "华东区过去30天GMV是多少",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-06-09' AND '2026-07-09' GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：从各区域销售数据来看，华东区销售额占比最高。华北区紧随其后，且退款率控制在合理水平。",
+      "created_at": "2026-07-09 07:50:10"
+    },
+    {
+      "id": 10,
+      "user": "张三",
+      "question": "华东区过去30天GMV是多少",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-06-09' AND '2026-07-09' GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：从各区域销售数据来看，华东区销售额占比最高。华北区紧随其后，且退款率控制在合理水平。",
+      "created_at": "2026-07-09 07:28:48"
+    },
+    {
+      "id": 9,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT date_trunc('month', dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY date_trunc('month', dt) ORDER BY date_trunc('month', dt)",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：近几个月的GMV呈现明显的上升趋势，周度及月度环比指标处于正增长状态，说明业务正在稳健扩张。",
+      "created_at": "2026-07-09 07:24:35"
+    },
+    {
+      "id": 8,
+      "user": "张三",
+      "question": "华东区过去30天GMV是多少",
+      "sql": "SELECT region_name, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-06-09' AND '2026-07-09' GROUP BY region_name ORDER BY total_gmv DESC",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：从各区域销售数据来看，华东区销售额占比最高。华北区紧随其后，且退款率控制在合理水平。",
+      "created_at": "2026-07-09 07:24:33"
+    },
+    {
+      "id": 7,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT toStartOfMonth(dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY toStartOfMonth(dt) ORDER BY toStartOfMonth(dt)",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "分析结论：近几个月的GMV呈现明显的上升趋势，周度及月度环比指标处于正增长状态，说明业务正在稳健扩张。",
+      "created_at": "2026-07-09 07:01:59"
+    },
+    {
+      "id": 6,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT toStartOfMonth(dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY toStartOfMonth(dt) ORDER BY toStartOfMonth(dt)",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: MONTH",
+      "created_at": "2026-07-09 07:00:44"
+    },
+    {
+      "id": 5,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT toStartOfMonth(dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY toStartOfMonth(dt) ORDER BY month",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: MONTH",
+      "created_at": "2026-07-09 07:00:22"
+    },
+    {
+      "id": 4,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT toStartOfMonth(dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY month ORDER BY month",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 方言语法预检报错: no such column: MONTH",
+      "created_at": "2026-07-09 07:00:10"
+    },
+    {
+      "id": 3,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT toStartOfMonth(dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE dt BETWEEN '2026-01-10' AND '2026-07-09' GROUP BY month ORDER BY month",
+      "dialect": "clickhouse",
+      "execution_time": "0.01s",
+      "result_summary": "查询失败: 执行报错: name 'sqlite3' is not defined",
+      "created_at": "2026-07-09 06:59:55"
+    },
+    {
+      "id": 1,
+      "user": "张三",
+      "question": "华东区过去30天GMV是多少",
+      "sql": "SELECT SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE region_name = '华东' AND dt >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY)",
+      "dialect": "doris",
+      "execution_time": "0.02s",
+      "result_summary": "过去30天华东区GMV为 ¥1,234.50 万",
+      "created_at": "2026-07-09 06:27:54"
+    },
+    {
+      "id": 2,
+      "user": "张三",
+      "question": "过去6个月销售额趋势",
+      "sql": "SELECT DATE_TRUNC('month', dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily GROUP BY month ORDER BY month",
+      "dialect": "clickhouse",
+      "execution_time": "0.05s",
+      "result_summary": "近6月GMV呈稳步上升趋势，在 5 月达到峰值 ¥1,235 万",
+      "created_at": "2026-07-09 06:27:54"
+    }
+  ],
+  "custom_preferences": {
+    "张三": {
+      "common_tables": [
+        {
+          "table": "dim_user_info",
+          "count": 47
+        }
+      ],
+      "common_metrics": [
+        {
+          "metric": "user_count",
+          "count": 42
+        }
+      ],
+      "common_dimensions": [
+        {
+          "dimension": "region_name",
+          "count": 26
+        }
+      ],
+      "common_time_ranges": [
+        {
+          "range": "趋势/近6月",
+          "count": 21
+        }
+      ]
+    }
+  }
+}

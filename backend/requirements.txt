@@ -1,0 +1,17 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+sqlglot>=20.0.0
+pydantic>=2.0.0
+pandas>=2.0.0
+jinja2>=3.1.0
+openai>=1.0.0
+requests>=2.0.0
+psycopg2-binary
+qdrant-client
+python-dotenv
+sqlalchemy
+pymysql
+clickhouse-connect
+lz4
+zstandard
+

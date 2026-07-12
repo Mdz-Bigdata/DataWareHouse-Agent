@@ -1,0 +1,1 @@
+CREATE TABLE test_write_2 (id INT);

@@ -1,0 +1,841 @@
+# -*- coding: utf-8 -*-
+import os
+import re
+import time
+import json
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from app.service.db_service import db_service
+from app.service.guardrail import guardrail, GuardrailException
+from app.model.user_memory import user_memory
+from app.service.semantic_layer import semantic_layer, DSLCompiler, align_timezone_range, TABLE_CONFIG
+from app.service.vector_service import vector_service
+
+# =====================================================================
+# 智能问数 Agent V2.0：从 Text2SQL 到语义层 + DSL 升级实现
+# =====================================================================
+
+class AskAgent:
+    def __init__(self):
+        self.semantic_layer = semantic_layer
+        # 用来保存每个用户的 QuerySessionState（上一轮成功的意图 DSL），实现多轮参数防丢失
+        self.user_sessions = {}
+        # 用来保存每个用户历史提问，实现多轮问句大模型上下文改写（Query Rewriter）
+        self.user_history_questions = {}
+
+    @staticmethod
+    def _format_sql_for_display(sql: str, dialect: str) -> str:
+        """Format SQL for readable UI display without changing the executed statement."""
+        import sqlglot
+        try:
+            return sqlglot.parse_one(sql, read=dialect).sql(dialect=dialect, pretty=True)
+        except Exception as e:
+            print(f"SQL display formatting failed: {e}. Falling back to raw SQL.")
+            return sql.strip()
+
+    def _call_llm(self, prompt: str, system_prompt: str = "", user: str = "anonymous") -> str:
+        """
+        调用真实大语言模型 (OpenAI / Gemini / DeepSeek) 生成意图 DSL。
+        移除了所有 Mock 模拟示例，如果配置缺失或调用失败直接向上抛出 RuntimeError。
+        """
+        # 1. 动态加载本地 llm_config.json 配置文件
+        config_path = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
+        api_key = ""
+        base_url = ""
+        active_text_model = ""
+        active_vendor = ""
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+                    active_vendor = config_data.get("active_vendor", "openai")
+                    vendor_info = config_data.get("vendors", {}).get(active_vendor, {})
+                    api_key = vendor_info.get("api_key", "").strip()
+                    base_url = vendor_info.get("base_url", "").strip()
+                    active_text_model = vendor_info.get("active_text_model", "").strip()
+        except Exception as e:
+            print(f"[LLM Config Load Error]: {e}")
+
+        if not api_key:
+            raise RuntimeError("系统大模型 API Key 未配置，无法发起问数请求！请先在 llm_config.json 中配置有效的密钥。")
+
+        # 2. 发起大模型真实推理
+        try:
+            if active_vendor == "gemini" and "generativelanguage" in base_url.lower():
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                model_name = active_text_model if active_text_model else "gemini-1.5-flash"
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(f"{system_prompt}\n\n{prompt}")
+                return response.text
+            else:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=base_url if base_url else None)
+                model_name = active_text_model if active_text_model else "gpt-4o-mini"
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.0,
+                    timeout=10.0
+                )
+                return response.choices[0].message.content
+        except Exception as e:
+            raise RuntimeError(f"调用真实大模型 [{active_vendor}] 时发生异常: {e}")
+
+    @staticmethod
+    def _resolve_temporal_expression(time_range_dsl: dict) -> tuple:
+        """
+        确定性时间解析器管线。绝不依赖 LLM 计算具体的月初/月末或相对边界，防止平闰年与越界错误。
+        输入：{"type": "last_30_days"} 等
+        输出：(start_date_str, end_date_str)
+        """
+        from datetime import datetime, timedelta
+        # 以北京业务时间为基准，获取当前日期
+        today = datetime.now().date()
+        
+        if not time_range_dsl or not isinstance(time_range_dsl, dict):
+            # 默认返回过去 30 天
+            start = today - timedelta(days=30)
+            end = today - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        t_type = time_range_dsl.get("type", "absolute")
+        if t_type == "absolute":
+            # 兼容以列表形式返回的 filters 格式或者直出的 start/end 字段
+            start = time_range_dsl.get("start") or time_range_dsl.get("value", [None, None])[0]
+            end = time_range_dsl.get("end") or time_range_dsl.get("value", [None, None])[1]
+            return start, end
+            
+        if t_type == "today":
+            d_str = today.strftime("%Y-%m-%d")
+            return d_str, d_str
+        elif t_type == "yesterday":
+            yesterday = today - timedelta(days=1)
+            return yesterday.strftime("%Y-%m-%d"), yesterday.strftime("%Y-%m-%d")
+        elif t_type == "last_7_days":
+            start = today - timedelta(days=7)
+            end = today - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+        elif t_type == "last_30_days" or t_type == "last_30_day":
+            start = today - timedelta(days=30)
+            end = today - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+        elif t_type == "last_month":
+            # 确定性上月月初月末算法
+            first_day_of_this_month = today.replace(day=1)
+            last_day_of_last_month = first_day_of_this_month - timedelta(days=1)
+            first_day_of_last_month = last_day_of_last_month.replace(day=1)
+            return first_day_of_last_month.strftime("%Y-%m-%d"), last_day_of_last_month.strftime("%Y-%m-%d")
+            
+        # 兜底返回过去 30 天
+        start = today - timedelta(days=30)
+        end = today - timedelta(days=1)
+        return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+    def _merge_session_dsl(self, prev_dsl: dict, new_dsl: dict) -> dict:
+        """
+        基于 Session 的 QuerySessionState 状态合并逻辑，实现多轮提问参数不丢失。
+        - 继承未发生冲突的指标、维度和过滤条件。
+        - 对同一个过滤字段，新值覆盖旧值。
+        """
+        # 话题漂移检测 (Topic Drift Detection)
+        # 如果新 DSL 包含的指标的主表，与上一轮 DSL 的指标主表不一致，说明用户切换了话题。
+        # 此时，我们清空上一轮 DSL，不进行任何继承合并，直接返回新 DSL！
+        prev_table = None
+        new_table = None
+        
+        for m_item in prev_dsl.get("metrics", []):
+            m_meta = self.semantic_layer.resolve_metric(m_item.get("name"))
+            if m_meta:
+                prev_table = m_meta.source_table
+                break
+                
+        for m_item in new_dsl.get("metrics", []):
+            m_meta = self.semantic_layer.resolve_metric(m_item.get("name"))
+            if m_meta:
+                new_table = m_meta.source_table
+                break
+                
+        if prev_table and new_table and prev_table != new_table:
+            print(f"[Topic Drift Detected] User shifted domain from '{prev_table}' to '{new_table}'. Clearing session DSL history.")
+            return new_dsl
+
+        if not prev_dsl:
+            return new_dsl
+
+        merged = {
+            "metrics": new_dsl.get("metrics", []),
+            "dimensions": new_dsl.get("dimensions", []),
+            "filters": [],
+            "time_range": new_dsl.get("time_range") or prev_dsl.get("time_range")
+        }
+
+        # 1. 合并指标：若新 DSL 没指标，继承上一轮的指标
+        if not merged["metrics"]:
+            merged["metrics"] = prev_dsl.get("metrics", [])
+
+        # 2. 合并维度：若新 DSL 没维度，继承上一轮的维度
+        if not merged["dimensions"]:
+            merged["dimensions"] = prev_dsl.get("dimensions", [])
+
+        # 3. 合并过滤器：
+        # 对于同一个 field 过滤条件，以新 DSL 为准（覆盖）；新 DSL 中缺少的 field 过滤，继承上一轮
+        prev_filters = prev_dsl.get("filters", [])
+        new_filters = new_dsl.get("filters", [])
+
+        new_fields = {f.get("field") for f in new_filters if f.get("field")}
+        
+        # 保留新过滤
+        merged["filters"].extend(new_filters)
+
+        # 保留上轮有、但本轮没有被覆盖的过滤
+        for pf in prev_filters:
+            field = pf.get("field")
+            if field not in new_fields:
+                merged["filters"].append(pf)
+
+        # 清洗多余 limit
+        if "limit" in new_dsl:
+            merged["limit"] = new_dsl["limit"]
+        elif "limit" in prev_dsl:
+            merged["limit"] = prev_dsl["limit"]
+
+        return merged
+
+    def _detect_column_types(self, df: pd.DataFrame, final_dsl: dict) -> dict:
+        """
+        基于元数据 schema 以及启发式词法推导每个返回列的值类型。
+        """
+        column_types = {}
+        for col in df.columns:
+            col_str = str(col)
+            col_lower = col_str.lower()
+            
+            # 1. 默认基于 Pandas 数据类型决定
+            pandas_dtype = str(df[col].dtype).lower()
+            
+            is_int_like_name = any(word in col_lower for word in [
+                "count", "number", "qty", "quantity", "times", "pv", "uv", "id", "rank", "cnt"
+            ])
+            # NOTE: price/amount/ratio/rate metrics must remain as decimals
+            is_float_like_name = any(word in col_lower for word in [
+                "amount", "price", "gmv", "ratio", "rate", "pct", "percent", "avg", "mean",
+                "cost", "fee", "val", "value", "revenue", "profit", "margin", "discount",
+                "tax", "salary", "wage", "bonus", "commission", "balance", "turnover",
+                "arpu", "arppu", "ltv", "cpc", "cpm", "ctr", "cvr", "roi", "roas",
+                "score", "index", "coefficient", "weight", "proportion"
+            ])
+            is_float_like_suffix = any(col_str.endswith(s) for s in [
+                "\u7387", "\u4ef7", "\u989d", "\u6bd4", "\u6bd4\u503c", "\u5747\u503c",
+                "\u5747\u4ef7", "\u5355\u4ef7", "\u91d1\u989d", "\u8d39\u7528", "\u6210\u672c"
+            ])
+            if is_float_like_suffix:
+                is_float_like_name = True
+            
+            # 2. 检查同比/环比/排名
+            if "_mom" in col_lower or "_yoy" in col_lower:
+                column_types[col_str] = "decimal"
+                continue
+            if "_rank" in col_lower:
+                column_types[col_str] = "integer"
+                continue
+                
+            # 3. 尝试解析语义层
+            detected_type = None
+            
+            # 尝试还原出指标名
+            metric_name = col_lower
+            if metric_name.startswith("total_"):
+                metric_name = metric_name[6:]
+            elif metric_name.startswith("cumulative_"):
+                metric_name = metric_name[11:]
+                
+            metric = self.semantic_layer.resolve_metric(metric_name)
+            if not metric:
+                metric = self.semantic_layer.resolve_metric(col_lower)
+                
+            if metric:
+                if metric.default_agg in ["COUNT", "DISTINCT_COUNT", "COUNT_DISTINCT", "COUNT(DISTINCT)"]:
+                    detected_type = "integer"
+                elif metric.default_agg == "SUM":
+                    # 去物理表里查字段类型
+                    calc_col = metric.calculation
+                    source_table = metric.source_table
+                    table_cols = self.semantic_layer.discovered_table_columns.get(source_table, [])
+                    for name, dtype in table_cols:
+                        if name.lower() == calc_col.lower():
+                            dtype_lower = str(dtype).lower()
+                            if any(i in dtype_lower for i in ["int", "bigint", "integer"]):
+                                detected_type = "integer"
+                            elif any(f in dtype_lower for f in ["double", "float", "numeric", "decimal", "real"]):
+                                detected_type = "decimal"
+                            break
+                elif metric.default_agg == "AVG":
+                    detected_type = "decimal"
+                
+                # 如果没解析出来，看 metric.unit
+                if not detected_type:
+                    if metric.unit in ["个", "人", "件", "次", "条", "篇", "台", "店", "只", "家", "张", "户", "设备"]:
+                        detected_type = "integer"
+                    elif metric.unit in ["元", "万元", "角", "分", "%"]:
+                        detected_type = "decimal"
+            
+            # 如果不是指标，看是不是维度
+            if not detected_type:
+                dim = self.semantic_layer.resolve_dimension(col_lower)
+                if dim:
+                    source_table = dim.source_table
+                    table_cols = self.semantic_layer.discovered_table_columns.get(source_table, [])
+                    for name, dtype in table_cols:
+                        if name.lower() == dim.source_column.lower():
+                            dtype_lower = str(dtype).lower()
+                            if any(i in dtype_lower for i in ["int", "bigint", "integer"]):
+                                detected_type = "integer"
+                            elif any(f in dtype_lower for f in ["double", "float", "numeric", "decimal", "real"]):
+                                detected_type = "decimal"
+                            else:
+                                detected_type = "string"
+                            break
+            
+            # 4. 如果还没解析出来，使用启发式词法规则
+            if not detected_type:
+                if is_int_like_name and not is_float_like_name:
+                    detected_type = "integer"
+                elif is_float_like_name:
+                    detected_type = "decimal"
+            
+            # 5. 最后兜底 Pandas 物理类型
+            if not detected_type:
+                if any(i in pandas_dtype for i in ["int", "bool"]):
+                    detected_type = "integer"
+                elif any(f in pandas_dtype for f in ["float", "decimal", "double", "numeric"]):
+                    detected_type = "decimal"
+                else:
+                    detected_type = "string"
+            
+            # 额外校正：防止被 Pandas 转成 float 的列如果是 int_like，强制判定为 integer
+            if detected_type == "decimal" and is_int_like_name and not is_float_like_name:
+                detected_type = "integer"
+            
+            # 反向保护：价格/金额/比值/率等列即使被其他规则判定为 integer，也强制回退为 decimal
+            if detected_type == "integer" and is_float_like_name and not is_int_like_name:
+                detected_type = "decimal"
+            column_types[col_str] = detected_type
+            
+        return column_types
+
+    def _auto_detect_chart_type(self, df: pd.DataFrame, dsl: dict, column_types: dict = None) -> dict:
+        """
+        自适应图表类型引擎
+        """
+        row_count = len(df)
+        cols = list(df.columns)
+        
+        if row_count == 0:
+            return {"type": "table", "title": "无结果集", "config": {}}
+            
+        if row_count == 1:
+            val_col = cols[1] if len(cols) > 1 else cols[0]
+            val = df.iloc[0][val_col]
+            
+            # 增加对 integer 类型的特定格式化
+            col_type = column_types.get(val_col) if column_types else None
+            if col_type == "integer" and isinstance(val, (int, float, np.integer, np.floating)):
+                val_str = f"{int(round(val)):,}"
+            elif isinstance(val, (int, float, np.integer, np.floating)):
+                val_str = f"{val:,.2f}"
+            else:
+                val_str = str(val)
+                
+            if "gmv" in val_col or "total_gmv" in val_col:
+                if isinstance(val, (int, float, np.integer, np.floating)):
+                    val_str = f"¥{val / 10000:.2f} 万"
+            elif "refund_ratio" in val_col or "ratio" in val_col:
+                if isinstance(val, (int, float, np.integer, np.floating)):
+                    val_str = f"{val * 100:.2f}%" if val <= 1.0 else f"{val:.2f}%"
+            
+            return {
+                "type": "card",
+                "title": "查询指标结果",
+                "config": {
+                    "value": val_str,
+                    "label": val_col
+                }
+            }
+
+        # 判断是否包含日期时间列
+        has_time_col = any(c in ["month", "dt", "date", "created_at"] for c in cols)
+        
+        # 寻找数值列与分类列
+        numeric_cols = [c for c in cols if "total_" in c or "refund_ratio" in c or df[c].dtype in [np.float64, np.int64]]
+        category_cols = [c for c in cols if c not in numeric_cols and c not in ["month", "dt"]]
+
+        if has_time_col and len(numeric_cols) >= 1:
+            time_col = [c for c in cols if c in ["month", "dt", "date", "created_at"]][0]
+            df_sorted = df.sort_values(by=time_col)
+            xAxis_data = df_sorted[time_col].astype(str).tolist()
+            series = []
+            for num_col in numeric_cols:
+                y_data = df_sorted[num_col].tolist()
+                
+                # 如果这个列是 integer，转成 int
+                col_type = column_types.get(num_col) if column_types else None
+                if col_type == "integer":
+                    y_data = [int(round(v)) if pd.notna(v) else None for v in y_data]
+                    
+                if "gmv" in num_col:
+                    y_data = [round(v / 10000.0, 2) for v in y_data]
+                    series.append({"name": "销售额 (万)", "data": y_data})
+                elif "refund_ratio" in num_col:
+                    # 换算百分比
+                    y_data = [round(v * 100.0, 2) if v <= 1.0 else round(v, 2) for v in y_data]
+                    series.append({"name": "退款率 (%)", "data": y_data})
+                else:
+                    series.append({"name": num_col, "data": y_data})
+
+            return {
+                "type": "line",
+                "title": "趋势分析折线图",
+                "config": {
+                    "xAxis": {"data": xAxis_data},
+                    "series": series
+                }
+            }
+
+        if len(category_cols) >= 1 and len(numeric_cols) == 1:
+            cat_col = category_cols[0]
+            num_col = numeric_cols[0]
+            
+            if "category_name" in cat_col or "region_name" in cat_col:
+                pie_data = []
+                for _, row in df.iterrows():
+                    val = row[num_col]
+                    col_type = column_types.get(num_col) if column_types else None
+                    if col_type == "integer" and pd.notna(val):
+                        val = int(round(val))
+                    elif "gmv" in num_col or "refund_amount" in num_col:
+                        val = round(val / 10000.0, 2)
+                    elif "refund_ratio" in num_col or "ratio" in num_col:
+                        val = round(val * 100.0, 2) if val <= 1.0 else round(val, 2)
+                    pie_data.append({"name": str(row[cat_col]), "value": val})
+                
+                # 按数值由大到小排序，若分类数大于 5 则将长尾数据合并为“其他”
+                pie_data = sorted(pie_data, key=lambda x: x["value"], reverse=True)
+                if len(pie_data) > 5:
+                    top_4 = pie_data[:4]
+                    others_sum = sum(item["value"] for item in pie_data[4:])
+                    top_4.append({"name": "其他", "value": round(others_sum, 2)})
+                    pie_data = top_4
+                
+                title = "占比分布饼图"
+                if "gmv" in num_col:
+                    title = "交易额分类占比分布 (万元)"
+                elif "refund_ratio" in num_col:
+                    title = "退款率对比分布 (%)"
+                
+                return {
+                    "type": "pie",
+                    "title": title,
+                    "config": {
+                        "series": [{"name": "占比", "data": pie_data}]
+                    }
+                }
+            
+            xAxis_data = df[cat_col].astype(str).tolist()
+            y_data = df[num_col].tolist()
+            
+            col_type = column_types.get(num_col) if column_types else None
+            if col_type == "integer":
+                y_data = [int(round(v)) if pd.notna(v) else None for v in y_data]
+                
+            if "gmv" in num_col:
+                y_data = [round(v / 10000.0, 2) for v in y_data]
+                label_name = "销售额 (万)"
+            elif "refund_ratio" in num_col:
+                y_data = [round(v * 100.0, 2) if v <= 1.0 else round(v, 2) for v in y_data]
+                label_name = "退款率 (%)"
+            else:
+                label_name = num_col
+
+            return {
+                "type": "bar",
+                "title": "对比分析柱状图",
+                "config": {
+                    "xAxis": {"data": xAxis_data},
+                    "series": [{"name": label_name, "data": y_data}]
+                }
+            }
+        # 默认表格
+        return {
+            "type": "table",
+            "title": "详细明细表",
+            "config": {}
+        }
+
+    def ask(self, question: str, dialect: str = "doris", user: str = "anonymous", role: str = None) -> dict:
+        """
+        全链路 V2.0 升级架构问数接口：
+        1. 偏好注入 & 多轮 Session 合并
+        2. LLM 结构化抽取 DSL 意图 (限用语义注册指标维度)
+        3. guardrail.check_dsl 进行语义层校验与权限拦截 (第一层网闸)
+        4. DSLCompiler 确定性 SQL 编译器构建 SQL (包含时区北京->芝加哥映射)
+        5. guardrail.check_sql 物理 SQL 校验 (第二层网闸)
+        6. 数据仿真执行与商业摘要渲染
+        """
+        # 0. 确定用户角色权限，防止硬编码
+        if role:
+            user_role = role.lower()
+        else:
+            user_lower = user.lower()
+            if any(k in user_lower for k in ["admin", "管理员", "superuser"]):
+                user_role = "admin"
+            elif any(k in user_lower for k in ["analyst", "分析师", "王五"]):
+                user_role = "analyst"
+            else:
+                user_role = "user"
+
+        print(f"\n[AskAgent V2.0] Question from '{user}' (Role: {user_role}): {question} (Dialect: {dialect})")
+        start_time = time.time()
+
+        # 0.5 多轮上下文问句改写 (Query Rewriter Pipeline)
+        history_queries = self.user_history_questions.get(user, [])
+        if history_queries:
+            rewrite_prompt = (
+                f"【历史对话问题记录】:\n"
+                + "\n".join([f"- {q}" for q in history_queries[-3:]])
+                + f"\n【当前最新不完整提问】: {question}\n"
+                + "请结合历史问题记录上下文，将当前最新提问改写为一个独立、具体、不带代词指代和省略的完整数据查询句。\n"
+                + "例如：历史问题是“华东区昨天的销售额”，最新提问是“那前三名品类呢”，应该改写为“华东区昨天销售额排名前三的品类分别是什么”。\n"
+                + "请直接输出改写后的完整中文自然语言问句，不要包含任何多余的解释、前导词或 Markdown 标记。"
+            )
+            try:
+                rewritten_question = self._call_llm(
+                    prompt=rewrite_prompt,
+                    system_prompt="你是一个极为专业的智能多轮问数改写助手。你的唯一目标是还原代词指代和补齐省略，确保输出的句子独立完备。"
+                )
+                question_to_parse = rewritten_question.strip()
+                print(f"[Query Rewriter] Rewrote: '{question}' -> '{question_to_parse}'")
+            except Exception as e:
+                print(f"[Query Rewriter Error]: {e}. Fallback to raw question.")
+                question_to_parse = question
+        else:
+            question_to_parse = question
+
+        # 将用户的当前原始问题追加进历史记录中
+        if user not in self.user_history_questions:
+            self.user_history_questions[user] = []
+        self.user_history_questions[user].append(question)
+
+        # 1. 意图解析：通过 Qdrant 向量数据库检索候选指标、维度及 Few-shot 示例 (Schema Grounding RAG)
+        preference = user_memory.get_preference_profile(user)
+        
+        # 1.1 检索 Qdrant 知识库候选元数据与 Few-shot 对话示例 (采用改写后的完备问句)
+        recalled_meta = vector_service.recall_semantic_meta(question_to_parse, limit=4)
+        recalled_fewshots = vector_service.recall_fewshot_examples(question_to_parse, limit=2)
+
+        # 1.2 相似度得分硬阻断过滤 (Qdrant Score Hard Truncation)
+        # 为防止大模型在缺乏特定指标元数据时脑补（如问“食堂消费”却猜“GMV”），
+        # 如果检索到的所有指标和维度的最大相似度得分低于 0.20，清空候选池以激发主动澄清拦截。
+        max_similarity = max([m.get("similarity", 0.0) for m in recalled_meta]) if recalled_meta else 0.0
+        if max_similarity < 0.20:
+            print(f"[Qdrant Recall Cutoff] Max similarity {max_similarity:.3f} < 0.20. Clearing candidate metadata to trigger clarification.")
+            recalled_meta = []
+
+        system_prompt = (
+            "你是一个智能元数据意图解析器。你的任务是将用户提问映射为结构化的查询 JSON DSL。\n"
+            "【规则】:\n"
+            "1. 严格禁止生成任何 SQL 语句。\n"
+            "2. 优先且只能使用向量库召回出的候选指标和维度名称，进行同义词消歧映射。\n"
+            "3. 必须输出严格的 JSON 格式，包含 metrics, dimensions, filters 三个字段。\n"
+            "4. 相对时间（如昨天、上周、30天等）在 filters 中使用 dt between 进行表达，格式为：[start_date, end_date] (YYYY-MM-DD)。\n"
+            "5. filters 格式例：[{\"field\": \"region_name\", \"op\": \"eq\", \"value\": \"华东\"}]。\n"
+            "6. 【歧义消歧与澄清机制】：\n"
+            "   - 如果用户的提问极度模糊、缺失指标/维度，或包含了在向量库候选元数据中无法匹配到任何标准别名的未注册指标或概念，请在 JSON 中增加：\n"
+            "     \"need_clarification\": true, \n"
+            "     \"clarification_msg\": \"你想查询哪种指标数据？目前仅支持系统已接入的指标。\",\n"
+            "     \"clarification_options\": [{\"label\": \"查询指标A\", \"query\": \"过去30天指标A是多少\"}]\n"
+            "   - 如果提问明确且与召回元数据高度吻合，则 `need_clarification` 为 `false`。\n"
+            "   - 输出格式必须是可以被 Python `json.loads` 解析的合法 JSON，不要用 ```json 包裹。"
+        )
+
+        user_prompt = (
+            f"【偏好画像上下文】: 常用指标: {[m['metric'] for m in preference.get('common_metrics', [])]}\n"
+            f"【Qdrant 向量库召回元数据候选】: {json.dumps(recalled_meta, ensure_ascii=False)}\n"
+            f"【向量库推荐 Few-Shot 对话示例】:\n"
+        )
+        for fs in recalled_fewshots:
+            user_prompt += f"问：{fs['question']}\n答：{json.dumps(fs['dsl'], ensure_ascii=False)}\n\n"
+            
+        user_prompt += (
+            f"【用户问题】: {question_to_parse}\n"
+            f"请根据召回的元数据候选与 Few-Shot 对话示例，分析输出仅由 metrics, dimensions, filters 组成的 JSON 串："
+        )
+
+        # 2. 调用 LLM 得到当前意图 DSL 碎片
+        new_dsl_json = self._call_llm(prompt=user_prompt, system_prompt=system_prompt, user=user)
+        try:
+            # 强制提取或纠错 json
+            new_dsl_json = re.sub(r"^\s*```[a-zA-Z]*\n", "", new_dsl_json)
+            new_dsl_json = re.sub(r"\n\s*```\s*$", "", new_dsl_json)
+            new_dsl = json.loads(new_dsl_json.strip())
+        except Exception as e:
+            print(f"[DSL Parse JSON Error]: {e}. Fallback to empty DSL.")
+            new_dsl = {"metrics": [], "dimensions": [], "filters": []}
+
+        # 2.1 主动澄清熔断拦截 (第一层澄清网闸)
+        if new_dsl.get("need_clarification") is True:
+            elapsed_time = f"{time.time() - start_time:.3f}s"
+            return {
+                "success": False,
+                "error": new_dsl.get("clarification_msg", "您的问题存在歧义，需要澄清。"),
+                "clarification": {
+                    "need_clarification": True,
+                    "message": new_dsl.get("clarification_msg", "您的问题存在歧义，需要澄清。"),
+                    "options": new_dsl.get("clarification_options", [])
+                },
+                "details": {
+                    "sql": "-- [触发主动澄清机制，未执行物理查询]",
+                    "dialect": dialect,
+                    "elapsed_time": elapsed_time,
+                    "tables": [],
+                    "source_desc": "大模型主动识别模糊意图，触发澄清建议",
+                    "filters": []
+                }
+            }
+
+        # 归一化清洗逻辑，防御大模型格式漂移 (e.g. 把 metrics 返回为 ["gmv"] 字符串列表)
+        def clean_dsl_format(dsl_obj: dict) -> dict:
+            if not isinstance(dsl_obj, dict):
+                return {"metrics": [], "dimensions": [], "filters": []}
+            
+            # 1. 优先提取并利用确定性管线解析相对/绝对时间
+            t_range = dsl_obj.get("time_range")
+            # 遍历寻找 filters 里可能存在的相对时间段定义作为兜底输入
+            if not t_range:
+                for f in dsl_obj.get("filters", []):
+                    if isinstance(f, dict) and f.get("field") == "dt" and f.get("op") == "between":
+                        val = f.get("value")
+                        if isinstance(val, list) and len(val) == 2:
+                            t_range = {"type": "absolute", "start": val[0], "end": val[1]}
+                            break
+                        elif isinstance(val, str):
+                            t_range = {"type": val}
+                            break
+            
+            start_d, end_d = self._resolve_temporal_expression(t_range)
+            
+            cleaned = {
+                "metrics": [],
+                "dimensions": [],
+                "filters": [],
+                "time_range": {"start": start_d, "end": end_d}
+            }
+            if "limit" in dsl_obj:
+                cleaned["limit"] = dsl_obj["limit"]
+                
+            # 2. 将确定性时间区间注入为绝对过滤条件 (过滤掉大模型直出的不确定时间过滤器)
+            raw_filters = dsl_obj.get("filters", [])
+            if isinstance(raw_filters, list):
+                for f in raw_filters:
+                    if not isinstance(f, dict):
+                        continue
+                    if f.get("field") == "dt":
+                        # 跳过大模型直接计算的相对时间
+                        continue
+                    cleaned["filters"].append(f)
+            
+            # 追加高精度绝对时间过滤器
+            cleaned["filters"].append({
+                "field": "dt",
+                "op": "between",
+                "value": [start_d, end_d]
+            })
+
+            # 清洗 metrics
+            raw_metrics = dsl_obj.get("metrics", [])
+            if isinstance(raw_metrics, list):
+                for m in raw_metrics:
+                    if isinstance(m, str):
+                        cleaned["metrics"].append({"name": m})
+                    elif isinstance(m, dict) and "name" in m:
+                        cleaned["metrics"].append(m)
+            # 清洗 dimensions
+            raw_dims = dsl_obj.get("dimensions", [])
+            if isinstance(raw_dims, list):
+                for d in raw_dims:
+                    if isinstance(d, str):
+                        cleaned["dimensions"].append({"name": d})
+                    elif isinstance(d, dict) and "name" in d:
+                        cleaned["dimensions"].append(d)
+            return cleaned
+
+        new_dsl = clean_dsl_format(new_dsl)
+
+        # 3. 关联多轮上下文：融合 QuerySessionState
+        prev_dsl = self.user_sessions.get(user, {})
+        final_dsl = self._merge_session_dsl(prev_dsl, new_dsl)
+        final_dsl = clean_dsl_format(final_dsl)
+        print(f"[AskAgent V2.0] Session Merged DSL: {json.dumps(final_dsl, ensure_ascii=False)}")
+
+        # 4. 执行第一层网闸：DSL 语义审计
+        try:
+            guardrail.check_dsl(final_dsl, self.semantic_layer, user_role=user_role)
+        except GuardrailException as ge:
+            # 语义审计拦截，直接返回错误，不编译 SQL
+            elapsed_time = f"{time.time() - start_time:.3f}s"
+            # 构造虚拟 SQL 以供前台显示拦截情况
+            dummy_sql = f"-- [语义拦截]: {ge.message}"
+            return {
+                "success": False,
+                "error": ge.message,
+                "details": {
+                    "sql": dummy_sql,
+                    "dialect": dialect,
+                    "elapsed_time": elapsed_time,
+                    "tables": [],
+                    "source_desc": "在语义层即被网闸拦截，未触达物理执行层",
+                    "filters": final_dsl.get("filters", []),
+                    "estimated_rows": 0
+                }
+            }
+
+        # 5. DSL 确定性编译器组装 SQL (包含北京时区转换为芝加哥时区)
+        compiler = DSLCompiler(layer=self.semantic_layer, dialect=dialect)
+        try:
+            sql = compiler.compile(final_dsl)
+        except Exception as e:
+            # 编译失败直接熔断
+            elapsed_time = f"{time.time() - start_time:.3f}s"
+            return {
+                "success": False,
+                "error": f"DSL 编译器组装 SQL 失败: {str(e)}",
+                "details": {
+                    "sql": f"-- [编译报错]: {str(e)}",
+                    "dialect": dialect,
+                    "elapsed_time": elapsed_time,
+                    "tables": [],
+                    "source_desc": "编译引擎阶段报错",
+                    "filters": final_dsl.get("filters", []),
+                    "estimated_rows": 0
+                }
+            }
+
+        print(f"[AskAgent V2.0] Compiled Dialect SQL ({dialect}):\n{sql}")
+
+        # 6. 执行第二层网闸：SQL 物理安全审计
+        max_retries = 3
+        retry_count = 0
+        execution_error = None
+        df = pd.DataFrame()
+        guardrail_result = {}
+
+        while retry_count < max_retries:
+            try:
+                # 物理层安全与扫描预估审计
+                guardrail_result = guardrail.check_sql(sql, dialect=dialect, conn=db_service.conn)
+                
+                # 执行 SQL
+                df = db_service.execute_query(sql, dialect=dialect)
+                execution_error = None
+                break
+            except GuardrailException as ge:
+                execution_error = str(ge)
+                print(f"[Guardrail SQL Checked Failed - Retry {retry_count+1}]: {ge}")
+            except Exception as e:
+                execution_error = f"物理执行数据库报错: {str(e)}"
+                print(f"[DB Execution Error - Retry {retry_count+1}]: {e}")
+            
+            # 若执行失败，触发纠错重试
+            retry_count += 1
+            if retry_count < max_retries:
+                prompt_retry = f"执行 SQL: {sql}\n发生报错: {execution_error}\n请进行纠错重写，并只返回修正后的 SQL。"
+                sql = self._call_llm(prompt=prompt_retry, system_prompt="你是一个 SQL 纠错助手，请直接返回纯 SQL 文本，不要使用 Markdown 包装。")
+                sql = re.sub(r"^\s*```[a-zA-Z]*\n", "", sql)
+                sql = re.sub(r"\n\s*```\s*$", "", sql)
+                sql = sql.strip()
+
+        # 7. 渲染结果与图表展示
+        elapsed_time = f"{time.time() - start_time:.3f}s"
+        formatted_sql = self._format_sql_for_display(sql, dialect)
+
+        if execution_error:
+            # 物理层出错记录历史
+            user_memory.add_history(
+                user=user,
+                question=question,
+                sql=sql,
+                dialect=dialect,
+                result_summary=f"物理层报错: {execution_error}"
+            )
+            return {
+                "success": False,
+                "error": execution_error,
+                "details": {
+                    "sql": formatted_sql,
+                    "dialect": dialect,
+                    "elapsed_time": elapsed_time,
+                    "tables": [m["name"] for m in final_dsl.get("metrics", [])],
+                    "source_desc": "编译执行物理报错",
+                    "filters": final_dsl.get("filters", []),
+                    "estimated_rows": 0
+                }
+            }
+
+        # 成功执行，更新用户 Session 为本次成功的 DSL 意图状态（保证状态参数独立于对话历史）
+        self.user_sessions[user] = final_dsl
+
+        # 自动生成洞察结论
+        summary_prompt = f"用户问题: {question}\n执行的SQL: {sql}\n查询出的数据集 (部分): \n{df.head(10).to_string()}"
+        conclusion = self._call_llm(
+            prompt=summary_prompt,
+            system_prompt="你是一个资深商业分析师，用一句话总结下面的数据分析结论，并指出亮点或环比变化。"
+        )
+
+        # 自适应图表类型
+        column_types = self._detect_column_types(df, final_dsl)
+        chart_info = self._auto_detect_chart_type(df, final_dsl, column_types)
+
+        # 获取来源表说明
+        source_tables = list({self.semantic_layer.resolve_metric(m["name"]).source_table for m in final_dsl["metrics"] if self.semantic_layer.resolve_metric(m["name"])})
+        source_desc = " + ".join([f"{t}（{TABLE_CONFIG[t]['description']}）" if t in TABLE_CONFIG else t for t in source_tables])
+
+        # 脱敏数据转换
+        df_clean = df.fillna("")
+        result_records = df_clean.to_dict(orient="records")
+
+        # 记录查询历史
+        user_memory.add_history(
+            user=user,
+            question=question,
+            sql=sql,
+            dialect=dialect,
+            result_summary=conclusion
+        )
+
+        return {
+            "success": True,
+            "conclusion": conclusion,
+            "chart": {
+                "type": chart_info["type"],
+                "title": chart_info["title"],
+                "config": chart_info["config"]
+            },
+            "data": result_records,
+            "column_types": column_types,
+            "details": {
+                "sql": formatted_sql,
+                "dialect": dialect,
+                "elapsed_time": elapsed_time,
+                "tables": source_tables,
+                "source_desc": source_desc,
+                "filters": final_dsl["filters"],
+                "estimated_rows": guardrail_result.get("estimated_rows", 0)
+            }
+        }
+
+ask_agent = AskAgent()
