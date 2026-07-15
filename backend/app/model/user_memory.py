@@ -10,6 +10,7 @@ class UserMemory:
         self.storage_path = storage_path
         self.history = []
         self.custom_preferences = {}
+        self.error_corrections = []
         self._load()
 
     def _load(self):
@@ -20,13 +21,16 @@ class UserMemory:
                     if isinstance(data, dict):
                         self.history = data.get("history", [])
                         self.custom_preferences = data.get("custom_preferences", {})
+                        self.error_corrections = data.get("error_corrections", [])
                     else:
                         self.history = data
                         self.custom_preferences = {}
+                        self.error_corrections = []
             except Exception as e:
                 print(f"Error loading user memory: {e}")
                 self.history = []
                 self.custom_preferences = {}
+                self.error_corrections = []
         else:
             # 预置一些历史数据以充实页面体验
             self.history = [
@@ -52,6 +56,7 @@ class UserMemory:
                 }
             ]
             self.custom_preferences = {}
+            self.error_corrections = []
             self._save()
 
     def _save(self):
@@ -59,7 +64,8 @@ class UserMemory:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 data = {
                     "history": self.history,
-                    "custom_preferences": self.custom_preferences
+                    "custom_preferences": self.custom_preferences,
+                    "error_corrections": self.error_corrections
                 }
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -203,5 +209,26 @@ class UserMemory:
         recommendations.append(f"过去30天各{dim_zh}退款率异常监控")
 
         return recommendations
+
+    def add_error_correction(self, question: str, error_message: str, wrong_sql: str, corrected_sql: str):
+        """
+        记录一条大模型物理纠错成功的经验
+        """
+        record = {
+            "question": question,
+            "error_message": error_message,
+            "wrong_sql": wrong_sql,
+            "corrected_sql": corrected_sql,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self.error_corrections.append(record)
+        self._save()
+        return record
+
+    def get_error_corrections(self) -> list:
+        """
+        获取所有被成功记录的纠错历史
+        """
+        return self.error_corrections
 
 user_memory = UserMemory()

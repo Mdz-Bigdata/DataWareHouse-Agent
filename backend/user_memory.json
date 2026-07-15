@@ -1,6 +1,1126 @@
 {
   "history": [
     {
+      "id": 312,
+      "user": "anonymous",
+      "question": "帮我统计一下articles 有多少篇文章",
+      "sql": "SELECT COUNT(articles.id) AS total_articles_count FROM articles LIMIT 10",
+      "dialect": "postgres",
+      "execution_time": "0.01s",
+      "result_summary": "文章总数为56篇，当前暂无环比变化。",
+      "created_at": "2026-07-14 05:46:23"
+    },
+    {
+      "id": 311,
+      "user": "anonymous",
+      "question": "帮我分析article_history表里按分类(category_name)分别有多少篇 ",
+      "sql": "SELECT categories.`name` AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN articles ON article_history.article_id = articles.id LEFT JOIN categories ON articles.category_id = categories.id GROUP BY categories.`name` ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "头部内容高度集中于“大数据实战与架构设计”（20篇），且与“LLM与AIGC”（17篇）合计占据半壁江山，但值得注意的是存在较多未分类（NaN）内容，环比缺乏历史数据故无法直接对比。",
+      "created_at": "2026-07-14 05:45:09"
+    },
+    {
+      "id": 310,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 309,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 308,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 307,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 306,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 305,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 304,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 303,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dim_region.region_name ORDER BY total_total_refund_amount DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:43:59"
+    },
+    {
+      "id": 302,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 301,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 300,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 299,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 298,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 297,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 296,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 295,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dim_region.region_name ORDER BY total_total_refund_amount DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "id": 294,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 293,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 292,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 291,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 290,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 289,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 288,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 287,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dim_region.region_name ORDER BY total_total_refund_amount DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "id": 286,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 285,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 284,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 283,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 282,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 281,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 280,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 279,
+      "user": "admin",
+      "question": "华东区昨天的退款额是多少",
+      "sql": "SELECT dim_region.region_name AS region_name, SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.region_id = dim_region.region_id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dim_region.region_name ORDER BY total_total_refund_amount DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "id": 278,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 277,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 276,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 275,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 274,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 273,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 272,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "id": 271,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 270,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 269,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "SELECT article_history.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history GROUP BY article_history.category_name ORDER BY total_article_history_count DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 268,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 267,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 266,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 265,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "id": 264,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 263,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 262,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 261,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 260,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 259,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 258,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "id": 257,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 256,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 255,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 254,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 253,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 252,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.id = dim_region.id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 251,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "id": 250,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question\n发生报错: 安全审计拦截: 检测到表 `user_memory` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，会导致指标被成倍放大计算错误！\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question\n发生报错: 安全审计拦截:\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT * FROM articles LEFT JOIN user_memory ON articles.title = user_memory.question\n发生报错:",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 249,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 248,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 247,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 246,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 245,
+      "user": "tester",
+      "question": "那前三名的品类呢",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.id = dim_region.id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 244,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:49"
+    },
+    {
+      "id": 243,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 242,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 241,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 240,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 239,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 238,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 237,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:37:25"
+    },
+    {
+      "id": 236,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 235,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 234,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 233,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 232,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 231,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 230,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:53"
+    },
+    {
+      "id": 229,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 228,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 227,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 226,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 225,
+      "user": "admin",
+      "question": "华东区过去30天食堂消费额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 224,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 223,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 222,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT SUM(dws_trade_order_daily.refund_amount) AS total_total_refund_amount FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "总的来看，数据正常，符合预期。",
+      "created_at": "2026-07-14 05:36:32"
+    },
+    {
+      "id": 221,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 220,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 物理执行数据库报错: Execution failed on sql 'SELECT dws_trade_order_dailycategory_name AS category_name, SUM(dws_trade_order_dailygmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_dailydt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_dailycategory_name ORDER BY total_total_gmv DESC LIMIT 10': no such column: dws_trade_order_dailycategory_name\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 219,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM article_history LEFT JOIN dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such column: dws_trade_order_daily.id\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 218,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 物理执行数据库报错: Execution failed on sql 'SELECT dws_trade_order_dailycategory_name AS category_name, SUM(dws_trade_order_dailygmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_dailydt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_dailycategory_name ORDER BY total_total_gmv DESC LIMIT 10': no such column: dws_trade_order_dailycategory_name\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 217,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 物理执行数据库报错: Execution failed on sql 'SELECT SUM(dws_trade_order_dailygmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_dailydt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10': no such column: dws_trade_order_dailygmv\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE d",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 216,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 物理执行数据库报错: Execution failed on sql 'SELECT SUM(dws_trade_order_dailygmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade_order_dailydt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10': no such column: dws_trade_order_dailygmv\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE dws_trade\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily WHERE d",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 215,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "created_at": "2026-07-14 05:36:13"
+    },
+    {
+      "id": 214,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history LEFT JOIN blog_converter.dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.article_history\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 213,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.dws_trade_order_daily\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 212,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history LEFT JOIN blog_converter.dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.article_history\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 211,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.dws_trade_order_daily\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 210,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.dws_trade_order_daily\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily \n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_orde",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 209,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 方言语法预检报错: no such table: blog_converter.dws_trade_order_daily\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily \n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_orde",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 208,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "created_at": "2026-07-14 05:35:59"
+    },
+    {
+      "id": 207,
+      "user": "admin",
+      "question": "帮我把article表和user_memory表进行不带外键等值连接",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history LEFT JOIN blog_converter.dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 206,
+      "user": "admin",
+      "question": "各品类退款额除以交易额的比率",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 205,
+      "user": "admin",
+      "question": "帮我分析article_history 表里每类文章分别有多少篇",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_article_history_count FROM blog_converter.article_history LEFT JOIN blog_converter.dws_trade_order_daily ON article_history.id = dws_trade_order_daily.id GROUP BY dws_trade_order_daily.category_name ORDER BY total_article_history_count DESC LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS total_art\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, COUNT(article_history.id) AS t",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 204,
+      "user": "admin",
+      "question": "各品类最近30天交易额",
+      "sql": "执行 SQL: 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS tota\n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv)",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 203,
+      "user": "normal_user",
+      "question": "华北区昨天的交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily \n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_orde",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 202,
+      "user": "normal_user",
+      "question": "昨天总交易额是多少",
+      "sql": "执行 SQL: 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' LIMIT 10\n发生报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'\n请进行纠错重写，并只返回修正后的 SQL。\n发生报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_order_daily \n请进行纠错重写，并只返回修正后的 SQL。",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: SQL 语法解析失败，无法进行安全审计: Invalid expression / Unexpected token. Line 1, Col: 7.\n  执行 SQL\u001b[4m:\u001b[0m 执行 SQL: SELECT SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM blog_converter.dws_trade_orde",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
+      "id": 201,
+      "user": "admin",
+      "question": "上个月退款额是多少",
+      "sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "dialect": "doris",
+      "execution_time": "0.01s",
+      "result_summary": "物理层报错: 物理执行数据库报错: module 'sqlglot.expressions' has no attribute 'Slash'",
+      "created_at": "2026-07-14 05:35:45"
+    },
+    {
       "id": 200,
       "user": "anonymous",
       "question": "帮我分析article_history表里按分类(category_name)分别有多少篇 ",
@@ -2028,5 +3148,84 @@
         }
       ]
     }
-  }
+  },
+  "error_corrections": [
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:38:39"
+    },
+    {
+      "question": "华东区昨天销售额排名前三的品类分别是什么",
+      "error_message": "方言语法预检报错: no such column: dws_trade_order_daily.id",
+      "wrong_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.id = dim_region.id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:39:51"
+    },
+    {
+      "question": "华东区昨天销售额排名前三的品类分别是什么",
+      "error_message": "方言语法预检报错: no such column: dws_trade_order_daily.id",
+      "wrong_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.id = dim_region.id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:40:41"
+    },
+    {
+      "question": "华东区昨天销售额排名前三的品类分别是什么",
+      "error_message": "方言语法预检报错: no such column: dws_trade_order_daily.id",
+      "wrong_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.gmv) AS total_total_gmv FROM dws_trade_order_daily LEFT JOIN dim_region ON dws_trade_order_daily.id = dim_region.id WHERE dws_trade_order_daily.dt BETWEEN '2026-06-13' AND '2026-07-13' AND dim_region.region_name = '华东' GROUP BY dws_trade_order_daily.category_name ORDER BY total_total_gmv DESC LIMIT 3",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:40:47"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:41:24"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:41:29"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:41:46"
+    },
+    {
+      "question": "各品类退款额除以交易额的比率",
+      "error_message": "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！",
+      "wrong_sql": "SELECT category_name, SUM(refund_amount) / SUM(gmv) AS ratio FROM dws_trade_order_daily",
+      "corrected_sql": "SELECT dws_trade_order_daily.category_name AS category_name, SUM(dws_trade_order_daily.refund_amount) / NULLIF(SUM(dws_trade_order_daily.gmv), 0) AS ratio FROM dws_trade_order_daily GROUP BY dws_trade_order_daily.category_name",
+      "created_at": "2026-07-14 05:43:59"
+    }
+  ]
 }

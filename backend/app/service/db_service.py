@@ -24,7 +24,8 @@ class DBService:
         # 动态检测并构建真实物理数据库连接池
         self.real_engine = None
         self.active_db_type = "sqlite"
-        self._setup_real_database_connection()
+        if os.getenv("DB_TYPE") != "sqlite":
+            self._setup_real_database_connection()
 
     def _register_sqlite_udfs(self):
         """
@@ -185,14 +186,16 @@ class DBService:
                 translated_sqls = sqlglot.transpile(sql, read=dialect, write="sqlite")
                 sqlite_sql = translated_sqls[0]
                 db_name = self.get_active_db_name()
-                sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
+                if db_name:
+                    sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
                 import re
                 sqlite_sql = re.sub(r"TIMESTAMP_TRUNC\(([^,]+),\s*MONTH\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
                 sqlite_sql = re.sub(r"date_trunc\('month',\s*([^)]+)\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
             except Exception as e:
                 sqlite_sql = sql
                 db_name = self.get_active_db_name()
-                sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
+                if db_name:
+                    sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
                 
             print(f"Executing query on SQLite:\n--- Source ({dialect}) ---\n{sql}\n--- Target (sqlite) ---\n{sqlite_sql}")
             df = pd.read_sql_query(sqlite_sql, self.conn)
@@ -204,6 +207,8 @@ class DBService:
         - 优先从真实的 db_url 中提取最后一级路径作为数据库名。
         - 若无法解析或使用 SQLite，则默认返回 'blog_converter' 兜底。
         """
+        if os.getenv("DB_TYPE") == "sqlite":
+            return ""
         db_url = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
         if not db_url:
             # 回退读取 llm_config.json

@@ -201,7 +201,10 @@ class Guardrail:
             # 如果包含创建、删除、插入、更新、修改等节点类型则拦截
             if isinstance(node, (exp.Create, exp.Drop, exp.Insert, exp.Update, exp.Delete, exp.Alter)):
                 raise GuardrailException("安全审计拦截: 拒绝执行非 SELECT 查询的操作（拦截 DDL/DML 修改操作）！")
-        
+
+        # 2.5 运行时安全校验：除零保护与多对多关联检验
+        self._verify_runtime_safety(expression, dialect)
+
         # 3. 分区过滤检查
         # 提取 SQL 中查询的所有表
         tables = [t.name.lower() for t in expression.find_all(exp.Table)]
@@ -312,5 +315,97 @@ class Guardrail:
             "message": "审计通过",
             "estimated_rows": estimated_rows
         }
+
+    def _verify_runtime_safety(self, expression, dialect: str):
+        """
+        OpenAI 内部运行时校验机制实现：
+        1. 自动审计所有除法表达式，拦截没有任何 NULLIF 除零保护的分母列。
+        2. 自动审计 JOIN 条件拓扑结构，拦截没有利用主外键对齐的多对多扇出笛卡尔积。
+        """
+        from app.service.semantic_layer import semantic_layer
+        
+        # 1. 扫描除法操作，防护 Division-by-Zero 运行时崩溃
+        for div_node in expression.find_all(exp.Div):
+            denominator = div_node.expression
+            
+            # 如果分母是个数字字面量且非零，那就是安全的
+            if isinstance(denominator, exp.Literal):
+                try:
+                    val = float(denominator.this)
+                    if val != 0.0:
+                        continue
+                except:
+                    pass
+            
+            # 检查分母子树中是否包含 nullif 保护
+            has_nullif = False
+            # 包含分母自身以应对分母就是 NULLIF 的情况
+            for parent_or_child in [denominator] + list(denominator.walk()):
+                if isinstance(parent_or_child, exp.Nullif) or parent_or_child.__class__.__name__.lower() == "nullif":
+                    has_nullif = True
+                    break
+                if isinstance(parent_or_child, (exp.Anonymous, exp.Func)):
+                    f_name = parent_or_child.name.lower() if hasattr(parent_or_child, 'name') else str(parent_or_child.this).lower()
+                    if "nullif" in f_name:
+                        has_nullif = True
+                        break
+            
+            if not has_nullif:
+                raise GuardrailException(
+                    "安全审计拦截: 检测到 SQL 除法表达式的分母列未进行 NULLIF(..., 0) 除零安全保护，在数据为空或零时极易触发运行时崩溃！"
+                )
+
+        # 2. 扫描 JOIN 拓扑关联关系，防护多对多 (Many-to-Many) 笛卡尔积扇出风险
+        for join_node in expression.find_all(exp.Join):
+            join_table_node = join_node.this
+            if not isinstance(join_table_node, exp.Table):
+                continue
+            join_table_name = join_table_node.name.lower()
+            
+            from_table_node = expression.find(exp.Table)
+            if not from_table_node:
+                continue
+            from_table_name = from_table_node.name.lower()
+            
+            if join_table_name == from_table_name:
+                continue
+                
+            on_expr = join_node.args.get("on")
+            if not on_expr:
+                continue
+                
+            has_valid_key_join = False
+            eq_conditions = list(on_expr.find_all(exp.EQ))
+            
+            if not eq_conditions:
+                raise GuardrailException(
+                    f"安全审计拦截: 检测到表 `{join_table_name}` 与主表在 JOIN 时缺少等值关联条件，存在笛卡尔积多对多爆表风险！"
+                )
+                
+            for eq_node in eq_conditions:
+                left_col = eq_node.left
+                right_col = eq_node.right
+                
+                if isinstance(left_col, exp.Column) and isinstance(right_col, exp.Column):
+                    left_name = left_col.name.lower()
+                    right_name = right_col.name.lower()
+                    
+                    # 检查是否包含主键或特定外键关联
+                    if left_name == "id" or right_name == "id" or left_name.endswith("_id") or right_name.endswith("_id") or "id" in left_name or "id" in right_name:
+                        has_valid_key_join = True
+                        break
+                        
+                    # 从语义层 join_paths 寻找匹配
+                    for jp in semantic_layer.join_paths:
+                        cond_lower = jp.condition.lower()
+                        if left_name in cond_lower and right_name in cond_lower:
+                            has_valid_key_join = True
+                            break
+                            
+            if not has_valid_key_join:
+                raise GuardrailException(
+                    f"安全审计拦截: 检测到表 `{join_table_name}` 关联条件非唯一主键/外键对齐，存在多对多(Many-to-Many)扇出风险，"
+                    f"会导致指标被成倍放大计算错误！"
+                )
 
 guardrail = Guardrail()

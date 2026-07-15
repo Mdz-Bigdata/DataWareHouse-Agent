@@ -14,21 +14,23 @@ class VectorService:
         self.client = QdrantClient(location=":memory:")
         self.embedding_dim = 1536
         
-        # 定义四大独立分治的元数据集合
+        # 定义五大独立分治的元数据集合
         self.metrics_collection = "dwh_metrics"
         self.dims_collection = "dwh_dims"
         self.value_collection = "value_indices"
         self.example_collection = "few_shots"
+        self.error_correction_collection = "few_shots_corrections"
         
         # 2. 初始化 collections
         self._init_collections()
         # 3. 自动注入语义层元数据与问数 Few-shot 示例进向量库
         self.ingest_metadata()
         self.ingest_fewshot_examples()
+        self.ingest_error_corrections()
 
     def _init_collections(self):
-        """在内存中建立独立的四大集合"""
-        for name in [self.metrics_collection, self.dims_collection, self.value_collection, self.example_collection]:
+        """在内存中建立独立的五大集合"""
+        for name in [self.metrics_collection, self.dims_collection, self.value_collection, self.example_collection, self.error_correction_collection]:
             if self.client.collection_exists(collection_name=name):
                 self.client.delete_collection(collection_name=name)
             self.client.create_collection(
@@ -69,11 +71,12 @@ class VectorService:
             slot_idx = val % self.embedding_dim
             slots[slot_idx] += 1.0
             
-            for group_idx, group in enumerate(semantic_groups):
-                if any(k in gram for k in group):
-                    np.random.seed(42 + group_idx)
-                    project_vec = np.random.randn(self.embedding_dim)
-                    slots += project_vec * 0.5
+        # 别名组投影优化：在整句级别进行，不再针对每个 gram 进行冗余循环
+        for group_idx, group in enumerate(semantic_groups):
+            if any(k in text_clean for k in group if k):
+                np.random.seed(42 + group_idx)
+                project_vec = np.random.randn(self.embedding_dim)
+                slots += project_vec * 0.5
                     
         norm = np.linalg.norm(slots)
         if norm > 0:
@@ -356,11 +359,12 @@ class VectorService:
             synonyms = d.get("synonyms", [])
             sample_values = d.get("sample_values", [])
             
+            # 精排完全匹配加权 (Lexical Boosting)：当别名在问题中精确完整出现时，赋予 0.40 高额加分，强置信度命中
             if dim_name and dim_name.lower() in query_lower:
-                boost += 0.25
+                boost += 0.40
             for syn in synonyms:
                 if syn.lower() in query_lower:
-                    boost += 0.25
+                    boost += 0.40
                     break
             for val in sample_values:
                 if val.lower() in query_lower:
@@ -381,11 +385,12 @@ class VectorService:
             m_name = m.get("name") or m.get("metric_name")
             synonyms = m.get("synonyms", [])
             
+            # 精排完全匹配加权 (Lexical Boosting)
             if m_name and m_name.lower() in query_lower:
-                boost += 0.25
+                boost += 0.40
             for syn in synonyms:
                 if syn.lower() in query_lower:
-                    boost += 0.25
+                    boost += 0.40
                     break
             
             # 显式物理表名匹配加权：用户提问直接带有指标所在表名
@@ -416,6 +421,56 @@ class VectorService:
                 "dsl": hit.payload["dsl"],
                 "similarity": hit.score
             })
+        return results
+
+    def ingest_error_corrections(self):
+        """
+        从 user_memory 加载所有已存的物理纠错经验并写入 Qdrant 向量库中
+        """
+        from app.model.user_memory import user_memory
+        corrections = user_memory.get_error_corrections()
+        points = []
+        point_id = 2000
+        for item in corrections:
+            # 以报错问题和错误信息共同作为向量文本
+            text_repr = f"问题: {item['question']} | 报错: {item['error_message']}"
+            vec = self.get_embedding(text_repr)
+            payload = {
+                "question": item["question"],
+                "error_message": item["error_message"],
+                "wrong_sql": item["wrong_sql"],
+                "corrected_sql": item["corrected_sql"]
+            }
+            points.append(PointStruct(id=point_id, vector=vec, payload=payload))
+            point_id += 1
+            
+        if points:
+            self.client.upsert(collection_name=self.error_correction_collection, points=points)
+            print(f"[VectorService] Ingested {len(points)} error corrections into Qdrant.")
+
+    def recall_error_corrections(self, query: str, error_message: str = "", limit: int = 1) -> List[Dict[str, Any]]:
+        """
+        从纠错经验库中检索相关的 SQL 纠错案例
+        """
+        text_repr = f"问题: {query} | 报错: {error_message}"
+        vec = self.get_embedding(text_repr)
+        search_res = self.client.query_points(
+            collection_name=self.error_correction_collection,
+            query=vec,
+            limit=limit
+        )
+        
+        results = []
+        for hit in search_res.points:
+            # 只有置信度大于 0.40 才建议引入，免得无关纠错误导模型
+            if hit.score >= 0.40:
+                results.append({
+                    "question": hit.payload["question"],
+                    "error_message": hit.payload["error_message"],
+                    "wrong_sql": hit.payload["wrong_sql"],
+                    "corrected_sql": hit.payload["corrected_sql"],
+                    "similarity": hit.score
+                })
         return results
 
 # 初始化单例向量库服务

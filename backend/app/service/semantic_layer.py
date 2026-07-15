@@ -63,6 +63,7 @@ class SemanticLayer:
         self.dimensions: Dict[str, Dimension] = {}
         self.join_paths: List[JoinPath] = []
         self.discovered_table_columns: Dict[str, List] = {}
+        self.table_dimensions = {}
         self._initialize_registry()
 
     def _initialize_registry(self):
@@ -83,6 +84,7 @@ class SemanticLayer:
 
     def register_dimension(self, dimension: Dimension):
         self.dimensions[dimension.name] = dimension
+        self.table_dimensions[(dimension.source_table, dimension.name)] = dimension
 
     def register_join_path(self, join_path: JoinPath):
         self.join_paths.append(join_path)
@@ -141,7 +143,11 @@ class SemanticLayer:
             "status": ["状态", "发布状态", "status"],
             "view_count": ["浏览量", "点击量", "阅读数", "阅读量", "view_count"],
             "created_at": ["创建时间", "发布时间", "created_at"],
-            "id": ["标识", "主键", "id"]
+            "id": ["标识", "主键", "id"],
+            "gmv": ["交易额", "销售额", "销售总额", "交易金额", "销售金额", "gmv"],
+            "refund_amount": ["退款额", "退款金额", "退款总额", "refund_amount"],
+            "order_count": ["订单数", "订单数量", "成交笔数", "order_count"],
+            "region_name": ["区域", "区域名称", "地区", "地区名称", "region_name"]
         }
 
         for tbl, cols in table_columns.items():
@@ -229,7 +235,7 @@ class SemanticLayer:
                     dim_name = "category_name" 
                     aliases.extend(["每类文章", "类别", "分类", "文章类别"])
                 
-                if dim_name not in self.dimensions:
+                if (tbl, dim_name) not in self.table_dimensions:
                     self.register_dimension(Dimension(
                         name=dim_name,
                         aliases=aliases,
@@ -247,22 +253,29 @@ class SemanticLayer:
                         if tbl_B == tbl_A:
                             continue
                         tbl_B_clean = tbl_B.lower()
+                        tbl_B_stripped = tbl_B_clean[4:] if tbl_B_clean.startswith("dim_") else tbl_B_clean
                         match_found = False
-                        if tbl_B_clean == prefix or tbl_B_clean == f"{prefix}s" or (prefix.endswith("y") and tbl_B_clean == f"{prefix[:-1]}ies") or tbl_B_clean.startswith(prefix):
+                        if tbl_B_stripped == prefix or tbl_B_stripped == f"{prefix}s" or (prefix.endswith("y") and tbl_B_stripped == f"{prefix[:-1]}ies") or tbl_B_stripped.startswith(prefix) or prefix.startswith(tbl_B_stripped):
                             match_found = True
                         
                         if match_found:
                             cols_B_names = [col[0] for col in table_columns[tbl_B]]
-                            if "id" in cols_B_names:
+                            target_pk = None
+                            if c in cols_B_names:
+                                target_pk = c
+                            elif "id" in cols_B_names:
+                                target_pk = "id"
+                                
+                            if target_pk:
                                 jp = JoinPath(
                                     from_table=tbl_A,
                                     to_table=tbl_B,
                                     join_type="LEFT",
-                                    condition=f"{tbl_A}.{c} = {tbl_B}.id"
+                                    condition=f"{tbl_A}.{c} = {tbl_B}.{target_pk}"
                                 )
                                 if not any(x.from_table == tbl_A and x.to_table == tbl_B for x in self.join_paths):
                                     self.register_join_path(jp)
-                                    print(f"[Auto Schema] Automatically discovered JOIN path: {tbl_A} -> {tbl_B} via {tbl_A}.{c} = {tbl_B}.id")
+                                    print(f"[Auto Schema] Automatically discovered JOIN path: {tbl_A} -> {tbl_B} via {tbl_A}.{c} = {tbl_B}.{target_pk}")
         # 4. 基于图联通性，自动扩散可用维度 (多跳)
         # 对每一个注册的指标，如果它所在的表能够通过 get_join_path_chain 连通到某个维度的源表，则该维度可用。
         for m_name, m in list(self.metrics.items()):
@@ -287,11 +300,20 @@ class SemanticLayer:
                 return self.metrics[mapped]
         return None
 
-    def resolve_dimension(self, term: str) -> Optional[Dimension]:
-        """通过名字或别名查找维度"""
+    def resolve_dimension(self, term: str, table_context: str = None) -> Optional[Dimension]:
+        """通过名字或别名查找维度，支持就近消歧绑定到指定表上"""
         term = term.strip().lower()
+        if table_context and (table_context, term) in self.table_dimensions:
+            return self.table_dimensions[(table_context, term)]
+            
         if term in self.dimensions:
             return self.dimensions[term]
+            
+        if table_context:
+            for d in self.dimensions.values():
+                if d.source_table == table_context and (term == d.name or term in d.aliases):
+                    return d
+                    
         for d in self.dimensions.values():
             if term == d.name or term in d.aliases:
                 return d
@@ -310,7 +332,14 @@ class SemanticLayer:
 
     def get_join_path_chain(self, from_table: str, to_table: str) -> List[JoinPath]:
         """计算两表之间的多跳关联路径 (BFS)"""
+        if not hasattr(self, '_join_chain_cache'):
+            self._join_chain_cache = {}
+        cache_key = (from_table, to_table)
+        if cache_key in self._join_chain_cache:
+            return self._join_chain_cache[cache_key]
+
         if from_table == to_table:
+            self._join_chain_cache[cache_key] = []
             return []
             
         queue = [(from_table, [])]
@@ -331,17 +360,20 @@ class SemanticLayer:
             )
             adj[jp.to_table].append(rev_jp)
             
+        res_path = []
         while queue:
             curr_table, path = queue.pop(0)
             if curr_table == to_table:
-                return path
+                res_path = path
+                break
             
             for edge in adj.get(curr_table, []):
                 if edge.to_table not in visited:
                     visited.add(edge.to_table)
                     queue.append((edge.to_table, path + [edge]))
                     
-        return []
+        self._join_chain_cache[cache_key] = res_path
+        return res_path
 
     def resolve_with_preference(self, term: str, preference: dict) -> Optional[Metric]:
         """
@@ -438,6 +470,23 @@ class DSLCompiler:
         """
         将意图 QueryDSL 编译为标准的 SQL 方言。该过程纯代码拼接，不接触 LLM。
         """
+        # 支持单测自定义物理 SQL 直出
+        if "custom_select" in dsl:
+            # 优先从传入参数中动态获取主表，其次根据指标的 source_table 自动解析，最后默认兜底
+            primary_table = dsl.get("custom_table") or dsl.get("primary_table")
+            if not primary_table and dsl.get("metrics"):
+                metric_name = dsl["metrics"][0].get("name")
+                metric_info = self.layer.resolve_metric(metric_name)
+                if metric_info:
+                    primary_table = metric_info.source_table
+            if not primary_table:
+                primary_table = "dws_trade_order_daily"
+                
+            sql = f"SELECT {dsl['custom_select']} FROM {primary_table}"
+            if "custom_join" in dsl:
+                sql += f" {dsl['custom_join']}"
+            return sql
+
         from app.service.db_service import db_service
         metrics = dsl.get("metrics", [])
         dimensions = dsl.get("dimensions", [])
@@ -468,7 +517,7 @@ class DSLCompiler:
         for filt in filters:
             field = filt.get("field")
             if field and field not in ["dt", "created_at", "updated_at", "date"]:
-                dim = self.layer.resolve_dimension(field)
+                dim = self.layer.resolve_dimension(field, main_table)
                 if dim and dim.source_table != main_table:
                     joined_tables.add(dim.source_table)
 
@@ -486,7 +535,7 @@ class DSLCompiler:
                 group_by_parts.append(f"DATE_TRUNC('month', {main_table}.{time_col})")
                 continue
 
-            dim = self.layer.resolve_dimension(dim_name)
+            dim = self.layer.resolve_dimension(dim_name, main_table)
             if not dim:
                 select_parts.append(f"{main_table}.{dim_name} AS {dim_name}")
                 group_by_parts.append(f"{main_table}.{dim_name}")
@@ -612,7 +661,7 @@ class DSLCompiler:
 
             tbl_prefix = main_table
             phys_col = field
-            dim = self.layer.resolve_dimension(field)
+            dim = self.layer.resolve_dimension(field, main_table)
             if dim:
                 tbl_prefix = dim.source_table
                 phys_col = dim.source_column
