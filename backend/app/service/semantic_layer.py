@@ -80,12 +80,15 @@ def dimension_name_for(table: str, column: str) -> str:
 
 
 class SemanticLayer:
-    def __init__(self):
+    def __init__(self, database=None):
         self.metrics: Dict[str, Metric] = {}
         self.dimensions: Dict[str, Dimension] = {}
         self.join_paths: List[JoinPath] = []
         self.discovered_table_columns: Dict[str, List] = {}
         self.table_dimensions = {}
+        # A layer may model a source other than the currently active singleton,
+        # so metadata discovery never reads a database it was not built for.
+        self.database = database
         self._initialize_registry()
 
     def _initialize_registry(self):
@@ -116,9 +119,13 @@ class SemanticLayer:
         自动从当前物理/仿真数据库中发现所有的 schema，
         并为尚未在语义层建模的业务表加工指标、维度与 JOIN 路径关系。
         """
-        from app.service.db_service import db_service
         from sqlalchemy import inspect
-        
+
+        if self.database is not None:
+            db_service = self.database
+        else:
+            from app.service.db_service import db_service
+
         # 元数据必须与执行使用同一数据源，不能把演示表注册到物理库中。
         table_columns = {} # table_name -> list of (column_name, data_type)
         

@@ -3,6 +3,7 @@ import { EChartWidget } from "./EChartWidget";
 import { SqlCodeBlock } from "./SqlCodeBlock";
 import { AttributionWidget } from "./AttributionWidget";
 import { LineageGraphWidget } from "./LineageGraphWidget";
+import { DataSourcePicker } from "./DataSourcePicker";
 import type { AskResponse, DataSourceInfo, HistoryRecord, PreferenceProfile } from "../types";
 import { dataSourceLabel, hasQuerySql, normalizeDataSource, queryErrorTitle } from "../lib/chatPresentation";
 
@@ -294,9 +295,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ initialQuestion }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-7xl mx-auto w-full items-stretch min-h-[750px]">
       <div style={{ gridColumn: "1 / -1" }} className="flex flex-wrap items-center gap-3 text-xs" role="status" aria-live="polite">
-        <span className={`px-3 py-1.5 rounded-lg border font-semibold ${dataSource?.mode === "demo" ? "border-amber-500/40 bg-amber-950/30 text-amber-200" : "border-slate-700 bg-slate-900/70 text-slate-200"}`}>
-          当前数据源：{dataSource?.label || (dataSourceUnavailable ? "暂时无法确认" : "正在确认")}
-        </span>
+        <DataSourcePicker
+          apiBase={API_BASE}
+          active={dataSource}
+          unavailable={dataSourceUnavailable}
+          onSwitched={(info, engineDialect) => {
+            setDataSource(normalizeDataSource(info));
+            setDataSourceUnavailable(false);
+            // Keep the dialect selector aligned with the engine now answering.
+            setDialect(engineDialect);
+            // A different source models different tables, so cached answers and
+            // suggestions from the previous one must not be shown as current.
+            setResponse(null);
+            fetchHistoryAndPreference();
+          }}
+        />
         {dataSource && <span className="text-gray-400">{dataSource.description}</span>}
       </div>
       {/* 左侧：输入框 + 结果展示区 */}

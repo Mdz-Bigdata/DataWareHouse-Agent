@@ -33,8 +33,26 @@ export interface DataSourceInfo {
   label: string;
   engine?: string;
   description?: string;
-  data_origin?: "project_fixture" | "business";
+  data_origin?: "project_fixture" | "business" | "business_with_fixture";
   database_identity?: string;
+  source_id?: string;
+}
+
+export interface DataSourceOption {
+  id: string;
+  engine: string;
+  engine_label: string;
+  dialect: string;
+  origin: "builtin" | "env" | "config" | "unset";
+  destination: string;
+  available: boolean;
+  active: boolean;
+  unavailable_reason: string;
+}
+
+export interface DataSourceCatalog {
+  active_id?: string | null;
+  sources: DataSourceOption[];
 }
 
 export interface ClarificationOption {

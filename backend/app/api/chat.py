@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
-from app.schema.chat import AskRequest, AskResponse, HistoryRecord, PreferenceProfile, ErrorCorrectionRecord, AddErrorCorrectionRequest
+from app.schema.chat import (AskRequest, AskResponse, HistoryRecord, PreferenceProfile,
+                            ErrorCorrectionRecord, AddErrorCorrectionRequest,
+                            DataSourceCatalog, DataSourceInfo, SelectDataSourceRequest)
 from app.service.ask_agent import ask_agent
 from app.model.user_memory import user_memory
 
@@ -11,9 +13,23 @@ router = APIRouter(prefix="/chat", tags=["智能问数"])
 
 @router.get("/data-source")
 def get_data_source():
-    from app.service.db_service import db_service
-    from app.service.data_source_info import describe_data_source
-    return describe_data_source(db_service)
+    from app.service.data_source_manager import data_source_manager
+    return data_source_manager.describe_active()
+
+@router.get("/data-sources", response_model=DataSourceCatalog)
+def list_data_sources():
+    """列出所有受支持的数据源引擎及其配置状态，供前端筛选与切换。"""
+    from app.service.data_source_manager import data_source_manager
+    return data_source_manager.catalog()
+
+@router.post("/data-source", response_model=DataSourceInfo)
+def select_data_source(request: SelectDataSourceRequest):
+    """切换当前问数使用的数据源；不可用的数据源不会改变当前连接。"""
+    from app.service.data_source_manager import DataSourceError, data_source_manager
+    try:
+        return data_source_manager.activate(request.id)
+    except DataSourceError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
 @router.post("/ask", response_model=AskResponse)
 def ask_question(request: AskRequest):
@@ -21,6 +37,8 @@ def ask_question(request: AskRequest):
     接收自然语言问题，执行 NL2SQL 全链路问数 Agent 动作
     """
     try:
+        if request.data_source:
+            select_data_source(SelectDataSourceRequest(id=request.data_source))
         res = ask_agent.ask(
             question=request.question,
             dialect=request.dialect,

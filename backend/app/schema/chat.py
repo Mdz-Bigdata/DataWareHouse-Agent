@@ -9,6 +9,25 @@ class AskRequest(BaseModel):
     dialect: str = Field("doris", description="目标数据库方言 (clickhouse / doris / postgres)")
     user: str = Field("anonymous", description="当前提问的用户名")
     role: Optional[str] = Field("user", description="用户角色权限 (user / analyst / admin)")
+    data_source: Optional[str] = Field(None, description="查询前要切换到的数据源 id，留空则使用当前数据源")
+
+class SelectDataSourceRequest(BaseModel):
+    id: str = Field(..., description="要激活的数据源 id")
+
+class DataSourceOption(BaseModel):
+    id: str
+    engine: str
+    engine_label: str
+    dialect: str
+    origin: str
+    destination: str
+    available: bool
+    active: bool
+    unavailable_reason: str
+
+class DataSourceCatalog(BaseModel):
+    active_id: Optional[str] = None
+    sources: List[DataSourceOption]
 
 class ChartConfig(BaseModel):
     type: str
@@ -22,6 +41,7 @@ class DataSourceInfo(BaseModel):
     description: str
     data_origin: str
     database_identity: str
+    source_id: Optional[str] = None
 
 class QueryDetails(BaseModel):
     sql: str

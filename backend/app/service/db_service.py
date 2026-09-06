@@ -17,7 +17,7 @@ load_dotenv()
 # in SQLite mode; managed PostgreSQL stores the same initial rows persistently.
 
 class DBService:
-    def __init__(self):
+    def __init__(self, source=None):
         self.conn = None
         self.real_engine = None
         self.active_db_type = "sqlite"
@@ -26,7 +26,12 @@ class DBService:
         # Schemas searched for metadata, in the same precedence the database uses
         # to resolve unqualified table names.
         self.query_schemas: list[str] = []
-        if os.getenv("DB_TYPE") != "sqlite":
+        # A selected source is authoritative; otherwise the process environment decides.
+        self.source_config = source
+        if source is not None:
+            if source.engine != "sqlite":
+                self._connect(source.url, source.engine, source.pool_size, source.max_overflow)
+        elif os.getenv("DB_TYPE") != "sqlite":
             self._setup_real_database_connection()
         if self.real_engine is None:
             self.conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -151,45 +156,44 @@ class DBService:
                     
         # 3. 如果成功获取连接串，初始化连接池
         if db_url:
-            try:
-                # 自动从连接串协议中嗅探数据库类型，支持 clickhouse, postgres, mysql/doris/starrocks
-                if not db_type:
-                    db_url_lower = db_url.lower()
-                    if "postgres" in db_url_lower:
-                        db_type = "postgres"
-                    elif "clickhouse" in db_url_lower:
-                        db_type = "clickhouse"
-                    elif "mysql" in db_url_lower:
-                        db_type = "mysql"
-                    else:
-                        db_type = "mysql"
-                        
-                connect_args = {"connect_timeout": 2}
-                is_postgres = "postgres" in db_type.lower()
-                if is_postgres:
-                    # Business relations keep priority over the demonstration schema,
-                    # so unqualified names resolve exactly as metadata discovery lists them.
-                    from app.service.warehouse_migration import FIXTURE_SCHEMA
-                    connect_args["options"] = f"-c search_path=public,{FIXTURE_SCHEMA}"
-                self.real_engine = create_engine(
-                    db_url,
-                    pool_size=pool_size,
-                    max_overflow=max_overflow,
-                    pool_pre_ping=True,
-                    connect_args=connect_args
-                )
-                self.active_db_type = "postgresql" if is_postgres else db_type
-                with self.real_engine.connect() as connection:
-                    connection.execute(text("SELECT 1"))
-                    if self.real_engine.dialect.name == "postgresql":
-                        self._inspect_postgres_layout(connection)
-                print(f"[DBService] 物理数据源连接已验证！类型: {self.active_db_type.upper()}")
-            except Exception:
-                if self.real_engine is not None:
-                    self.real_engine.dispose()
-                raise RuntimeError("业务数据源初始化失败，请检查连接配置及数据库驱动；未切换到演示数仓。") from None
+            self._connect(db_url, db_type, pool_size, max_overflow)
         elif db_type and db_type.lower() != "sqlite":
             raise RuntimeError("已选择业务数据源，但没有配置数据库连接地址；未切换到演示数仓。")
+
+    def _connect(self, db_url: str, db_type: str | None, pool_size: int = 10, max_overflow: int = 20):
+        """Open and verify one physical connection pool; never fall back to demo data."""
+        from app.service.data_sources import engine_from_url, normalize_engine
+        from app.service.warehouse_migration import sync_database_url
+        if not db_url:
+            raise RuntimeError("已选择业务数据源，但没有配置数据库连接地址；未切换到演示数仓。")
+        db_url = sync_database_url(db_url)
+        # Doris and StarRocks speak MySQL's wire protocol, so only the declared
+        # type distinguishes them; the URL scheme is the fallback.
+        engine_name = normalize_engine(db_type) or engine_from_url(db_url) or "mysql"
+        try:
+            connect_args = {}
+            if engine_name in {"postgresql", "mysql", "doris", "starrocks"}:
+                connect_args["connect_timeout"] = 2
+            if engine_name == "postgresql":
+                # Business relations keep priority over the demonstration schema,
+                # so unqualified names resolve exactly as metadata discovery lists them.
+                from app.service.warehouse_migration import FIXTURE_SCHEMA
+                connect_args["options"] = f"-c search_path=public,{FIXTURE_SCHEMA}"
+            pooling = {} if engine_name in {"duckdb", "sqlite"} else {
+                "pool_size": pool_size, "max_overflow": max_overflow}
+            self.real_engine = create_engine(
+                db_url, pool_pre_ping=True, connect_args=connect_args, **pooling)
+            self.active_db_type = engine_name
+            with self.real_engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+                if self.real_engine.dialect.name == "postgresql":
+                    self._inspect_postgres_layout(connection)
+            print(f"[DBService] 物理数据源连接已验证！类型: {self.active_db_type.upper()}")
+        except Exception:
+            if self.real_engine is not None:
+                self.real_engine.dispose()
+                self.real_engine = None
+            raise RuntimeError("业务数据源初始化失败，请检查连接配置及数据库驱动；未切换到演示数仓。") from None
 
     def _inspect_postgres_layout(self, connection) -> None:
         """Record which schemas answer queries and where their rows came from."""
@@ -237,13 +241,8 @@ class DBService:
         if self.real_engine is None:
             return self._execute_sqlite(sql, dialect)
 
-        db_type_lower = self.active_db_type.lower()
-        if "postgres" in db_type_lower:
-            target_dialect = "postgres"
-        elif db_type_lower in {"clickhouse", "doris", "starrocks", "sqlite"}:
-            target_dialect = db_type_lower
-        else:
-            target_dialect = "mysql"
+        from app.service.data_sources import normalize_engine, sql_dialect
+        target_dialect = sql_dialect(normalize_engine(self.active_db_type))
 
         target_sql = sqlglot.transpile(sql, read=dialect, write=target_dialect)[0]
 

@@ -15,3 +15,4 @@ clickhouse-connect
 lz4
 zstandard
 
+duckdb-engine
