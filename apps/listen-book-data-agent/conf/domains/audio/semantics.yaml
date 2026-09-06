@@ -1,0 +1,510 @@
+domain: audio
+
+sensitive_columns:
+  - user_account.nickname
+  - user_account.avatar_url
+  - user_account.mobile
+  - user_account.email
+  - user_profile.birthday
+  - user_profile.province
+  - user_profile.city
+  - user_profile.occupation
+  - user_profile.listening_scene_payload
+  - user_message.message_title
+  - user_message.message_content
+  - content_organization.contact_name
+  - content_organization.contact_info
+  - creator_apply_record.apply_payload
+  - creator_apply_record.reject_reason
+  - content_upload_task.source_file_name
+  - content_upload_task.source_file_url
+  - content_upload_task.failure_reason
+  - content_audit_record.audit_payload
+  - content_audit_record.auditor_name
+  - content_comment.comment_text
+  - content_rating.rating_text
+  - content_report.report_text
+  - user_activity_feed.feed_content
+  - support_ticket.ticket_title
+  - support_ticket.ticket_content
+  - support_ticket.contact_mobile
+  - support_ticket.contact_email
+  - support_ticket.handle_result
+
+tables:
+  - name: dim_audio_category
+    role: dimension
+    description: 音频内容分类维表，维护频道及三级内容分类树。
+    alias: [内容分类, 音频分类, 分类]
+    columns:
+      - name: category_name
+        description: 分类名称。
+        alias: [分类名称, 类目名称]
+        sync: true
+      - name: category_type
+        description: 内容分类类型。
+        alias: [分类类型, 内容类型]
+        sync: true
+  - name: dim_content_tag
+    role: dimension
+    description: 内容标签维表，维护题材、风格、场景和受众标签。
+    alias: [内容标签, 标签]
+    columns:
+      - name: tag_name
+        description: 标签名称。
+        alias: [标签名称]
+        sync: true
+      - name: tag_type
+        description: 标签类型。
+        alias: [标签类型]
+        sync: true
+  - name: dim_channel
+    role: dimension
+    description: 渠道维表，维护 App、Web、小程序和车载端等来源。
+    alias: [渠道, 来源渠道]
+    columns:
+      - name: channel_name
+        alias: [渠道名称, 来源]
+        sync: true
+      - name: channel_type
+        alias: [渠道类型]
+        sync: true
+  - name: dim_language
+    role: dimension
+    description: 音频语言维表。
+    alias: [语言, 音频语言]
+    columns:
+      - name: language_name
+        alias: [语言名称, 语种]
+        sync: true
+  - name: dim_currency
+    role: dimension
+    description: 币种维表，定义交易金额使用的币种和精度。
+    alias: [币种, 货币]
+    columns:
+      - name: currency_code
+        alias: [币种编码, 货币编码]
+        sync: true
+      - name: currency_name
+        alias: [币种名称, 货币名称]
+        sync: true
+  - name: user_account
+    role: entity
+    description: 用户账号主表，记录注册渠道和账号状态；直接身份信息禁止问数。
+    alias: [用户, 用户账号, 听众]
+    columns:
+      - name: account_status
+        alias: [账号状态, 用户状态]
+        sync: true
+      - name: register_channel_id
+        alias: [注册渠道ID]
+  - name: user_profile
+    role: entity
+    description: 用户画像表；个人画像明细禁止问数，仅允许非敏感聚合口径。
+    alias: [用户画像, 听众画像]
+    columns:
+      - name: gender
+        alias: [性别]
+        sync: true
+  - name: member_account
+    role: entity
+    description: 用户会员账户表，记录会员等级、状态和有效期。
+    alias: [会员账户, 会员]
+    columns:
+      - name: member_level
+        alias: [会员等级, VIP等级]
+        sync: true
+      - name: member_status
+        alias: [会员状态, VIP状态]
+        sync: true
+  - name: user_follow
+    role: fact
+    description: 用户关注行为表，记录对主播、作者和机构的关注与取消。
+    alias: [关注记录, 用户关注]
+    columns:
+      - name: follow_status
+        alias: [关注状态]
+        sync: true
+      - name: followed_at
+        alias: [关注时间]
+  - name: user_preference
+    role: fact
+    description: 用户内容偏好和播放设置表。
+    alias: [用户偏好, 收听偏好]
+  - name: user_message
+    role: fact
+    description: 用户站内消息表；消息标题和正文禁止问数。
+    alias: [站内消息, 用户消息]
+  - name: content_organization
+    role: dimension
+    description: 版权方、制作方和主播机构主数据表。
+    alias: [内容机构, 版权机构, 制作机构]
+    columns:
+      - name: organization_name
+        alias: [机构名称, 版权方, 制作方]
+        sync: true
+      - name: organization_type
+        alias: [机构类型]
+        sync: true
+  - name: content_author
+    role: dimension
+    description: 内容作者主数据表。
+    alias: [作者, 作家]
+    columns:
+      - name: author_name
+        alias: [作者名称, 作者]
+        sync: true
+      - name: author_type
+        alias: [作者类型]
+        sync: true
+  - name: content_narrator
+    role: dimension
+    description: 主播和演播人主数据表。
+    alias: [主播, 演播人, 播音员]
+    columns:
+      - name: narrator_name
+        alias: [主播名称, 演播人]
+        sync: true
+      - name: follower_count
+        description: 主播当前关注数快照。
+        alias: [主播粉丝数, 关注数]
+      - name: album_count
+        description: 主播当前专辑数快照。
+        alias: [主播专辑数]
+  - name: creator_profile
+    role: entity
+    description: 入驻创作者档案表。
+    alias: [创作者, 创作者档案]
+    columns:
+      - name: creator_type
+        alias: [创作者类型]
+        sync: true
+      - name: certification_status
+        alias: [认证状态]
+        sync: true
+  - name: creator_apply_record
+    role: fact
+    description: 创作者入驻、认证及合约申请记录表。
+    alias: [创作者申请, 入驻申请]
+  - name: audio_album
+    role: entity
+    description: 有声专辑主表，记录专辑类型、分类、状态和当前汇总快照。
+    alias: [专辑, 有声书, 听书, 节目, 播客]
+    columns:
+      - name: album_title
+        alias: [专辑名称, 有声书名称, 节目名称]
+        sync: true
+      - name: album_type
+        alias: [专辑类型, 内容类型]
+        sync: true
+      - name: album_status
+        alias: [专辑状态, 上架状态]
+        sync: true
+      - name: publish_status
+        alias: [连载状态, 完结状态]
+        sync: true
+      - name: track_count
+        description: 专辑当前章节数量快照，不用于历史窗口统计。
+        alias: [章节数, 声音数]
+      - name: total_duration_seconds
+        description: 专辑当前总时长快照，单位秒。
+        alias: [专辑总时长]
+      - name: play_count
+        description: 专辑当前累计播放量快照，不用于历史窗口统计。
+        alias: [累计播放量]
+      - name: favorite_count
+        description: 专辑当前收藏量快照。
+        alias: [累计收藏量]
+      - name: rating_score
+        description: 专辑当前平均评分快照。
+        alias: [专辑评分]
+  - name: album_organization_rel
+    role: bridge
+    description: 专辑与版权方、制作方和发行方的关系表。
+    alias: [专辑机构关系]
+  - name: album_author_rel
+    role: bridge
+    description: 专辑与作者的多对多关系表。
+    alias: [专辑作者关系]
+  - name: album_narrator_rel
+    role: bridge
+    description: 专辑与主播的多对多关系表。
+    alias: [专辑主播关系, 专辑演播关系]
+  - name: album_tag_rel
+    role: bridge
+    description: 专辑与内容标签的多对多关系表。
+    alias: [专辑标签关系]
+  - name: audio_track
+    role: entity
+    description: 音频章节主表，记录章节顺序、时长、免费属性和发布状态。
+    alias: [音频章节, 章节, 声音, 单集]
+    columns:
+      - name: track_title
+        alias: [章节名称, 声音名称, 单集名称]
+        sync: true
+      - name: track_type
+        alias: [章节类型]
+        sync: true
+      - name: track_status
+        alias: [章节状态, 声音状态]
+        sync: true
+      - name: duration_seconds
+        description: 章节音频时长，单位秒。
+        alias: [章节时长, 音频时长]
+      - name: free_flag
+        alias: [是否免费, 免费章节]
+  - name: user_bookshelf
+    role: fact
+    description: 用户书架及专辑收藏记录表。
+    alias: [书架, 收藏, 专辑收藏]
+    columns:
+      - name: shelf_status
+        alias: [收藏状态, 书架状态]
+        sync: true
+  - name: track_audio_file
+    role: entity
+    description: 章节音频文件及版本质量信息表。
+    alias: [音频文件, 媒体文件]
+  - name: content_upload_task
+    role: fact
+    description: 创作者内容上传和处理任务表。
+    alias: [上传任务, 内容上传]
+  - name: content_audit_record
+    role: fact
+    description: 内容机器审核、人工审核和申诉记录表。
+    alias: [内容审核, 审核记录]
+  - name: album_update_record
+    role: fact
+    description: 专辑和章节更新事件表，用于统计内容更新。
+    alias: [专辑更新, 内容更新]
+    columns:
+      - name: updated_at_event
+        description: 内容更新事件发生时间。
+        alias: [更新时间, 更新事件时间]
+  - name: album_price_rule
+    role: fact
+    description: 专辑定价、单章定价和免费试听规则表。
+    alias: [专辑价格, 定价规则, 付费规则]
+    columns:
+      - name: price_type
+        alias: [价格类型, 付费类型]
+        sync: true
+      - name: album_price_amount
+        alias: [专辑价格]
+      - name: track_price_amount
+        alias: [章节价格]
+  - name: play_session
+    role: fact
+    description: 播放会话事实表，是时间窗口播放次数、时长和完播统计的权威来源。
+    alias: [播放记录, 播放会话, 收听记录]
+    columns:
+      - name: played_seconds
+        description: 本次会话实际播放秒数。
+        alias: [播放时长, 收听时长]
+      - name: play_status
+        alias: [播放状态, 完播状态]
+        sync: true
+  - name: listening_progress
+    role: fact
+    description: 用户对专辑章节的最新收听进度表。
+    alias: [收听进度, 播放进度]
+    columns:
+      - name: finished_flag
+        alias: [是否听完, 完播标记]
+  - name: content_comment
+    role: fact
+    description: 专辑和章节评论表；评论正文禁止问数。
+    alias: [评论, 内容评论]
+    columns:
+      - name: audit_status
+        alias: [评论审核状态]
+        sync: true
+  - name: content_rating
+    role: fact
+    description: 用户对专辑的评分表。
+    alias: [评分, 内容评分]
+    columns:
+      - name: rating_score
+        alias: [评分分数, 星级]
+  - name: user_reaction
+    role: fact
+    description: 用户点赞、点踩、分享和转发行为表。
+    alias: [用户互动, 点赞分享]
+    columns:
+      - name: reaction_type
+        alias: [互动类型, 点赞类型]
+        sync: true
+      - name: reaction_status
+        alias: [互动状态]
+        sync: true
+  - name: content_report
+    role: fact
+    description: 用户内容举报及处理记录表；举报正文禁止问数。
+    alias: [内容举报, 举报记录]
+  - name: user_activity_feed
+    role: fact
+    description: 用户和创作者动态流事件表。
+    alias: [用户动态, 创作者动态]
+  - name: support_ticket
+    role: fact
+    description: 客服反馈及工单表；联系方式和工单正文禁止问数。
+    alias: [客服工单, 用户反馈]
+  - name: vip_plan
+    role: dimension
+    description: VIP 会员套餐维表。
+    alias: [VIP套餐, 会员套餐]
+    columns:
+      - name: plan_name
+        alias: [套餐名称, VIP套餐名称]
+        sync: true
+      - name: member_level
+        alias: [套餐会员等级]
+        sync: true
+      - name: sale_price_amount
+        alias: [套餐售价, VIP价格]
+  - name: wallet_account
+    role: entity
+    description: 用户钱包当前余额账户表。
+    alias: [钱包账户, 用户钱包]
+  - name: recharge_order
+    role: fact
+    description: 钱包充值订单事实表。
+    alias: [充值订单, 充值]
+    columns:
+      - name: recharge_amount
+        alias: [充值金额]
+      - name: recharge_status
+        alias: [充值状态]
+        sync: true
+  - name: content_order
+    role: fact
+    description: 会员、专辑和章节内容订单事实表。
+    alias: [内容订单, 购买订单, 订单]
+    columns:
+      - name: order_type
+        alias: [订单类型]
+        sync: true
+      - name: order_status
+        alias: [订单状态]
+        sync: true
+      - name: payable_amount
+        alias: [应付金额, 订单金额]
+  - name: content_order_item
+    role: fact
+    description: 内容订单商品明细表。
+    alias: [订单明细, 订单商品]
+  - name: payment_record
+    role: fact
+    description: 内容订单和充值订单支付流水表，成功支付是实收口径权威来源。
+    alias: [支付记录, 支付流水]
+    columns:
+      - name: payment_amount
+        alias: [支付金额, 实收金额]
+      - name: payment_status
+        alias: [支付状态]
+        sync: true
+      - name: payment_channel
+        alias: [支付渠道]
+        sync: true
+  - name: refund_record
+    role: fact
+    description: 支付退款单事实表，成功退款是退款金额权威来源。
+    alias: [退款单, 退款记录]
+    columns:
+      - name: refund_amount
+        alias: [退款金额]
+      - name: refund_status
+        alias: [退款状态]
+        sync: true
+  - name: refund_record_item
+    role: fact
+    description: 内容订单退款商品明细表。
+    alias: [退款明细]
+  - name: entitlement_record
+    role: fact
+    description: VIP、专辑和章节权益开通及有效期记录表。
+    alias: [权益记录, 内容权益, 会员权益]
+    columns:
+      - name: entitlement_status
+        alias: [权益状态]
+        sync: true
+  - name: wallet_ledger
+    role: fact
+    description: 钱包充值、消费、退款和冻结流水事实表。
+    alias: [钱包流水, 余额流水]
+    columns:
+      - name: ledger_type
+        alias: [流水类型]
+        sync: true
+      - name: amount_delta
+        alias: [余额变动金额]
+  - name: ranking_list
+    role: dimension
+    description: 热播、热评、热搜、免费、畅销和完结榜定义表。
+    alias: [榜单, 排行榜]
+    columns:
+      - name: ranking_name
+        alias: [榜单名称]
+        sync: true
+      - name: ranking_type
+        alias: [榜单类型]
+        sync: true
+      - name: period_type
+        alias: [榜单周期, 日榜周榜月榜]
+        sync: true
+  - name: ranking_item
+    role: fact
+    description: 每日榜单排名及播放、收藏、订单统计快照表。
+    alias: [榜单明细, 排名结果]
+  - name: recommend_slot
+    role: dimension
+    description: 页面推荐位定义表。
+    alias: [推荐位, 推荐槽位]
+    columns:
+      - name: slot_name
+        alias: [推荐位名称]
+        sync: true
+      - name: page_code
+        alias: [页面编码, 推荐页面]
+        sync: true
+  - name: content_topic
+    role: dimension
+    description: 运营内容专题定义表。
+    alias: [专题, 内容专题]
+    columns:
+      - name: topic_title
+        alias: [专题名称, 专题标题]
+        sync: true
+      - name: topic_status
+        alias: [专题状态]
+        sync: true
+  - name: recommend_item
+    role: fact
+    description: 推荐位投放内容和生效时间表。
+    alias: [推荐内容, 推荐位内容]
+  - name: content_topic_item
+    role: bridge
+    description: 专题与专辑、主播及榜单的内容关系表。
+    alias: [专题内容, 专题明细]
+  - name: search_query_log
+    role: fact
+    description: 用户搜索请求、结果数和点击行为日志表。
+    alias: [搜索日志, 搜索记录]
+    columns:
+      - name: keyword
+        alias: [搜索词, 关键词, 热搜词]
+        sync: true
+      - name: clicked_flag
+        alias: [是否点击, 搜索点击]
+  - name: search_keyword_stat
+    role: fact
+    description: 按日期、渠道和关键词汇总的搜索点击统计表。
+    alias: [搜索词统计, 热搜统计]
+    columns:
+      - name: keyword
+        alias: [搜索词, 热搜词]
+        sync: true
+      - name: search_count
+        alias: [搜索次数]
+      - name: result_click_count
+        alias: [搜索结果点击次数]

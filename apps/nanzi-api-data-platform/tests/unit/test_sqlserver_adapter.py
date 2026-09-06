@@ -1,0 +1,281 @@
+"""SQL Server 适配器单元测试（Mock 连接池，无需真实数据库）。"""
+import pytest
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.services.data_adapter.factory import get_adapter
+from app.services.data_adapter.models import LogicalQuery
+from app.services.data_adapter.sqlserver import SqlServerAdapter
+from app.schemas.resource import FieldConfig, ResourceResponse
+
+
+@pytest.fixture
+def mock_config():
+    return ResourceResponse(
+        id=1,
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        resource_key="test_resource",
+        resource_name="Test",
+        resource_group="TestGroup",
+        resource_mode="TABLE",
+        table_name="test_table",
+        fields_config=[
+            FieldConfig(name="id", type="INT", label="ID"),
+            FieldConfig(name="name", type="VARCHAR", label="Name"),
+        ],
+        allowed_filters=[FieldConfig(name="id", type="INT", label="ID")],
+        default_sort="id",
+        status=1,
+    )
+
+
+def _mock_pool_with_cursor(mock_cursor: AsyncMock):
+    mock_conn = MagicMock()
+    mock_cursor_cm = MagicMock()
+    mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor_cm.__aexit__ = AsyncMock()
+    mock_conn.cursor.return_value = mock_cursor_cm
+
+    mock_pool = MagicMock()
+    mock_conn_cm = MagicMock()
+    mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn_cm.__aexit__ = AsyncMock()
+    mock_pool.acquire.return_value = mock_conn_cm
+    return mock_pool
+
+
+@pytest.mark.asyncio
+async def test_sqlserver_adapter_sort_by_protection(mock_config):
+    adapter = SqlServerAdapter(source_id=1)
+    query_valid = LogicalQuery(resource="test_resource", sort_by="name", sort_order="asc")
+    query_malicious = LogicalQuery(
+        resource="test_resource",
+        sort_by="id]; DROP TABLE users; --",
+        sort_order="desc",
+    )
+
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchall.return_value = []
+    mock_cursor.description = [("id",), ("name",)]
+
+    with patch("app.services.meta_service.MetaService.get_config", new_callable=AsyncMock) as mock_get_config, patch(
+        "app.services.pool_manager.DataSourcePoolManager.get_pool", new_callable=AsyncMock
+    ) as mock_get_pool:
+        mock_get_config.return_value = mock_config
+        mock_get_pool.return_value = _mock_pool_with_cursor(mock_cursor)
+
+        await adapter.execute(query_valid)
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "ORDER BY [name] ASC" in sql
+        assert "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY" in sql
+
+        await adapter.execute(query_malicious)
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "ORDER BY [id] DESC" in sql
+        assert "DROP TABLE" not in sql
+
+
+@pytest.mark.asyncio
+async def test_sqlserver_get_tables():
+    adapter = SqlServerAdapter(source_id=1)
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchall.return_value = [
+        ("orders", "BASE TABLE"),
+        ("order_view", "VIEW"),
+    ]
+
+    with patch(
+        "app.services.pool_manager.DataSourcePoolManager.get_pool", new_callable=AsyncMock
+    ) as mock_get_pool:
+        mock_get_pool.return_value = _mock_pool_with_cursor(mock_cursor)
+        tables = await adapter.get_tables()
+
+    assert tables == [
+        {"name": "orders", "type": "TABLE"},
+        {"name": "order_view", "type": "VIEW"},
+    ]
+    sql = mock_cursor.execute.call_args[0][0]
+    assert "INFORMATION_SCHEMA.TABLES" in sql
+
+
+@pytest.mark.asyncio
+async def test_sqlserver_build_where_operators():
+    adapter = SqlServerAdapter(source_id=1)
+    query = LogicalQuery(
+        resource="test_resource",
+        filters=[("id", "=", 1), ("id", "IN", [1, 2])],
+    )
+    where_sql, params = adapter._build_where(query, ResourceResponse(
+        id=1,
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        resource_key="k",
+        resource_name="n",
+        resource_group="g",
+        resource_mode="TABLE",
+        table_name="t",
+        fields_config=[],
+        allowed_filters=[FieldConfig(name="id", type="INT", label="ID")],
+        default_sort="id",
+        status=1,
+    ))
+    assert "[id] = ?" in where_sql
+    assert "[id] IN (?, ?)" in where_sql
+    assert params == (1, 1, 2)
+
+
+def test_build_sqlserver_dsn():
+    from types import SimpleNamespace
+    from app.services.pool_manager import DataSourcePoolManager
+
+    ds = SimpleNamespace(
+        host="sql.example.com",
+        port=1433,
+        database_name="warehouse",
+        username="sa",
+        password="secret",
+        extra_params={"trust_server_certificate": True, "odbc_driver": "ODBC Driver 18 for SQL Server"},
+    )
+    with patch("app.services.pool_manager.aioodbc", MagicMock()):
+        dsn = DataSourcePoolManager._build_sqlserver_dsn(ds)
+    assert "DRIVER={ODBC Driver 18 for SQL Server}" in dsn
+    assert "SERVER=sql.example.com,1433" in dsn
+    assert "DATABASE=warehouse" in dsn
+    assert "UID=sa" in dsn
+    assert "Encrypt=no" in dsn
+    assert "TrustServerCertificate=yes" in dsn
+
+
+def test_build_sqlserver_dsn_encrypt_enabled():
+    from types import SimpleNamespace
+    from app.services.pool_manager import DataSourcePoolManager
+
+    ds = SimpleNamespace(
+        host="sql.example.com",
+        port=1433,
+        database_name="warehouse",
+        username="sa",
+        password="secret",
+        extra_params={"encrypt": True, "trust_server_certificate": False},
+    )
+    with patch("app.services.pool_manager.aioodbc", MagicMock()):
+        dsn = DataSourcePoolManager._build_sqlserver_dsn(ds)
+    assert "Encrypt=yes" in dsn
+    assert "TrustServerCertificate" not in dsn
+
+
+def test_build_sqlserver_dsn_uses_2014_compat_mode_defaults():
+    from types import SimpleNamespace
+    from app.services.pool_manager import DataSourcePoolManager
+
+    ds = SimpleNamespace(
+        host="sql2014.example.com",
+        port=1433,
+        database_name="legacy",
+        username="sa",
+        password="secret",
+        extra_params={"compat_mode": "sqlserver_2014"},
+    )
+    with patch("app.services.pool_manager.aioodbc", MagicMock()):
+        dsn = DataSourcePoolManager._build_sqlserver_dsn(ds)
+    assert "DRIVER={ODBC Driver 17 for SQL Server}" in dsn
+    assert "Encrypt=no" in dsn
+    assert "TrustServerCertificate=yes" in dsn
+
+
+def test_build_sqlserver_dsn_parses_string_booleans():
+    from types import SimpleNamespace
+    from app.services.pool_manager import DataSourcePoolManager
+
+    ds = SimpleNamespace(
+        host="sql.example.com",
+        port=1433,
+        database_name="warehouse",
+        username="sa",
+        password="secret",
+        extra_params={"encrypt": "false", "trust_server_certificate": "true"},
+    )
+    with patch("app.services.pool_manager.aioodbc", MagicMock()):
+        dsn = DataSourcePoolManager._build_sqlserver_dsn(ds)
+    assert "Encrypt=no" in dsn
+    assert "TrustServerCertificate=yes" in dsn
+
+
+def test_sqlserver_unsupported_protocol_error_has_actionable_hint():
+    from types import SimpleNamespace
+    from app.api.portal.endpoints.datasource import _format_connection_error
+
+    datasource = SimpleNamespace(source_type="sqlserver")
+    message = _format_connection_error(
+        datasource,
+        Exception(
+            "('08001', '[08001] [Microsoft][ODBC Driver 18 for SQL Server]SSL Provider: "
+            "[error:0A000102:SSL routines::unsupported protocol] (-1) (SQLDriverConnect)')"
+        ),
+    )
+
+    assert "ODBC Driver 17 for SQL Server" in message
+    assert "TLS 1.2" in message
+    assert "强制加密" in message
+
+
+@pytest.mark.asyncio
+async def test_factory_returns_sqlserver_adapter():
+    from types import SimpleNamespace
+
+    ds = SimpleNamespace(id=99, source_type="sqlserver", status=1)
+    with patch(
+        "app.services.datasource_service.DataSourceService.get_datasource_by_name",
+        new_callable=AsyncMock,
+        return_value=ds,
+    ):
+        adapter = await get_adapter("mssql_prod")
+    assert isinstance(adapter, SqlServerAdapter)
+    assert adapter.source_id == 99
+
+
+def test_prepare_pyodbc_params_converts_named_markers():
+    sql = """
+        SELECT m.definition
+        FROM sys.sql_modules m
+        WHERE o.name = :name AND o.type = 'V'
+    """
+    bound_sql, bound_args = SqlServerAdapter._prepare_pyodbc_params(sql, {"name": "v_bj_stock"})
+    assert ":name" not in bound_sql
+    assert "?" in bound_sql
+    assert bound_args == ("v_bj_stock",)
+
+
+def test_prepare_pyodbc_params_repeated_marker():
+    sql = "WHERE a = :name OR b = :name"
+    bound_sql, bound_args = SqlServerAdapter._prepare_pyodbc_params(sql, {"name": "t1"})
+    assert bound_sql.count("?") == 2
+    assert bound_args == ("t1", "t1")
+
+
+@pytest.mark.asyncio
+async def test_sqlserver_execute_sql_named_params():
+    adapter = SqlServerAdapter(source_id=1)
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchall.return_value = [
+        ("id", "int", None, None, None, "NO", None),
+    ]
+    mock_cursor.description = [("COLUMN_NAME",)]
+
+    with patch(
+        "app.services.pool_manager.DataSourcePoolManager.get_pool", new_callable=AsyncMock
+    ) as mock_get_pool:
+        mock_get_pool.return_value = _mock_pool_with_cursor(mock_cursor)
+
+        sql = """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = :name AND TABLE_CATALOG = DB_NAME()
+        """
+        await adapter.execute_sql(sql, {"name": "t_wxmp_users"})
+
+    bound_sql, bound_args = mock_cursor.execute.call_args[0]
+    assert ":name" not in bound_sql
+    assert "TABLE_NAME = ?" in bound_sql
+    assert bound_args == ("t_wxmp_users",)

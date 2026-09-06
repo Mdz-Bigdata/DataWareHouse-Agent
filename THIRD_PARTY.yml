@@ -1,0 +1,33 @@
+version: 1
+imports:
+  - id: nanzi-api-data-platform
+    repository: https://github.com/RandyChen1985/nanzi-api-data-platform.git
+    commit: 56c7acc2878952b0e246ea72f3ca8d12f392dd7f
+    imported_path: apps/nanzi-api-data-platform
+    license: MIT
+    license_file: apps/nanzi-api-data-platform/LICENSE
+  - id: nanzi-ai-agent-platform
+    repository: https://github.com/RandyChen1985/nanzi-ai-agent-platform.git
+    commit: 1cf117cefa3dd6ecf0fabb2581398a3307bb64ca
+    imported_path: apps/nanzi-ai-agent-platform
+    license: MIT
+    license_file: apps/nanzi-ai-agent-platform/LICENSE
+  - id: listen-book-data-agent
+    repository: https://gitee.com/laixiaogang/listen-book-data-agent
+    commit: bcc9fa90bf77673156498959ee4bbee82d73308d
+    imported_path: apps/listen-book-data-agent
+    license: authorized-by-project-owner
+    authorization_note: User confirmed authorization in the Codex task on 2026-07-22.
+
+excluded_patterns:
+  - .git
+  - .env
+  - .venv
+  - venv
+  - node_modules
+  - dist
+  - __pycache__
+  - '*.pyc'
+  - '*.log'
+  - '.idea'
+

@@ -1,0 +1,134 @@
+name: listenbook-data-agent
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: listenbook-data-agent-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${META_DB_NAME:-listenbook_meta}
+      MYSQL_USER: ${MYSQL_APP_USER:-listenbook}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?MYSQL_APP_PASSWORD is required}
+    ports:
+      - "${MYSQL_PORT:-23306}:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    build: ./elasticsearch
+    container_name: listenbook-data-agent-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+    ports:
+      - "${ES_PORT:-19200}:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.16
+    container_name: listenbook-data-agent-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-16433}:6333"
+      - "${QDRANT_GRPC_PORT:-16434}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/6333"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    container_name: listenbook-data-agent-embedding
+    restart: unless-stopped
+    environment:
+      MODEL_ID: /models/bge-large-zh-v1.5
+      MAX_CONCURRENT_REQUESTS: "16"
+      MAX_BATCH_TOKENS: "16384"
+    ports:
+      - "${EMBEDDING_PORT:-8081}:80"
+    volumes:
+      - "${EMBEDDING_MODEL_PATH:?EMBEDDING_MODEL_PATH is required}:/models/bge-large-zh-v1.5:ro"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -fsS http://127.0.0.1:80/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Phase 4.1：Redis 缓存。不可用时 app 自动降级为直查。
+  redis:
+    image: redis:7-alpine
+    container_name: listenbook-data-agent-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Phase 3.3：可选数据源（默认不启动）。需要时取消注释，并把 app_config.yaml 的
+  # db_dw.dialect 改为对应方言，同时调整 AUDIO_DB_HOST/PORT 指向对应容器。
+  #
+  # clickhouse:
+  #   image: clickhouse/clickhouse-server:24.8
+  #   container_name: listenbook-data-agent-clickhouse
+  #   restart: unless-stopped
+  #   environment:
+  #     CLICKHOUSE_USER: ${CK_USER:-default}
+  #     CLICKHOUSE_PASSWORD: ${CK_PASSWORD:-clickhouse}
+  #     CLICKHOUSE_DB: ${CK_DB:-audio}
+  #   ports:
+  #     - "${CK_PORT:-19000}:9000"
+  #     - "${CK_HTTP_PORT:-18123}:8123"
+  #   volumes:
+  #     - clickhouse_data:/var/lib/clickhouse
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #
+  # doris:
+  #   # Doris 需要单独的 FE + BE 两个服务，这里仅示意 FE。
+  #   # 完整部署参考 https://doris.apache.org/docs/install/docker-manual
+  #   image: apache/doris:doris-all-in-one-2.1
+  #   container_name: listenbook-data-agent-doris
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${DORIS_PORT:-19030}:9030"
+  #     - "${DORIS_HTTP_PORT:-18030}:8030"
+  #   volumes:
+  #     - doris_data:/opt/apache-doris
+
+volumes:
+  mysql_data:
+  es_data:
+  qdrant_data:
+  redis_data:
+  # clickhouse_data:
+  # doris_data:

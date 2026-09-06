@@ -1,0 +1,70 @@
+schema_version: queries/v1
+domain: audio
+queries:
+  - case_key: album_count_by_status
+    question: 统计指定状态的专辑数量
+    dialect: mysql
+    sql_template: >-
+      SELECT album_status, COUNT(*) AS album_count
+      FROM audio_album
+      WHERE album_status = :p1
+      GROUP BY album_status
+    parameter_schema:
+      - name: p1
+        type: string
+        required: true
+    expected_fields: [album_status, album_count]
+    expected_metrics: [album_count]
+    assertions:
+      - kind: row_count
+        operator: gte
+        value: 0
+      - kind: not_null
+        field: album_count
+
+  - case_key: play_count_in_date_range
+    question: 统计指定日期范围内的播放次数
+    dialect: mysql
+    sql_template: >-
+      SELECT COUNT(*) AS play_count
+      FROM play_session
+      WHERE play_start_at >= :p1 AND play_start_at < :p2
+    parameter_schema:
+      - name: p1
+        type: datetime
+        required: true
+      - name: p2
+        type: datetime
+        required: true
+    expected_fields: [play_count]
+    expected_metrics: [play_count]
+    assertions:
+      - kind: row_count
+        operator: eq
+        value: 1
+      - kind: not_null
+        field: play_count
+
+  - case_key: top_albums_by_play_count
+    question: 查询指定分类播放次数最高的专辑
+    dialect: mysql
+    sql_template: >-
+      SELECT a.id, a.album_title, COUNT(p.id) AS play_count
+      FROM audio_album a
+      JOIN play_session p ON a.id = p.album_id
+      WHERE a.category_id = :p1
+      GROUP BY a.id, a.album_title
+      ORDER BY play_count DESC
+      LIMIT 20
+    parameter_schema:
+      - name: p1
+        type: integer
+        required: true
+    expected_fields: [id, album_title, play_count]
+    expected_metrics: [play_count]
+    assertions:
+      - kind: row_count
+        operator: lte
+        value: 20
+      - kind: not_null
+        field: play_count

@@ -1,0 +1,7 @@
+- [x] **数据库迁移**：创建 SQL 脚本，在 `ai_agent_execution_history` 表中添加 `agent_version` 字段。 <!-- type: migration -->
+- [x] **模型更新**：更新 `app/models/audit.py` (AgentExecutionHistory) 和 `app/schemas/agent.py` (ChatConfig) 以包含 `agent_version`。 <!-- type: backend -->
+- [x] **服务层更新**：更新 `AgentManagerService`，在解析 `ChatConfig` 时带入版本号。 <!-- type: backend -->
+- [x] **审计逻辑更新**：更新 `AuditManager.save_history` 和 `AgentService`，确保版本号被持久化。 <!-- type: backend -->
+- [x] **API 实现**：在 `app/api/v1/endpoints/chat.py` 中实现 `GET /api/v1/chat/history` 接口。 <!-- type: backend -->
+- [x] **测试**：添加针对历史过滤和持久化的单元测试。 <!-- type: test -->
+- [x] **文档更新**：更新 `tests/CHECKLIST.md`，添加历史记录功能的测试项。 <!-- type: docs -->

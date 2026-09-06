@@ -1,0 +1,6 @@
+slot_code,slot_name,page_code,slot_type,max_item_count,source_url,source
+LR_SLOT_HOME_每日推荐,每日推荐,home,album_list,8,https://www.lrts.me/book/recommendEveryDay,lrts
+LR_SLOT_HOME_热门节目,热门节目,home,album_list,8,https://www.lrts.me/explore/album,lrts
+LR_SLOT_HOME_主播推荐,主播推荐,home,narrator_list,6,https://www.lrts.me/explore/anchor,lrts
+LR_SLOT_HOME_TOPIC,精彩专题,home,topic_list,3,https://www.lrts.me/,lrts
+LR_SLOT_HOME_ORG_BOOK,机构热书,home,album_list,8,https://www.lrts.me/,lrts

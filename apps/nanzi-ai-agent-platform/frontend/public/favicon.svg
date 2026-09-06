@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="icon_grad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%" filterUnits="objectBoundingBox">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background Shape -->
+  <rect x="48" y="48" width="416" height="416" rx="96" fill="#0F172A" stroke="url(#icon_grad)" stroke-width="8" />
+  
+  <!-- Neural Pattern -->
+  <g filter="url(#glow)">
+    <!-- Central Core -->
+    <circle cx="256" cy="256" r="40" fill="white" fill-opacity="0.9" />
+    <!-- Neurons/Nodes -->
+    <circle cx="156" cy="256" r="15" fill="white" fill-opacity="0.6" />
+    <circle cx="356" cy="256" r="15" fill="white" fill-opacity="0.6" />
+    <circle cx="256" cy="156" r="15" fill="white" fill-opacity="0.6" />
+    <circle cx="256" cy="356" r="15" fill="white" fill-opacity="0.6" />
+    
+    <!-- Connections -->
+    <path d="M171 256 H216" stroke="white" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 8" />
+    <path d="M296 256 H341" stroke="white" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 8" />
+    <path d="M256 171 V216" stroke="white" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 8" />
+    <path d="M256 296 V341" stroke="white" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 8" />
+    
+    <!-- Outer Rings -->
+    <path d="M256 80 A176 176 0 0 1 432 256" stroke="url(#icon_grad)" stroke-width="12" stroke-linecap="round" />
+    <path d="M256 432 A176 176 0 0 1 80 256" stroke="url(#icon_grad)" stroke-width="12" stroke-linecap="round" />
+  </g>
+</svg>

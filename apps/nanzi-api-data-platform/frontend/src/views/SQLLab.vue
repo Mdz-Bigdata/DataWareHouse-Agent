@@ -1,0 +1,2716 @@
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { 
+  CircleStackIcon, SparklesIcon, XMarkIcon, CubeIcon,
+  ChevronRightIcon, ChevronUpIcon, ChevronDownIcon, QuestionMarkCircleIcon, 
+  ArrowsPointingOutIcon, ArrowsPointingInIcon, ExclamationTriangleIcon, BeakerIcon,
+  ClipboardDocumentIcon, PlayIcon, TableCellsIcon,
+} from '@heroicons/vue/24/outline'
+
+import axios from '../utils/axios'
+import { useToast } from '../composables/useToast'
+import { copyToClipboard } from '@/utils/clipboard'
+import { useFullscreen } from '../composables/useFullscreen'
+import { isSystemResourceGroup, sortResourceGroups, SYSTEM_RESOURCE_GROUP } from '@/types/resource'
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+
+// Components
+import SchemaSidebar from '../components/sqllab/SchemaSidebar.vue'
+import SqlEditor from '../components/sqllab/SqlEditor.vue'
+import ResultPanel from '../components/sqllab/ResultPanel.vue'
+import ResizeHandle from '../components/common/ResizeHandle.vue'
+import AnalysisChat from '../components/sqllab/AnalysisChat.vue'
+import LabSavedQueriesPanel from '../components/sqllab/LabSavedQueriesPanel.vue'
+import LabExportPanel from '../components/sqllab/LabExportPanel.vue'
+import LabSqlDiff from '../components/sqllab/LabSqlDiff.vue'
+import LabAiFeedbackBar from '../components/sqllab/LabAiFeedbackBar.vue'
+import LabPublishSuccessModal from '../components/sqllab/LabPublishSuccessModal.vue'
+import LabApiTestModal from '../components/sqllab/LabApiTestModal.vue'
+import LabTableExplorer from '../components/sqllab/LabTableExplorer.vue'
+import LabResultDataView from '../components/sqllab/LabResultDataView.vue'
+import Tooltip from '../components/common/Tooltip.vue'
+import { formatLabSqlSafe } from '../utils/formatLabSql'
+
+const { showToast } = useToast()
+const router = useRouter()
+const { isFullscreen, toggleFullscreen } = useFullscreen()
+
+// --- State ---
+const labMode = ref<'api' | 'analyst'>((localStorage.getItem('sqllab_mode') as any) || 'api')
+const showAnalysisChat = ref(false)
+const showExportConfirm = ref(false)
+const showModeToast = ref(false)
+const modeToastMsg = ref('')
+const showAiErrorModal = ref(false)
+const aiErrorMessage = ref('')
+const currentAbortController = ref<AbortController | null>(null)
+const queryAbortController = ref<AbortController | null>(null)
+const unmaskData = ref(localStorage.getItem('sqllab_unmask') === '1')
+const previewOffset = ref(0)
+const totalCount = ref<number | null>(null)
+const explainResult = ref<PreviewResult | null>(null)
+const showSavedQueries = ref(false)
+const showTableExplorer = ref(false)
+const sidebarFilterSelected = ref(false)
+const recentExplorerTables = ref<string[]>([])
+const showExportPanel = ref(false)
+const showSqlDiff = ref(false)
+const sqlDiffData = ref({ original: '', modified: '' })
+const joinPaths = ref<any[]>([])
+const showRiskConfirm = ref(false)
+const pendingRunSql = ref<string | undefined>(undefined)
+const showPublishCheck = ref(false)
+const publishCheckResult = ref<any>(null)
+const sensitiveWarnings = ref<{ level: string; message: string }[]>([])
+const aiAutoRun = ref(localStorage.getItem('sqllab_ai_auto_run') === '1')
+const showPublishSuccess = ref(false)
+const publishedResourceKey = ref('')
+const showApiTestModal = ref(false)
+const publishSqlDiff = ref({ original: '', modified: '' })
+const showPublishSqlDiff = ref(false)
+
+const showTableDetailModal = ref(false)
+const detailTable = ref('')
+const detailLoading = ref(false)
+const detailColumns = ref<{name: string, type: string, comment: string}[]>([])
+const detailActiveTab = ref<'structure' | 'preview'>('preview')
+const detailPreviewData = ref<any>(null)
+const detailPreviewLoading = ref(false)
+const detailPreviewError = ref('')
+const DETAIL_PREVIEW_LIMIT_OPTIONS = [50, 100, 200, 500] as const
+type DetailPreviewLimit = (typeof DETAIL_PREVIEW_LIMIT_OPTIONS)[number]
+
+const loadDetailPreviewLimit = (): DetailPreviewLimit => {
+  const saved = Number(localStorage.getItem('sqllab_detail_preview_limit'))
+  return (DETAIL_PREVIEW_LIMIT_OPTIONS as readonly number[]).includes(saved) ? (saved as DetailPreviewLimit) : 50
+}
+
+const detailPreviewLimit = ref<DetailPreviewLimit>(loadDetailPreviewLimit())
+const detailPreviewOffset = ref(0)
+const detailTotalCount = ref<number | null>(null)
+const detailCompareSnapshot = ref<PreviewResult | null>(null)
+const showDetailExportPanel = ref(false)
+const showDetailExportConfirm = ref(false)
+const analysisOverride = ref<{ sql: string; data: any[][]; columns: { name: string; type: string }[] } | null>(null)
+
+const detailPreviewSql = computed(() => `SELECT * FROM ${detailTable.value}`)
+const analysisChatQuery = computed(() => analysisOverride.value?.sql ?? currentTab.value?.sql)
+const analysisChatData = computed(() => analysisOverride.value?.data ?? currentTab.value?.result?.rows)
+const analysisChatColumns = computed(() => analysisOverride.value?.columns ?? currentTab.value?.result?.columns)
+
+watch(showAnalysisChat, (open) => {
+  if (!open) analysisOverride.value = null
+})
+
+const setLabMode = (mode: 'api' | 'analyst') => {
+  labMode.value = mode
+  localStorage.setItem('sqllab_mode', mode)
+  
+  // Enforce layout based on mode
+  sidebarCollapsed.value = mode === 'api'
+  
+  modeToastMsg.value = `已切换至 ${mode === 'api' ? '🛠️ API 调试' : '📊 自助取数'} 模式`
+  showModeToast.value = true
+  setTimeout(() => { showModeToast.value = false }, 2000)
+}
+
+// Layout State
+const sidebarWidth = ref(300)
+const editorHeight = ref(550)
+const sqllabContainer = ref<HTMLElement | null>(null)
+
+watch(isFullscreen, (val) => {
+  if (val) editorHeight.value = window.innerHeight - 200
+  else editorHeight.value = 550
+})
+
+const handleSidebarResize = (newX: number) => { if (newX > 150 && newX < 600) sidebarWidth.value = newX }
+const handleEditorResize = (newY: number) => {
+  const container = sqllabContainer.value
+  if (container) {
+    const rect = container.getBoundingClientRect()
+    const newHeight = newY - rect.top - 180 
+    if (newHeight > 150 && newHeight < 1500) editorHeight.value = newHeight
+  }
+}
+
+const hasPerm = (code: string) => {
+  const info = localStorage.getItem('user_info')
+  if (!info) return false
+  const user = JSON.parse(info)
+  if (user.role === 'admin') return true
+  return user.permissions?.elements?.includes(code)
+}
+
+const hasApiMode = computed(() => hasPerm('element:lab:mode_api'))
+const hasAnalystMode = computed(() => hasPerm('element:lab:mode_analyst'))
+const isAdmin = computed(() => {
+  const info = localStorage.getItem('user_info')
+  if (!info) return false
+  const user = JSON.parse(info)
+  return user.role === 'admin'
+})
+const noLabModeAccess = computed(() => !hasApiMode.value && !hasAnalystMode.value)
+
+// --- Interfaces ---
+interface DataSource { id: number; source_name: string; source_type: string }
+interface PreviewResult { columns: { name: string; type: string }[]; rows: any[][]; execution_time_ms: number; scanned_rows: number }
+interface QueryTab {
+  id: string; name: string; sql: string; testParams: Record<string, any>; result: PreviewResult | null;
+  error: string | null; executing: boolean; activeSubTab: 'result' | 'ai' | 'explain' | 'debug';
+  aiContent: string; optimizedSql: string; aiDetectedParams: string[]; columnLabels: Record<string, string>;
+  emptyTestPassed: boolean;
+  recalledContext?: any[];
+  lastAiPrompt?: string;
+  aiFeedbackRating?: number | null;
+  aiFeedbackBarDismissed?: boolean;
+  compareSnapshot?: PreviewResult | null;
+}
+
+// --- Tab Management ---
+const tabs = ref<QueryTab[]>([])
+const activeTabIndex = ref(0)
+const dataSources = ref<DataSource[]>([])
+const selectedSourceId = ref<number | null>(null)
+const loadingSources = ref(false)
+const columnsCache = ref<Record<string, {name: string, type: string}[]>>({})
+
+const aiPlaceholder = computed(() => {
+  if (autoContext.value) {
+    return "输入业务问题（如：查询最近7天各机房的PUE趋势），AI 将自动寻找关联表与指标..."
+  }
+  if (selectedTables.value.length > 0) {
+    return `已锁定勾选的 ${selectedTables.value.length} 张表，请输入 SQL 指令...`
+  }
+  return "请在左侧勾选数据表，或开启“智能关联元数据”直接提问..."
+})
+
+const createTab = (initialSql?: string, tabName?: string) => {
+  const id = Math.random().toString(36).substring(7)
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  tabs.value.push({
+    id, name: tabName?.trim() || `查询 ${tabs.value.length + 1}`, sql: initialSql ? formatLabSqlSafe(initialSql, source?.source_type || 'mysql') : '',
+    testParams: { user_pattern: '%' }, result: null, error: null, executing: false, activeSubTab: 'result',
+    aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
+    recalledContext: [], compareSnapshot: null, lastAiPrompt: undefined, aiFeedbackRating: null,
+    aiFeedbackBarDismissed: false,
+  })
+  activeTabIndex.value = tabs.value.length - 1
+}
+
+const closeTab = (index: number) => {
+  if (tabs.value.length <= 1) return
+  tabs.value.splice(index, 1)
+  if (activeTabIndex.value >= tabs.value.length) activeTabIndex.value = tabs.value.length - 1
+}
+
+const closeAllTabs = () => {
+  tabs.value = []
+  createTab()
+  activeTabIndex.value = 0
+  showToast('已关闭所有查询标签页', 'info')
+}
+
+const closeOtherTabs = (index: number) => {
+  if (index < 0 || index >= tabs.value.length) return
+  const targetTab = tabs.value[index]
+  if (targetTab) {
+    tabs.value = [targetTab]
+    activeTabIndex.value = 0
+    showToast('已关闭其他标签页', 'info')
+  }
+}
+
+// --- Sources & Metadata ---
+
+const saveTabs = () => {
+  const data = tabs.value.map(t => ({
+    name: t.name,
+    sql: t.sql,
+    testParams: t.testParams,
+    lastAiPrompt: t.lastAiPrompt || '',
+    aiFeedbackRating: t.aiFeedbackRating ?? null,
+    aiFeedbackBarDismissed: !!t.aiFeedbackBarDismissed,
+  }))
+  localStorage.setItem('sql_lab_tabs', JSON.stringify(data))
+}
+
+const loadTabs = () => {
+  const saved = localStorage.getItem('sql_lab_tabs')
+  if (saved) {
+    try {
+      const data = JSON.parse(saved)
+      data.forEach((d: any) => {
+        tabs.value.push({
+          id: Math.random().toString(36).substring(7), name: d.name, sql: d.sql, testParams: d.testParams,
+          result: null, error: null, executing: false, activeSubTab: 'result',
+          aiContent: '', optimizedSql: '', aiDetectedParams: [], columnLabels: {}, emptyTestPassed: false,
+          recalledContext: [], compareSnapshot: null,
+          lastAiPrompt: d.lastAiPrompt || undefined,
+          aiFeedbackRating: d.aiFeedbackRating ?? null,
+          aiFeedbackBarDismissed: !!d.aiFeedbackBarDismissed,
+        })
+      })
+    } catch (e) { createTab() }
+  }
+  if (tabs.value.length === 0) createTab()
+}
+watch(tabs, saveTabs, { deep: true })
+
+// --- AI Logic ---
+const isAiEnabled = ref(false)
+const aiLoading = ref(false)
+const generating = ref(false)
+const aiPrompt = ref('')
+const aiInputRef = ref<HTMLInputElement | null>(null)
+const sidebarCollapsed = ref(false)
+const autoContext = ref(false)
+const metaStats = ref({ dataset_count: 0, table_count: 0 })
+const isVectorSupported = ref(true)
+
+const checkVectorSupport = async () => {
+  try {
+    const res = await axios.post('/api/portal/system/test-connection/vector')
+    isVectorSupported.value = res.data.status === 'success'
+    // 如果不支持，强制关闭智能关联
+    if (!isVectorSupported.value) {
+      autoContext.value = false
+    }
+  } catch (e) {
+    isVectorSupported.value = false
+    autoContext.value = false
+  }
+}
+
+const toggleAutoContext = () => {
+  if (!isVectorSupported.value) return
+  autoContext.value = !autoContext.value
+  // 如果切换到开启状态，自动清除手动勾选的表，确保纯净的智能关联体验
+  if (autoContext.value) {
+    selectedTables.value = []
+    showToast('已开启智能关联模式，AI 将自动寻找业务资产', 'info')
+  } else {
+    showToast('已关闭智能关联，您可以手动勾选左侧数据表', 'info')
+  }
+}
+
+// --- AI Debug Logs ---
+const aiLogs = ref<{timestamp: number, type: 'info' | 'error' | 'success', msg: string}[]>([])
+const addAiLog = (msg: string, type: 'info' | 'error' | 'success' = 'info') => {
+  aiLogs.value.push({ timestamp: Date.now(), type, msg })
+  // Keep last 100 logs
+  if (aiLogs.value.length > 100) aiLogs.value.shift()
+}
+const clearAiLogs = () => { aiLogs.value = [] }
+
+// --- Tab Management ---
+const availableTables = ref<any[]>([])
+const selectedTables = ref<string[]>([])
+const loadingTables = ref(false)
+const showTableSelector = ref(false)
+const flashTableTitle = ref(false)
+const showSuggestionModal = ref(false)
+const suggestions = ref<{title: string, description: string, sql: string}[]>([])
+const loadingSuggestions = ref(false)
+const aiContextTable = ref<string | null>(null)
+const selectedSuggestionIdx = ref(0)
+const cachedSuggestionKey = ref('')
+
+const buildSuggestionCacheKey = (
+  sourceId: number,
+  tables: string[] | null,
+  contextTable: string | null,
+  mode: string,
+) => {
+  const tablesKey = tables?.length ? [...tables].sort().join('\0') : ''
+  return `${sourceId}|${mode}|${contextTable ?? ''}|${tablesKey}`
+}
+
+const hasCachedGlobalSuggestions = computed(() => {
+  if (!selectedSourceId.value || suggestions.value.length === 0) return false
+  const globalKey = buildSuggestionCacheKey(
+    selectedSourceId.value,
+    selectedTables.value.length > 0 ? selectedTables.value : null,
+    null,
+    labMode.value,
+  )
+  return cachedSuggestionKey.value === globalKey
+})
+const queryHistory = ref<{sql: string, params: any, timestamp: number, execution_time_ms?: number, row_count?: number, success?: boolean}[]>([])
+
+const selectedSuggestion = computed(() => suggestions.value[selectedSuggestionIdx.value] ?? null)
+
+const suggestionModalSubtitle = computed(() => {
+  if (aiContextTable.value) return `基于表「${aiContextTable.value}」生成`
+  if (selectedTables.value.length > 0) return `基于已选 ${selectedTables.value.length} 张表`
+  return '基于当前数据源元数据智能推荐'
+})
+
+watch(showSuggestionModal, (open) => {
+  if (open) selectedSuggestionIdx.value = 0
+})
+
+const adoptSuggestion = (sql: string, title?: string) => {
+  createTab(sql, title)
+  showSuggestionModal.value = false
+  showToast('已采用推荐查询', 'success')
+}
+
+const adoptAllSuggestions = () => {
+  if (!suggestions.value.length) return
+  suggestions.value.forEach((item, idx) => {
+    createTab(item.sql, item.title || `推荐 ${idx + 1}`)
+  })
+  showSuggestionModal.value = false
+  showToast(`已采用全部 ${suggestions.value.length} 个推荐查询`, 'success')
+}
+
+const copySuggestionSql = async (sql: string) => {
+  const success = await copyToClipboard(sql)
+  if (success) {
+    showToast('SQL 已复制到剪贴板', 'success')
+  } else {
+    showToast('复制失败，请手动选择复制', 'error')
+  }
+}
+
+type AiTaskType = 'prompt' | 'profile' | 'suggest-global' | 'suggest-table' | null
+
+const isAiProcessing = computed(() => generating.value || loadingSuggestions.value)
+const aiTaskType = ref<AiTaskType>(null)
+const profileGenerateTable = ref('')
+const showAiStatusBar = ref(false)
+const aiElapsedSec = ref(0)
+let aiStatusDelayTimer: ReturnType<typeof setTimeout> | null = null
+let aiElapsedTimer: ReturnType<typeof setInterval> | null = null
+
+const aiProcessingTitle = computed(() => {
+  switch (aiTaskType.value) {
+    case 'profile':
+      return `正在基于摸排画像生成分析 SQL`
+    case 'suggest-table':
+      return aiContextTable.value
+        ? `正在为 [${aiContextTable.value}] 生成查询场景`
+        : '正在生成专属查询场景'
+    case 'suggest-global':
+      return '正在挖掘业务洞察，生成智能推荐'
+    case 'prompt':
+    default:
+      return '正在为您构建高质量 SQL 代码'
+  }
+})
+
+const aiStatusSubtitle = computed(() => {
+  switch (aiTaskType.value) {
+    case 'profile':
+      return profileGenerateTable.value
+        ? `表 [${profileGenerateTable.value}] · 字段画像 / 样例数据 / DDL`
+        : '基于 AI 摸排画像组装上下文'
+    case 'suggest-table':
+      return `单表精准建模 · ${labMode.value === 'api' ? 'API 调试模式' : '自助取数模式'}`
+    case 'suggest-global':
+      return selectedTables.value.length > 0
+        ? `已选定 ${selectedTables.value.length} 张表作为推荐上下文`
+        : '扫描全库元数据，匹配高价值查询场景'
+    case 'prompt':
+      if (autoContext.value) return '智能关联元数据 · 语义检索相关业务资产'
+      if (selectedTables.value.length > 0) return `手动锁定 ${selectedTables.value.length} 张表作为生成上下文`
+      return '基于基础表结构进行建模分析'
+    default:
+      return 'AI 引擎处理中'
+  }
+})
+
+const latestAiLogMessage = computed(() => {
+  const logs = aiLogs.value
+  if (!logs.length) return ''
+  return logs[logs.length - 1]?.msg || ''
+})
+
+watch(isAiProcessing, (processing) => {
+  if (processing) {
+    aiBarCollapsed.value = false
+    aiElapsedSec.value = 0
+    aiElapsedTimer = setInterval(() => { aiElapsedSec.value += 1 }, 1000)
+    aiStatusDelayTimer = setTimeout(() => {
+      if (isAiProcessing.value) showAiStatusBar.value = true
+    }, 600)
+  } else {
+    if (aiStatusDelayTimer) clearTimeout(aiStatusDelayTimer)
+    aiStatusDelayTimer = null
+    if (aiElapsedTimer) clearInterval(aiElapsedTimer)
+    aiElapsedTimer = null
+    showAiStatusBar.value = false
+    aiElapsedSec.value = 0
+    aiTaskType.value = null
+    profileGenerateTable.value = ''
+  }
+})
+
+onUnmounted(() => {
+  if (aiStatusDelayTimer) clearTimeout(aiStatusDelayTimer)
+  if (aiElapsedTimer) clearInterval(aiElapsedTimer)
+  document.removeEventListener('keydown', onExplorerKeydown)
+})
+
+const aiExamples = [
+  "查询最近 7 天注册的活跃用户数量",
+  "按角色统计用户，并按创建时间降序排列",
+  "找出所有状态为正常的管理员用户",
+  "统计各部门的平均薪资及其占比情况",
+  "查询重复的邮箱地址及其出现次数"
+]
+const showAiExamples = ref(false)
+const AI_BAR_COLLAPSED_KEY = 'sqllab_ai_bar_collapsed_v2'
+const aiBarCollapsed = ref(localStorage.getItem(AI_BAR_COLLAPSED_KEY) !== '0')
+
+watch(aiBarCollapsed, (collapsed) => {
+  localStorage.setItem(AI_BAR_COLLAPSED_KEY, collapsed ? '1' : '0')
+})
+
+const expandAiBar = () => {
+  aiBarCollapsed.value = false
+  nextTick(() => aiInputRef.value?.focus())
+}
+
+const selectAiExample = (example: string) => {
+  aiPrompt.value = example
+  showAiExamples.value = false
+  nextTick(() => {
+    aiInputRef.value?.focus()
+  })
+}
+
+const clearAiPrompt = () => {
+  aiPrompt.value = ''
+  nextTick(() => {
+    aiInputRef.value?.focus()
+  })
+}
+
+const cancelAiTask = () => {
+  if (currentAbortController.value) {
+    currentAbortController.value.abort()
+    currentAbortController.value = null
+  }
+  generating.value = false
+  loadingSuggestions.value = false
+  addAiLog("用户已中断 AI 任务", "error")
+  showToast('任务已取消', 'info')
+}
+
+
+const currentTab = computed(() => tabs.value[activeTabIndex.value] || null)
+
+const currentDataSourceInfo = computed(() => {
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value) as any
+  if (!source) return undefined
+  return {
+    name: source.source_name,
+    datasetsCount: source.datasets_count || 0,
+  }
+})
+const noAccessToAnyDataSource = ref(false)
+
+const fetchDataSources = async () => {
+  loadingSources.value = true
+  noAccessToAnyDataSource.value = false
+  try {
+    const aiRes = await axios.get('/api/portal/system/config/ai')
+    isAiEnabled.value = String(aiRes.data.enabled).toLowerCase() === 'true'
+    const res = await axios.get('/api/portal/datasource/datasources?status=active')
+    let allSources = res.data
+    const infoStr = localStorage.getItem('user_info')
+    if (infoStr) {
+      const user = JSON.parse(infoStr)
+      // Check both root role and nested permissions role
+      const currentRole = user.role || user.permissions?.role
+      if (currentRole !== 'admin') {
+        const allowedDS = user.permissions?.datasources || []
+        allSources = allSources.filter((ds: any) => allowedDS.includes(`ds:${ds.source_name}`))
+      }
+    }
+    dataSources.value = allSources
+    if (dataSources.value.length > 0) selectedSourceId.value = dataSources.value[0]?.id || null
+    else noAccessToAnyDataSource.value = true
+  } catch (e: any) {
+    if (e.response?.status === 403) noAccessToAnyDataSource.value = true
+    else showToast('获取数据源失败', 'error')
+  } finally { loadingSources.value = false }
+}
+
+const fetchMetaStats = async () => {
+  metaStats.value = { dataset_count: 0, table_count: 0 }
+  if (!selectedSourceId.value) return
+  try {
+    const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+    if (!source) return
+    const res = await axios.get('/api/portal/meta/v2/stats', { params: { data_source: source.source_name } })
+    metaStats.value = res.data
+  } catch (e) { 
+    console.error('获取元数据统计失败', e)
+    metaStats.value = { dataset_count: 0, table_count: 0 }
+  }
+}
+
+const tableProfilesMap = ref<Record<string, any>>({})
+const hasProfiled = computed(() => Object.keys(tableProfilesMap.value).length > 0)
+
+type TableFavoriteRow = { id: number; table_name: string; is_pinned: boolean; note?: string | null }
+const tableFavorites = ref<Record<string, TableFavoriteRow>>({})
+
+const fetchTableFavorites = async () => {
+  if (!selectedSourceId.value) {
+    tableFavorites.value = {}
+    return
+  }
+  try {
+    const res = await axios.get('/api/portal/lab/table-favorites', {
+      params: { source_id: selectedSourceId.value },
+    })
+    const map: Record<string, TableFavoriteRow> = {}
+    for (const row of res.data as TableFavoriteRow[]) {
+      map[row.table_name] = row
+    }
+    tableFavorites.value = map
+  } catch {
+    tableFavorites.value = {}
+  }
+}
+
+const upsertTableFavorite = async (
+  tableName: string,
+  patch: { is_pinned?: boolean; note?: string },
+) => {
+  if (!selectedSourceId.value) return
+  const existing = tableFavorites.value[tableName]
+  try {
+    const res = await axios.put('/api/portal/lab/table-favorites', {
+      source_id: selectedSourceId.value,
+      table_name: tableName,
+      is_pinned: patch.is_pinned ?? existing?.is_pinned ?? false,
+      note: patch.note !== undefined ? patch.note : (existing?.note || ''),
+    })
+    tableFavorites.value = {
+      ...tableFavorites.value,
+      [tableName]: {
+        id: res.data.id,
+        table_name: tableName,
+        is_pinned: patch.is_pinned ?? existing?.is_pinned ?? false,
+        note: patch.note !== undefined ? (patch.note || null) : (existing?.note ?? null),
+      },
+    }
+  } catch {
+    showToast('保存收藏失败', 'error')
+  }
+}
+
+const toggleTableFavorite = async (tableName: string) => {
+  if (!selectedSourceId.value) return
+  if (tableFavorites.value[tableName]) {
+    try {
+      await axios.delete('/api/portal/lab/table-favorites', {
+        params: { source_id: selectedSourceId.value, table_name: tableName },
+      })
+      const next = { ...tableFavorites.value }
+      delete next[tableName]
+      tableFavorites.value = next
+      showToast('已取消收藏', 'info')
+    } catch {
+      showToast('取消收藏失败', 'error')
+    }
+    return
+  }
+  try {
+    const res = await axios.put('/api/portal/lab/table-favorites', {
+      source_id: selectedSourceId.value,
+      table_name: tableName,
+      is_pinned: false,
+      note: '',
+    })
+    tableFavorites.value = {
+      ...tableFavorites.value,
+      [tableName]: { id: res.data.id, table_name: tableName, is_pinned: false, note: '' },
+    }
+    showToast('已收藏', 'success')
+  } catch {
+    showToast('收藏失败', 'error')
+  }
+}
+
+const toggleTableFavoritePin = async (tableName: string) => {
+  const fav = tableFavorites.value[tableName]
+  if (!fav) return
+  const nextPinned = !fav.is_pinned
+  await upsertTableFavorite(tableName, { is_pinned: nextPinned })
+  showToast(nextPinned ? '已置顶' : '已取消置顶', 'info')
+}
+
+const saveTableFavoriteNote = async (payload: { tableName: string; note: string }) => {
+  const { tableName, note } = payload
+  if (!tableFavorites.value[tableName]) {
+    await toggleTableFavorite(tableName)
+  }
+  await upsertTableFavorite(tableName, { note })
+  showToast('备注已保存', 'success')
+}
+
+const fetchTableProfiles = async () => {
+  if (!selectedSourceId.value) return
+  try {
+    const res = await axios.get(`/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles`, {
+      params: { summary: true, status: 2 },
+    })
+    const profiles: any[] = Array.isArray(res.data) ? res.data : []
+    const map: Record<string, any> = {}
+    profiles.forEach((p: any) => { map[p.table_name] = p })
+    tableProfilesMap.value = map
+  } catch {
+    tableProfilesMap.value = {}
+  }
+}
+
+const fetchTableProfileDetail = async (tableName: string) => {
+  if (!selectedSourceId.value || tableProfilesMap.value[tableName]?.columns_profile) return
+  try {
+    const res = await axios.get(
+      `/api/portal/datasource/datasources/${selectedSourceId.value}/table-profiles/${encodeURIComponent(tableName)}`
+    )
+    tableProfilesMap.value[tableName] = {
+      ...tableProfilesMap.value[tableName],
+      ...res.data,
+    }
+  } catch {
+    // 单表详情加载失败时保留摘要信息
+  }
+}
+
+type DetailMergedColumn = {
+  name: string
+  type: string
+  comment: string
+  term?: string
+  desc?: string
+  fromProfile?: boolean
+}
+
+const detailTableProfile = computed(() =>
+  detailTable.value ? tableProfilesMap.value[detailTable.value] : null
+)
+
+const detailMergedColumns = computed((): DetailMergedColumn[] => {
+  const physical = detailColumns.value
+  const profileCols = detailTableProfile.value?.columns_profile as
+    | Array<{ name: string; term?: string; desc?: string }>
+    | undefined
+
+  if (!profileCols?.length) {
+    return physical.map(col => ({ ...col }))
+  }
+
+  const profileMap = Object.fromEntries(profileCols.map(c => [c.name, c]))
+
+  if (physical.length > 0) {
+    return physical.map(col => ({
+      name: col.name,
+      type: col.type,
+      comment: col.comment,
+      term: profileMap[col.name]?.term,
+      desc: profileMap[col.name]?.desc,
+      fromProfile: !!(profileMap[col.name]?.term || profileMap[col.name]?.desc),
+    }))
+  }
+
+  return profileCols.map(c => ({
+    name: c.name,
+    type: '',
+    comment: '',
+    term: c.term,
+    desc: c.desc,
+    fromProfile: true,
+  }))
+})
+
+const detailHasProfileInfo = computed(() =>
+  !!detailTableProfile.value?.columns_profile?.length
+  || !!detailTableProfile.value?.ai_term
+  || !!detailTableProfile.value?.ai_description
+)
+
+const detailHasProfileTerms = computed(() =>
+  detailMergedColumns.value.some(c => c.term)
+)
+
+const fetchAvailableTables = async () => {
+  if (!selectedSourceId.value) return
+  loadingTables.value = true
+  availableTables.value = []
+  try {
+    const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+    if (!source) return
+    const res = await axios.post('/api/portal/meta/datasource/tables', { data_source: source.source_name })
+    availableTables.value = res.data.tables || []
+    
+    // 获取 V2 元数据统计
+    fetchMetaStats()
+    // 异步拉取摸排画像
+    fetchTableProfiles()
+
+    // 懒加载：仅预取前 5 张表字段，其余在侧边栏展开时拉取
+    if (availableTables.value.length > 0) {
+      const topTables = availableTables.value.slice(0, 5)
+      topTables.forEach(t => {
+        const tableName = typeof t === 'string' ? t : t.name
+        if (!columnsCache.value[tableName]) {
+          fetchColumns(tableName)
+        }
+      })
+    }
+  } catch (e: any) {
+    showToast('获取表列表失败', 'error')
+  } finally { loadingTables.value = false }
+}
+
+watch(selectedSourceId, () => {
+  selectedTables.value = []
+  sidebarFilterSelected.value = false
+  availableTables.value = []
+  columnsCache.value = {}
+  tableProfilesMap.value = {}
+  tableFavorites.value = {}
+  suggestions.value = []
+  cachedSuggestionKey.value = ''
+  aiContextTable.value = null
+  loadRecentExplorerTables()
+  fetchAvailableTables()
+  fetchTableFavorites()
+})
+
+const fetchColumns = async (table: string) => {
+  if (!selectedSourceId.value || columnsCache.value[table]) return
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  if (!source) return
+  try {
+    const res = await axios.post('/api/portal/meta/datasource/columns', { data_source: source.source_name, table_name: table })
+    columnsCache.value[table] = res.data.columns
+  } catch (e) { console.error(e) }
+}
+
+const handleColumnInsert = (colName: string) => { if (currentTab.value) currentTab.value.sql += ` ${colName}` }
+const handleTabRename = (idx: number, name: string) => { if (tabs.value[idx]) tabs.value[idx].name = name }
+
+watch(aiAutoRun, (v) => localStorage.setItem('sqllab_ai_auto_run', v ? '1' : '0'))
+
+const saveToHistory = (newSql: string, newParams: any, meta?: { execution_time_ms?: number; row_count?: number; success?: boolean }) => {
+  if (queryHistory.value.length > 0 && queryHistory.value[0]?.sql === newSql && meta?.success !== false) return
+  queryHistory.value.unshift({
+    sql: newSql,
+    params: { ...newParams },
+    timestamp: Date.now(),
+    execution_time_ms: meta?.execution_time_ms,
+    row_count: meta?.row_count,
+    success: meta?.success ?? true,
+  })
+  if (queryHistory.value.length > 30) queryHistory.value = queryHistory.value.slice(0, 30)
+  localStorage.setItem('sql_lab_history', JSON.stringify(queryHistory.value))
+}
+const loadHistory = () => {
+  const saved = localStorage.getItem('sql_lab_history')
+  if (saved) { try { queryHistory.value = JSON.parse(saved) } catch (e) {} }
+}
+
+const recentTablesStorageKey = () =>
+  selectedSourceId.value ? `sqllab_recent_tables_${selectedSourceId.value}` : null
+
+const loadRecentExplorerTables = () => {
+  const key = recentTablesStorageKey()
+  if (!key) { recentExplorerTables.value = []; return }
+  try {
+    const raw = localStorage.getItem(key)
+    recentExplorerTables.value = raw ? JSON.parse(raw) : []
+  } catch {
+    recentExplorerTables.value = []
+  }
+}
+
+const pushRecentExplorerTables = (tables: string[]) => {
+  const key = recentTablesStorageKey()
+  if (!key || !tables.length) return
+  const merged = [...tables, ...recentExplorerTables.value.filter(t => !tables.includes(t))].slice(0, 30)
+  recentExplorerTables.value = merged
+  localStorage.setItem(key, JSON.stringify(merged))
+}
+
+const openTableExplorer = () => {
+  if (!hasProfiled.value) return
+  if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
+  loadRecentExplorerTables()
+  showTableExplorer.value = true
+}
+
+const handleExplorerSelection = (tables: string[]) => {
+  selectedTables.value = [...tables]
+  pushRecentExplorerTables(tables)
+  sidebarFilterSelected.value = tables.length > 0
+  showTableExplorer.value = false
+}
+
+const onExplorerKeydown = (e: KeyboardEvent) => {
+  if (!hasProfiled.value) return
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 't') {
+    e.preventDefault()
+    openTableExplorer()
+  }
+}
+const restoreHistory = (item: {sql: string, params: any}) => {
+  if (currentTab.value) { currentTab.value.sql = item.sql; currentTab.value.testParams = { ...item.params }; showToast('已还原历史查询', 'success') }
+}
+const deleteHistory = (index: number) => {
+  queryHistory.value.splice(index, 1)
+  localStorage.setItem('sql_lab_history', JSON.stringify(queryHistory.value))
+  showToast('已删除历史记录', 'info')
+}
+const clearAllHistory = () => {
+  queryHistory.value = []
+  localStorage.removeItem('sql_lab_history')
+  showToast('已清空全部查询历史', 'info')
+}
+
+const PREVIEW_LIMIT_OPTIONS = [50, 100, 200, 500, 1000] as const
+type PreviewLimit = (typeof PREVIEW_LIMIT_OPTIONS)[number]
+
+const loadPreviewLimit = (): PreviewLimit => {
+  const saved = Number(localStorage.getItem('sqllab_preview_limit'))
+  return (PREVIEW_LIMIT_OPTIONS as readonly number[]).includes(saved) ? (saved as PreviewLimit) : 100
+}
+
+const previewLimit = ref<PreviewLimit>(loadPreviewLimit())
+
+watch(previewLimit, (value) => {
+  localStorage.setItem('sqllab_preview_limit', String(value))
+  previewOffset.value = 0
+})
+
+watch(unmaskData, (v) => localStorage.setItem('sqllab_unmask', v ? '1' : '0'))
+
+watch(selectedTables, async (tables) => {
+  if (tables.length >= 2 && selectedSourceId.value) {
+    try {
+      const res = await axios.get('/api/portal/lab/join-paths', {
+        params: { source_id: selectedSourceId.value, tables: tables.join(',') },
+      })
+      joinPaths.value = res.data
+    } catch { joinPaths.value = [] }
+  } else {
+    joinPaths.value = []
+  }
+}, { deep: true })
+
+const resultPanelRef = ref<InstanceType<typeof ResultPanel> | null>(null)
+const sqlEditorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
+
+const runQuery = async (overrideSql?: string, skipRisk = false) => {
+  if (!selectedSourceId.value || !currentTab.value) return
+  const sqlToRun = overrideSql || currentTab.value.sql
+
+  if (!skipRisk) {
+    try {
+      const riskRes = await axios.post('/api/portal/lab/check-risks', { sql: sqlToRun })
+      const dangers = (riskRes.data.warnings || []).filter((w: any) => w.level === 'danger')
+      if (dangers.length) {
+        pendingRunSql.value = overrideSql
+        showRiskConfirm.value = true
+        return
+      }
+    } catch { /* proceed */ }
+  }
+
+  currentTab.value.activeSubTab = 'result'
+  if (!isFullscreen.value) nextTick(() => resultPanelRef.value?.scrollToTop())
+
+  currentTab.value.executing = true
+  currentTab.value.result = null
+  currentTab.value.error = null
+  queryAbortController.value = new AbortController()
+
+  try {
+    const res = await axios.post('/api/portal/lab/preview', {
+      source_id: selectedSourceId.value,
+      sql: sqlToRun,
+      params: currentTab.value.testParams,
+      limit: previewLimit.value,
+      offset: previewOffset.value,
+      include_total: true,
+      unmask: unmaskData.value && isAdmin.value,
+    }, { signal: queryAbortController.value.signal })
+
+    currentTab.value.result = res.data
+    totalCount.value = res.data.total_count ?? null
+    saveToHistory(sqlToRun, currentTab.value.testParams, {
+      execution_time_ms: res.data.execution_time_ms,
+      row_count: res.data.rows?.length,
+      success: true,
+    })
+  } catch (e: any) {
+    if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
+    currentTab.value.error = e.response?.data?.message || e.response?.data?.detail || e.message
+    saveToHistory(sqlToRun, currentTab.value.testParams, { success: false })
+  } finally {
+    currentTab.value.executing = false
+    queryAbortController.value = null
+  }
+}
+
+const confirmRiskRun = () => {
+  showRiskConfirm.value = false
+  runQuery(pendingRunSql.value, true)
+  pendingRunSql.value = undefined
+}
+
+const cancelQuery = () => {
+  queryAbortController.value?.abort()
+  if (currentTab.value) currentTab.value.executing = false
+}
+
+const handlePageChange = (offset: number) => {
+  previewOffset.value = offset
+  runQuery(undefined, true)
+}
+
+const runExplain = async () => {
+  if (!selectedSourceId.value || !currentTab.value?.sql) return
+  try {
+    const res = await axios.post('/api/portal/lab/explain', {
+      source_id: selectedSourceId.value,
+      sql: currentTab.value.sql,
+      params: currentTab.value.testParams,
+    })
+    explainResult.value = res.data
+    currentTab.value.activeSubTab = 'explain'
+    showToast('执行计划已生成', 'success')
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || 'EXPLAIN 失败', 'error')
+  }
+}
+
+const openExportPanel = () => {
+  if (!currentTab.value?.sql || !selectedSourceId.value) return
+  if (!hasPerm('element:lab:export')) return showToast('暂无导出权限', 'error')
+  showExportPanel.value = true
+}
+
+const handleAiEdit = async (instruction: string) => {
+  if (!currentTab.value || !selectedSourceId.value) return
+  try {
+    const res = await axios.post('/api/portal/lab/ai/edit', {
+      sql: currentTab.value.sql,
+      instruction,
+      source_id: selectedSourceId.value,
+      mode: labMode.value,
+      tables: selectedTables.value,
+    })
+    sqlDiffData.value = { original: currentTab.value.sql, modified: formatSqlForCurrentSource(res.data.sql) }
+    showSqlDiff.value = true
+  } catch (e: any) {
+    showToast(e.response?.data?.detail || 'AI 编辑失败', 'error')
+  }
+}
+
+const formatSqlForCurrentSource = (sql: string) => {
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  return formatLabSqlSafe(sql, source?.source_type || 'mysql')
+}
+
+const dismissAiFeedbackBar = () => {
+  if (currentTab.value) currentTab.value.aiFeedbackBarDismissed = true
+}
+
+const applySqlDiff = () => {
+  if (currentTab.value) currentTab.value.sql = formatSqlForCurrentSource(sqlDiffData.value.modified)
+  showSqlDiff.value = false
+  showToast('已应用 SQL 修改', 'success')
+}
+
+const submitAiFeedback = async (rating: 1 | 2) => {
+  if (!currentTab.value?.lastAiPrompt) return
+  if (currentTab.value.aiFeedbackRating != null) return
+  try {
+    await axios.post('/api/portal/lab/ai/feedback', {
+      source_id: selectedSourceId.value,
+      prompt: currentTab.value.lastAiPrompt,
+      generated_sql: currentTab.value.sql,
+      rating,
+      execution_success: !!currentTab.value.result && !currentTab.value.error,
+    })
+    currentTab.value.aiFeedbackRating = rating
+    showToast(rating === 2 ? '感谢反馈！' : '已记录，我们会持续改进', 'info')
+  } catch {
+    showToast('反馈提交失败', 'error')
+  }
+}
+
+const showAiFeedbackBar = computed(() =>
+  !!currentTab.value?.lastAiPrompt
+  && hasPerm('element:lab:generate')
+  && !currentTab.value?.aiFeedbackBarDismissed
+)
+
+const loadSavedQuery = (q: any) => {
+  if (currentTab.value) {
+    currentTab.value.sql = q.sql_text
+    currentTab.value.testParams = q.test_params || {}
+    if (q.source_id) selectedSourceId.value = q.source_id
+  }
+  showSavedQueries.value = false
+  showToast(`已加载「${q.name}」`, 'success')
+}
+
+const pinBaseline = () => {
+  if (!currentTab.value?.result) return
+  if (currentTab.value.compareSnapshot) {
+    currentTab.value.compareSnapshot = null
+    showToast('已清除对比基准', 'info')
+  } else {
+    currentTab.value.compareSnapshot = JSON.parse(JSON.stringify(currentTab.value.result))
+    showToast('已固定当前结果为对比基准', 'success')
+  }
+}
+
+const saveHistoryAsTemplate = async (item: { sql: string; params: any; timestamp?: number }) => {
+  if (!selectedSourceId.value) return
+  const name = `历史 ${new Date(item.timestamp || Date.now()).toLocaleString()}`
+  try {
+    await axios.post('/api/portal/lab/saved-queries', {
+      name,
+      sql: item.sql,
+      source_id: selectedSourceId.value,
+      lab_mode: labMode.value,
+      test_params: item.params,
+    })
+    showToast('已另存为云端查询模板', 'success')
+  } catch {
+    showToast('保存失败', 'error')
+  }
+}
+
+const insertJoinSnippet = (snippet: string) => {
+  if (!currentTab.value) return
+  const line = snippet.trim()
+  if (!line) return
+  const existing = currentTab.value.sql.trim()
+  if (existing.split('\n').some(l => l.trim() === line)) {
+    showToast('该 JOIN 片段已在编辑器中', 'info')
+    return
+  }
+  currentTab.value.sql = existing ? `${existing}\n${line}` : line
+}
+
+const saveAnalysisSession = async (payload: { title: string; messages: any[] }) => {
+  try {
+    await axios.post('/api/portal/lab/analysis-sessions', {
+      title: payload.title,
+      sql: currentTab.value?.sql,
+      columns: currentTab.value?.result?.columns,
+      messages: payload.messages,
+    })
+    showToast('分析会话已保存', 'success')
+  } catch {
+    showToast('保存失败', 'error')
+  }
+}
+
+const handleClearResult = () => {
+  if (currentTab.value) {
+    currentTab.value.result = null
+    nextTick(() => {
+      // 1. Focus Editor
+      sqlEditorRef.value?.focus()
+      
+      // 2. Scroll to Top (Only in normal mode)
+      if (!isFullscreen.value) {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        sqllabContainer.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  }
+}
+
+const runEmptyParamTest = async () => {
+  if (!currentTab.value) return
+  currentTab.value.emptyTestPassed = false
+  const oldParams = { ...currentTab.value.testParams }
+  Object.keys(currentTab.value.testParams).forEach(k => { currentTab.value!.testParams[k] = undefined })
+  await runQuery()
+  if (currentTab.value.result && !currentTab.value.error) {
+    currentTab.value.emptyTestPassed = true
+    showToast('空参测试通过', 'success')
+  }
+  currentTab.value.testParams = oldParams
+}
+
+watch(() => currentTab.value?.sql, async (newVal) => {
+  if (currentTab.value) {
+    currentTab.value.emptyTestPassed = false
+    if (!newVal || newVal.trim() === '') {
+      currentTab.value.recalledContext = []
+      sensitiveWarnings.value = []
+    } else {
+      try {
+        const res = await axios.post('/api/portal/lab/check-risks', { sql: newVal })
+        sensitiveWarnings.value = res.data.warnings || []
+      } catch { sensitiveWarnings.value = [] }
+    }
+  }
+})
+
+const submitAiTask = async () => {
+  const promptVal = aiPrompt.value.trim()
+  const sourceId = selectedSourceId.value
+  
+  if (!promptVal || !sourceId) return
+  if (!hasPerm('element:lab:generate')) return showToast('暂无 AI 生成权限', 'error')
+  if (isAiProcessing.value) return
+  
+  // 始终开启智能关联提示
+  if (!autoContext.value && selectedTables.value.length === 0) {
+    return showToast('请先开启“智能关联元数据”后再提问，以便 AI 获取业务背景', 'warning')
+  }
+
+  addAiLog(`启动 AI 智能 SQL 生成任务...`, 'info')
+  addAiLog(`用户 Prompt: "${promptVal}"`, 'info')
+
+  aiTaskType.value = 'prompt'
+  generating.value = true
+  currentAbortController.value = new AbortController()
+  const source = dataSources.value.find(ds => ds.id === sourceId)
+  
+  try {
+    const endpoint = '/api/portal/lab/ai/generate'
+    
+    if (autoContext.value) {
+      addAiLog("开启智能关联元数据模式，正在通过语义引擎检索相关元数据...", "info")
+    } else if (selectedTables.value.length > 0) {
+      addAiLog(`强制使用用户手动选中的 ${selectedTables.value.length} 张表作为上下文`, "info")
+    }
+
+    const res = await axios.post(endpoint, { 
+      prompt: promptVal, 
+      source_id: sourceId, 
+      source_type: source?.source_type || 'mysql',
+      tables: autoContext.value ? null : selectedTables.value.slice(0, 10), 
+      mode: labMode.value 
+    }, {
+      signal: currentAbortController.value.signal
+    })
+    
+    if (res.data?.sql) { 
+      // 成功后再决定是否新建 Tab
+      if (currentTab.value && currentTab.value.sql?.trim().length > 10) {
+        createTab()
+        await nextTick()
+      }
+
+      const targetTab = currentTab.value
+      if (!targetTab) return
+
+      targetTab.sql = formatSqlForCurrentSource(res.data.sql)
+      targetTab.recalledContext = res.data.recalled_context || []
+      targetTab.lastAiPrompt = promptVal
+      targetTab.aiFeedbackRating = null
+      targetTab.aiFeedbackBarDismissed = false
+      targetTab.name = promptVal.slice(0, 10) + (promptVal.length > 10 ? '...' : '')
+      
+      const debug = res.data.debug_info
+      if (debug) {
+        addAiLog(`[DEBUG] 检索链路: 命中 ${debug.recalled_items_count} 个潜在业务资产`, 'info')
+        if (debug.raw_recall_details?.length) {
+          debug.raw_recall_details.forEach((item: any) => {
+            const scoreText = item.score ? `Score: ${item.score.toFixed(4)}` : ''
+            addAiLog(`[DEBUG] -> 资产: ${item.name} (${item.type}) | 归因: ${item.reason} ${scoreText}`, 'info')
+            if (isAdmin.value) console.log('RAG Raw Item:', item)
+          })
+          if (isAdmin.value) {
+            addAiLog(`[DEBUG] RAW_RAG_JSON: ${JSON.stringify(debug.raw_recall_details, null, 2)}`, 'info')
+          }
+        }
+        addAiLog(`[DEBUG] 提示词上下文长度: ${debug.schema_context_len} chars`, 'info')
+      }
+
+      addAiLog(`AI 生成 SQL 成功，耗时 ${res.headers?.['x-process-time'] || 'N/A'}ms`, 'success')
+      aiPrompt.value = ''
+      showToast('SQL 已生成', 'success')
+
+      if (aiAutoRun.value) {
+        await runQuery(undefined, true)
+        if (targetTab.error && isAiEnabled.value) {
+          try {
+            const fixRes = await axios.post('/api/portal/lab/ai/fix-error', {
+              sql: targetTab.sql,
+              error: targetTab.error,
+              source_id: sourceId,
+            })
+            const fixed = fixRes.data.content?.match(/```sql([\s\S]*?)```/)?.[1]?.trim()
+            if (fixed) {
+              targetTab.sql = formatSqlForCurrentSource(fixed)
+              showToast('已自动纠错并重试', 'info')
+              await runQuery(undefined, true)
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }
+  } catch (e: any) { 
+    const errorMsg = e.response?.data?.detail || e.message || '未知错误'
+    addAiLog(`AI 请求失败: ${errorMsg}`, 'error')
+    
+    if (e.response?.status === 400) {
+      aiErrorMessage.value = errorMsg
+      showAiErrorModal.value = true
+    } else {
+      showToast('AI 请求失败: ' + errorMsg, 'error') 
+    }
+  }
+  finally { 
+    generating.value = false 
+    currentAbortController.value = null
+  }
+}
+
+const runAiAction = async () => {
+  const targetTab = currentTab.value
+  if (!targetTab?.sql?.trim() || !selectedSourceId.value) return
+  
+  addAiLog("启动 AI 语义校验任务...", "info")
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  
+  targetTab.activeSubTab = 'ai'
+  if (!isFullscreen.value) {
+    nextTick(() => resultPanelRef.value?.scrollToTop())
+  }
+  
+  aiLoading.value = true
+  try {
+    const res = await axios.post('/api/portal/lab/ai/check', { 
+      sql: targetTab.sql, 
+      source_type: source?.source_type || 'mysql' 
+    })
+    
+    if (!tabs.value.find(t => t.id === targetTab.id)) return
+
+    targetTab.aiContent = res.data.content
+    targetTab.optimizedSql = res.data.content.match(/```sql([\s\S]*?)```/)?.[1]?.trim() || ''
+    addAiLog("AI 校验完成，已生成优化建议与纠错报告", "success")
+  } catch (e: any) { 
+    addAiLog(`语义校验失败: ${e.message}`, "error")
+    targetTab.aiContent = `❌ 失败: ${e.message}` 
+  }
+  finally { 
+    aiLoading.value = false 
+  }
+}
+
+const handleAiFixError = async () => {
+  const targetTab = currentTab.value
+  const sql = targetTab?.sql
+  const error = targetTab?.error
+  
+  if (!targetTab || !sql || !error || !selectedSourceId.value) return
+  
+  targetTab.activeSubTab = 'ai'
+  if (!isFullscreen.value) {
+    nextTick(() => resultPanelRef.value?.scrollToTop())
+  }
+  
+  aiLoading.value = true
+  try {
+    const res = await axios.post('/api/portal/lab/ai/fix-error', { 
+      sql: sql, 
+      error: error,
+      source_id: selectedSourceId.value
+    })
+    
+    if (!tabs.value.find(t => t.id === targetTab.id)) return
+
+    targetTab.aiContent = res.data.content
+    targetTab.optimizedSql = res.data.content.match(/```sql([\s\S]*?)```/)?.[1]?.trim() || ''
+  } catch (e: any) { 
+    targetTab.aiContent = `❌ 纠错请求失败: ${e.message}` 
+  } finally { 
+    aiLoading.value = false 
+  }
+}
+
+const applyAiFix = () => {
+  if (currentTab.value?.optimizedSql) {
+    currentTab.value.sql = formatSqlForCurrentSource(currentTab.value.optimizedSql)
+    currentTab.value.activeSubTab = 'result'
+    nextTick(() => {
+      // 1. Focus Editor
+      sqlEditorRef.value?.focus()
+      
+      // 2. Scroll to Top (Only in normal mode)
+      if (!isFullscreen.value) {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        sqllabContainer.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  }
+}
+
+const openSuggestionModal = async (force = false) => {
+  if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
+  if (isAiProcessing.value) return
+
+  const cacheKey = buildSuggestionCacheKey(
+    selectedSourceId.value,
+    selectedTables.value.length > 0 ? selectedTables.value : null,
+    null,
+    labMode.value,
+  )
+  aiContextTable.value = null
+
+  if (!force && suggestions.value.length > 0 && cachedSuggestionKey.value === cacheKey) {
+    showSuggestionModal.value = true
+    return
+  }
+
+  aiTaskType.value = 'suggest-global'
+  loadingSuggestions.value = true
+  currentAbortController.value = new AbortController()
+  
+  const hasSelected = selectedTables.value.length > 0
+  const logMsg = hasSelected 
+    ? `触发“一键推荐”任务 [模式: ${labMode.value}]，正在基于选定的 ${selectedTables.value.length} 张表生成专属查询场景...`
+    : `触发“一键推荐”任务 [模式: ${labMode.value}]，正在扫描全库元数据生成查询场景...`
+  
+  addAiLog(logMsg, "info")
+  
+  try {
+    const res = await axios.post('/api/portal/lab/ai/suggest-queries', {
+      source_id: selectedSourceId.value,
+      tables: selectedTables.value.length > 0 ? selectedTables.value : null,
+      mode: labMode.value
+    }, {
+      signal: currentAbortController.value.signal
+    })
+    suggestions.value = res.data || []
+    cachedSuggestionKey.value = cacheKey
+    addAiLog(`推荐成功，已发现 ${suggestions.value.length} 个潜在业务查询场景`, "success")
+    
+    // 只有在获取成功后才显示弹窗
+    if (suggestions.value.length > 0) {
+      showSuggestionModal.value = true
+    } else {
+      showToast('未发现可推荐场景，请尝试补充元数据描述', 'info')
+    }
+  } catch (e: any) {
+    const errorMsg = e.response?.data?.detail || e.message
+    addAiLog(`推荐任务失败: ${errorMsg}`, "error")
+    showToast('获取推荐失败: ' + errorMsg, 'error')
+  } finally {
+    loadingSuggestions.value = false
+    currentAbortController.value = null
+  }
+}
+
+const openTableAiSuggestion = async (table: string, force = false) => {
+  if (!selectedSourceId.value) return
+  if (!hasPerm('element:lab:generate')) return showToast('暂无智能推荐权限', 'error')
+  if (isAiProcessing.value) return
+
+  const cacheKey = buildSuggestionCacheKey(selectedSourceId.value, [table], table, labMode.value)
+  aiContextTable.value = table
+
+  if (!force && suggestions.value.length > 0 && cachedSuggestionKey.value === cacheKey) {
+    showSuggestionModal.value = true
+    return
+  }
+
+  aiTaskType.value = 'suggest-table'
+  loadingSuggestions.value = true
+  currentAbortController.value = new AbortController()
+  suggestions.value = []
+
+  addAiLog(`针对单表 [${table}] 触发“AI 建模”任务，正在生成专属业务查询场景...`, "info")
+  
+  try {
+    const res = await axios.post('/api/portal/lab/ai/suggest-queries', { 
+      source_id: selectedSourceId.value, 
+      tables: [table],
+      mode: labMode.value
+    }, {
+      signal: currentAbortController.value.signal
+    })
+    
+    suggestions.value = res.data || []
+    cachedSuggestionKey.value = cacheKey
+    
+    if (suggestions.value.length > 0) {
+      addAiLog(`推荐成功，已发现 ${suggestions.value.length} 个关于表 [${table}] 的潜在查询场景`, "success")
+      showSuggestionModal.value = true
+    } else {
+      addAiLog(`表 [${table}] 暂无推荐场景，建议检查该表的元数据描述是否完整`, "error")
+      showToast('未发现可推荐场景', 'info')
+    }
+  } catch (e: any) {
+    const errorMsg = e.response?.data?.detail || e.message
+    addAiLog(`推荐任务失败: ${errorMsg}`, "error")
+    showToast('获取推荐失败: ' + errorMsg, 'error')
+  } finally { 
+    loadingSuggestions.value = false 
+    currentAbortController.value = null
+  }
+}
+
+const regenerateSuggestions = () => {
+  if (aiContextTable.value) {
+    openTableAiSuggestion(aiContextTable.value, true)
+  } else {
+    openSuggestionModal(true)
+  }
+}
+
+const openTableDetail = async (table: string) => {
+  detailTable.value = table
+  detailActiveTab.value = 'preview'
+  detailPreviewData.value = null
+  detailPreviewError.value = ''
+  detailPreviewOffset.value = 0
+  detailTotalCount.value = null
+  detailCompareSnapshot.value = null
+  showTableDetailModal.value = true
+  detailLoading.value = true
+
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  const colPromise = axios.post('/api/portal/meta/datasource/columns', {
+    data_source: source?.source_name,
+    table_name: table,
+  }).then((colRes) => {
+    detailColumns.value = colRes.data.columns
+  }).catch(() => {
+    detailColumns.value = []
+  }).finally(() => {
+    detailLoading.value = false
+  })
+
+  await Promise.all([colPromise, fetchTablePreview(true), fetchTableProfileDetail(table)])
+}
+
+const handleTableProfileGenerate = async (table: string) => {
+  if (!selectedSourceId.value) return showToast('请先选择数据源', 'warning')
+  if (!isAiEnabled.value) return showToast('AI 功能未启用', 'warning')
+  if (!hasPerm('element:lab:generate')) return showToast('暂无 AI 生成权限', 'error')
+
+  const profile = tableProfilesMap.value[table]
+  if (!profile) return showToast(`表 [${table}] 暂无摸排画像`, 'warning')
+  if (isAiProcessing.value) return
+
+  addAiLog(`高级模式：基于表 [${table}] 摸排画像生成分析 SQL...`, 'info')
+  aiTaskType.value = 'profile'
+  profileGenerateTable.value = table
+  generating.value = true
+  currentAbortController.value = new AbortController()
+
+  try {
+    const res = await axios.post('/api/portal/lab/ai/generate-from-profile', {
+      source_id: selectedSourceId.value,
+      table_name: table,
+      mode: labMode.value,
+    }, {
+      signal: currentAbortController.value.signal,
+    })
+
+    if (res.data?.sql) {
+      if (currentTab.value && currentTab.value.sql?.trim().length > 10) {
+        createTab()
+        await nextTick()
+      }
+
+      const targetTab = currentTab.value
+      if (!targetTab) return
+
+      targetTab.sql = formatSqlForCurrentSource(res.data.sql)
+      targetTab.recalledContext = []
+      const label = res.data.profile_summary?.ai_term || table
+      targetTab.name = `${label} 分析`
+
+      addAiLog(`已基于摸排画像生成表 [${table}] 的分析 SQL`, 'success')
+      showToast('分析 SQL 已生成', 'success')
+      nextTick(() => sqlEditorRef.value?.focus())
+    }
+  } catch (e: any) {
+    if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
+    const errorMsg = e.response?.data?.detail || e.message || '未知错误'
+    addAiLog(`摸排 SQL 生成失败: ${errorMsg}`, 'error')
+    showToast('生成失败: ' + errorMsg, 'error')
+  } finally {
+    generating.value = false
+    currentAbortController.value = null
+  }
+}
+
+const fetchTablePreview = async (force = false) => {
+  if (!detailTable.value || !selectedSourceId.value) return
+  detailActiveTab.value = 'preview'
+  if (!force && detailPreviewData.value) return
+
+  detailPreviewLoading.value = true
+  detailPreviewError.value = ''
+  try {
+    const res = await axios.post('/api/portal/lab/preview', {
+      source_id: selectedSourceId.value,
+      sql: detailPreviewSql.value,
+      params: {},
+      limit: detailPreviewLimit.value,
+      offset: detailPreviewOffset.value,
+      include_total: true,
+    })
+    detailPreviewData.value = res.data
+    detailTotalCount.value = res.data.total_count ?? null
+  } catch (e: any) {
+    detailPreviewError.value = e.response?.data?.message || e.response?.data?.detail || e.message
+    detailPreviewData.value = null
+  } finally {
+    detailPreviewLoading.value = false
+  }
+}
+
+const handleDetailPageChange = (offset: number) => {
+  detailPreviewOffset.value = offset
+  fetchTablePreview(true)
+}
+
+const onDetailPreviewLimitChange = (value: number) => {
+  if (!(DETAIL_PREVIEW_LIMIT_OPTIONS as readonly number[]).includes(value)) return
+  detailPreviewLimit.value = value as DetailPreviewLimit
+  localStorage.setItem('sqllab_detail_preview_limit', String(value))
+  detailPreviewOffset.value = 0
+  if (detailTable.value && showTableDetailModal.value) {
+    fetchTablePreview(true)
+  }
+}
+
+const clearDetailPreview = () => {
+  detailPreviewData.value = null
+  detailPreviewError.value = ''
+  detailPreviewOffset.value = 0
+  detailTotalCount.value = null
+  detailCompareSnapshot.value = null
+}
+
+const pinDetailBaseline = () => {
+  if (!detailPreviewData.value) return
+  if (detailCompareSnapshot.value) {
+    detailCompareSnapshot.value = null
+    showToast('已清除对比基准', 'info')
+  } else {
+    detailCompareSnapshot.value = JSON.parse(JSON.stringify(detailPreviewData.value))
+    showToast('已固定当前结果为对比基准', 'success')
+  }
+}
+
+const exportDetailToExcel = () => {
+  if (!detailPreviewData.value) return
+  if (!hasPerm('element:lab:export')) return showToast('暂无导出权限', 'error')
+  showDetailExportConfirm.value = true
+}
+
+const executeDetailExport = async () => {
+  showDetailExportConfirm.value = false
+  if (!detailPreviewData.value) return
+  const dataToExport = detailPreviewData.value.rows.slice(0, 5000)
+  try {
+    const wb = XLSX.utils.book_new()
+    const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['数据源', source?.source_name],
+      ['表', detailTable.value],
+      ['SQL', detailPreviewSql.value],
+    ]), '说明')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      detailPreviewData.value.columns.map((c: { name: string }) => c.name),
+      ...dataToExport,
+    ]), '数据')
+    saveAs(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })]), `table_${detailTable.value}_${Date.now()}.xlsx`)
+    await axios.post('/api/portal/audit/logs/custom_export', {
+      sql: detailPreviewSql.value,
+      row_count: dataToExport.length,
+      data_source: source?.source_name || '',
+      format: 'xlsx',
+    })
+    showToast('导出成功', 'success')
+  } catch {
+    showToast('导出失败', 'error')
+  }
+}
+
+const openDetailAiAnalysis = () => {
+  if (!hasPerm('element:lab:analysis')) return showToast('暂无 AI 分析权限', 'error')
+  if (!detailPreviewData.value) return
+  analysisOverride.value = {
+    sql: detailPreviewSql.value,
+    data: detailPreviewData.value.rows,
+    columns: detailPreviewData.value.columns,
+  }
+  showAnalysisChat.value = true
+}
+
+const openDetailExportPanel = () => {
+  if (!selectedSourceId.value || !detailTable.value) return
+  if (!hasPerm('element:lab:export')) return showToast('暂无导出权限', 'error')
+  showDetailExportPanel.value = true
+}
+
+const exportToExcel = async () => {
+  if (!currentTab.value?.result) return
+  if (!hasPerm('element:lab:export')) return showToast('暂无导出权限', 'error')
+  showExportConfirm.value = true
+}
+
+const executeExport = async () => {
+  showExportConfirm.value = false
+  if (!currentTab.value?.result) return
+  const rows = currentTab.value.result.rows
+  const dataToExport = rows.slice(0, 5000)
+  try {
+    const wb = XLSX.utils.book_new()
+    const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['数据源', source?.source_name], ['SQL', currentTab.value.sql]]), "说明")
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([currentTab.value.result.columns.map(c => c.name), ...dataToExport]), "数据")
+    saveAs(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })]), `export_${Date.now()}.xlsx`)
+    await axios.post('/api/portal/audit/logs/custom_export', { sql: currentTab.value.sql, row_count: dataToExport.length, data_source: source?.source_name || '', format: 'xlsx' })
+    showToast('导出成功', 'success')
+  } catch (e) { showToast('导出失败', 'error') }
+}
+
+const openAiAnalysis = () => { 
+  if (!hasPerm('element:lab:analysis')) return showToast('暂无 AI 分析权限', 'error')
+  if (currentTab.value?.result) showAnalysisChat.value = true 
+}
+
+// --- Publish Modal ---
+const showPublishModal = ref(false)
+const publishing = ref(false)
+const showMockPreview = ref(false)
+const existingGroups = ref<string[]>([])
+const selectableGroups = computed(() => existingGroups.value.filter((g) => !isSystemResourceGroup(g)))
+const showGroupDropdown = ref(false)
+const selectedFilters = ref<string[]>([])
+const hideGroupDropdown = () => { setTimeout(() => { showGroupDropdown.value = false }, 200) }
+const publishForm = ref({
+  resource_key: '',
+  resource_name: '',
+  resource_group: 'SQL_LAB',
+  cache_ttl: 300,
+  remarks: '',
+})
+
+const fetchResourceGroups = async () => {
+  try {
+    const res = await axios.get('/api/portal/dashboard/my-resources')
+    const data = Array.isArray(res.data) ? res.data : (res.data?.items || [])
+    const groups = new Set<string>()
+    data.forEach((r: any) => { if (r.resource_group && !isSystemResourceGroup(r.resource_group)) groups.add(r.resource_group) })
+    existingGroups.value = sortResourceGroups(Array.from(groups))
+  } catch (e) { console.error('Failed to fetch groups', e) }
+}
+
+const suggestLabels = async () => {
+  if (!currentTab.value?.result || !currentTab.value.sql) return
+  try {
+    const res = await axios.post('/api/portal/lab/ai/suggest-labels', { 
+      sql: currentTab.value.sql, 
+      columns: currentTab.value.result.columns.map(c => c.name) 
+    })
+    if (res.data) currentTab.value.columnLabels = res.data
+  } catch (e) {}
+}
+
+const openPublishModal = async () => {
+  if (!currentTab.value?.result) { showToast('请先运行查询成功后再发布 API', 'warning'); return }
+  try {
+    const check = await axios.post('/api/portal/lab/publish-check', {
+      source_id: selectedSourceId.value,
+      sql: currentTab.value.sql,
+      params: currentTab.value.testParams,
+    })
+    publishCheckResult.value = check.data
+    if (!check.data.passed) {
+      showPublishCheck.value = true
+      return
+    }
+  } catch { /* continue to publish */ }
+  proceedOpenPublish()
+}
+
+const proceedOpenPublish = () => {
+  showPublishCheck.value = false
+  if (!currentTab.value?.result) return
+  currentTab.value.columnLabels = {}
+  showMockPreview.value = false
+  fetchResourceGroups()
+  
+  if (isAiEnabled.value) suggestLabels()
+  
+  const sql = currentTab.value.sql
+  const vars = new Set<string>()
+  const matches = sql.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)
+  if (matches) matches.forEach(m => vars.add(m.replace(/\{\{\s*|\s*\}\}/g, '')))
+
+  const inferred = publishCheckResult.value?.checks?.find((c: any) => c.name === 'param_schema')?.params || []
+  inferred.forEach((p: any) => vars.add(p.name))
+  
+  const allParams = new Set([...currentTab.value.aiDetectedParams, ...vars])
+  selectedFilters.value = [...allParams]
+  
+  publishForm.value.resource_key = 'lab.' + Math.random().toString(36).substring(7)
+  publishForm.value.resource_name = ''
+  showPublishModal.value = true
+}
+
+const handlePublish = async () => {
+  if (!selectedSourceId.value || !currentTab.value?.result) return
+  if (isSystemResourceGroup(publishForm.value.resource_group)) {
+    showToast(`${SYSTEM_RESOURCE_GROUP} 为系统内置分组，不可用于普通资源`, 'warning')
+    return
+  }
+  publishing.value = true
+  
+  const fields_config = currentTab.value.result.columns.map(col => ({ 
+    name: col.name, 
+    label: currentTab.value!.columnLabels[col.name] || col.name, 
+    type: 'String'
+  }))
+  
+  const allowed_filters = selectedFilters.value.map(v => ({ 
+    name: v, 
+    label: currentTab.value!.columnLabels[v] || v, 
+    type: 'String'
+  }))
+  
+  const source = dataSources.value.find(ds => ds.id === selectedSourceId.value)
+  const payload = { 
+    ...publishForm.value, 
+    data_source: source?.source_name || 'default', 
+    resource_mode: 'SQL', 
+    custom_sql: currentTab.value.sql, 
+    fields_config, 
+    allowed_filters, 
+    default_sort: fields_config[0]?.name || '', 
+    status: 1 
+  }
+
+  try {
+    await axios.post('/api/portal/lab/publish', payload)
+    const key = publishForm.value.resource_key
+    publishedResourceKey.value = key
+    showPublishModal.value = false
+    showPublishSuccess.value = true
+  } catch (e: any) {
+    showToast('发布失败: ' + (e.response?.data?.detail || e.message), 'error')
+  } finally {
+    publishing.value = false
+  }
+}
+
+const mockJsonResponse = computed(() => {
+  if (!currentTab.value?.result || currentTab.value.result.columns.length === 0) return null
+  const sampleItem: Record<string, any> = {}
+  currentTab.value.result.columns.forEach((col, idx) => {
+    const val = (currentTab.value!.result?.rows && currentTab.value!.result.rows[0]) ? currentTab.value!.result.rows[0][idx] : "..."
+    sampleItem[col.name] = val
+  })
+  return { code: 200, message: "success", data: { items: [sampleItem], total: 1, page: 1, size: 20 }, trace_id: "req_xxxxxx" }
+})
+
+watch(() => publishForm.value.resource_key, async (key) => {
+  if (!key || key.length < 3) return
+  try {
+    const res = await axios.get('/api/portal/meta/resources')
+    const list = Array.isArray(res.data) ? res.data : res.data?.items || []
+    const found = list.find((r: any) => r.resource_key === key)
+    if (found?.custom_sql && currentTab.value && found.custom_sql !== currentTab.value.sql) {
+      publishSqlDiff.value = { original: found.custom_sql, modified: currentTab.value.sql }
+    }
+  } catch { /* ignore */ }
+})
+
+onMounted(() => {
+  fetchDataSources(); loadHistory(); loadTabs(); checkVectorSupport()
+  loadRecentExplorerTables()
+  document.addEventListener('keydown', onExplorerKeydown)
+  
+  if (labMode.value === 'api' && !hasApiMode.value && hasAnalystMode.value) {
+    labMode.value = 'analyst'
+  } else if (labMode.value === 'analyst' && !hasAnalystMode.value && hasApiMode.value) {
+    labMode.value = 'api'
+  }
+})
+</script>
+
+<template>
+  <div ref="sqllabContainer" class="space-y-1.5 flex flex-col relative" 
+    :class="[
+      (noLabModeAccess || noAccessToAnyDataSource) ? 'h-[calc(100vh-64px)] overflow-hidden -m-8' : 'pb-20',
+      isFullscreen ? 'fixed inset-0 z-[9999] bg-gray-50 p-6 overflow-auto h-screen' : ''
+    ]">
+    
+    <!-- No Access State (Lab Modes) - z-5 to be under global header -->
+    <div v-if="noLabModeAccess" class="absolute inset-0 z-[5] bg-gray-50/60 backdrop-blur-xl flex flex-col items-center justify-center p-6 animate-in fade-in duration-700">
+      <div class="text-center max-w-md">
+        <div class="w-20 h-20 bg-red-50/50 border border-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-red-500/80">
+          <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+        </div>
+        <h2 class="text-2xl font-black mb-3 text-gray-800 tracking-tight">暂无实验室模式权限</h2>
+        <p class="text-gray-500 mb-8 leading-relaxed px-8 text-sm font-medium">您的账号尚未被授予访问权限。请联系管理员进行功能分配。</p>
+        <button @click="fetchDataSources" class="px-8 py-3 bg-indigo-600/90 text-white rounded-xl font-bold shadow-lg shadow-indigo-200/50 hover:bg-indigo-700 transition-all active:scale-95">刷新权限状态</button>
+      </div>
+    </div>
+
+    <!-- No Data Source State - z-5 to be under global header -->
+    <div v-if="noAccessToAnyDataSource" class="absolute inset-0 z-[5] bg-gray-50/60 backdrop-blur-xl flex flex-col items-center justify-center p-6 animate-in fade-in duration-700">
+      <div class="text-center max-w-md">
+        <div class="w-20 h-20 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-orange-500/80">
+          <CircleStackIcon class="w-10 h-10" />
+        </div>
+        <h2 class="text-2xl font-black mb-3 text-gray-800 tracking-tight">暂无数据源访问权限</h2>
+        <p class="text-gray-500 mb-8 leading-relaxed px-8 text-sm font-medium">当前账号下未发现可用资产。请联系管理员在“数据源管理”中分配查询权限。</p>
+        <button @click="fetchDataSources" class="px-8 py-3 bg-orange-600/90 text-white rounded-xl font-bold shadow-lg shadow-orange-200/50 hover:bg-orange-700 transition-all active:scale-95">重新加载资产</button>
+      </div>
+    </div>
+
+    <!-- AI 任务状态条（非阻塞，延迟 600ms 显示） -->
+    <teleport to="body">
+      <transition enter-active-class="transition ease-out duration-300" enter-from-class="opacity-0 -translate-y-3" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0 -translate-y-3">
+        <div v-if="showAiStatusBar" class="fixed top-20 left-1/2 -translate-x-1/2 z-[100001] w-full max-w-2xl px-4 pointer-events-auto">
+          <div class="bg-white/95 border border-indigo-100 rounded-2xl shadow-xl backdrop-blur-md px-4 py-3 flex items-start gap-3">
+            <div class="relative shrink-0 mt-0.5">
+              <div class="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              <SparklesIcon class="w-3.5 h-3.5 text-indigo-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-black text-indigo-900 truncate">{{ aiProcessingTitle }}</p>
+                <span class="text-[10px] text-gray-400 font-mono shrink-0 tabular-nums">{{ aiElapsedSec }}s</span>
+              </div>
+              <p class="text-[11px] text-indigo-600/80 mt-0.5 truncate">{{ aiStatusSubtitle }}</p>
+              <p
+                v-if="latestAiLogMessage"
+                class="text-[10px] text-gray-400 mt-1 truncate"
+                :title="latestAiLogMessage"
+              >{{ latestAiLogMessage }}</p>
+            </div>
+            <button
+              @click="cancelAiTask"
+              class="shrink-0 px-3 py-1.5 text-[10px] font-bold text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all flex items-center gap-1"
+            >
+              <XMarkIcon class="w-3.5 h-3.5" />
+              取消
+            </button>
+          </div>
+        </div>
+      </transition>
+    </teleport>
+
+    <!-- Mode Change Toast (Sleek Top Bar) -->
+    <teleport to="body">
+      <transition enter-active-class="transition ease-out duration-300" enter-from-class="opacity-0 -translate-y-10" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0 -translate-y-10">
+        <div v-if="showModeToast" class="fixed top-6 left-1/2 -translate-x-1/2 z-[100001] pointer-events-none">
+          <div class="bg-white/90 border border-indigo-100 px-6 py-2.5 rounded-full shadow-xl backdrop-blur-md flex items-center gap-3">
+            <div class="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></div>
+            <span class="text-sm font-black text-indigo-900 tracking-tight">{{ modeToastMsg }}</span>
+          </div>
+        </div>
+      </transition>
+    </teleport>
+
+    <div class="flex-shrink-0 flex justify-between items-center gap-3" :class="{ 'blur-sm grayscale opacity-50': noAccessToAnyDataSource || noLabModeAccess }">
+      <div class="flex items-center gap-2 min-w-0">
+        <h1 class="text-base font-bold text-gray-900 flex items-center shrink-0">
+          <BeakerIcon class="w-5 h-5 text-blue-600 mr-1.5" /> SQL 实验室
+        </h1>
+        <span
+          v-if="labMode === 'api'"
+          class="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-semibold rounded border border-blue-100 shrink-0"
+        >API 调试</span>
+        <span
+          v-else
+          class="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-semibold rounded border border-orange-100 shrink-0"
+        >自助取数</span>
+        <span class="text-[10px] text-gray-400 truncate hidden xl:inline">
+          {{ labMode === 'api' ? '开发调试与发布 API' : '自助查询分析 · 支持 AI 自然语言' }}
+        </span>
+      </div>
+      <div class="flex items-center gap-1.5 bg-white px-1 py-0.5 rounded-lg shadow-sm border border-gray-200 shrink-0">
+        <div class="flex p-0.5 bg-gray-100 rounded-md">
+          <button v-if="hasApiMode" @click="setLabMode('api')" :class="labMode === 'api' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'" class="px-2.5 py-1 text-[11px] font-semibold rounded transition-all">🛠️ API 调试</button>
+          <button v-if="hasAnalystMode" @click="setLabMode('analyst')" :class="labMode === 'analyst' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'" class="px-2.5 py-1 text-[11px] font-semibold rounded transition-all">📊 自助取数</button>
+        </div>
+        <div class="w-px h-5 bg-gray-200" />
+        <Tooltip :text="isFullscreen ? '退出全屏' : '全屏模式'" position="bottom">
+          <button @click="toggleFullscreen(sqllabContainer!)" class="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all">
+            <component :is="isFullscreen ? ArrowsPointingInIcon : ArrowsPointingOutIcon" class="w-4 h-4" />
+          </button>
+        </Tooltip>
+      </div>
+    </div>
+
+    <div
+      v-if="isAiEnabled && (hasPerm('element:lab:generate') || hasPerm('element:lab:analysis'))"
+      class="relative transition-all"
+      :class="[
+        noAccessToAnyDataSource || noLabModeAccess ? 'blur-sm grayscale opacity-50 pointer-events-none' : '',
+        isAiProcessing ? 'opacity-70' : ''
+      ]"
+    >
+      <!-- 收起态：单行胶囊，节省垂直空间 -->
+      <button
+        v-if="aiBarCollapsed"
+        type="button"
+        class="w-full flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-indigo-200 hover:bg-indigo-50/30 transition-all text-left"
+        @click="expandAiBar"
+      >
+        <SparklesIcon class="w-4 h-4 text-indigo-500 shrink-0" />
+        <span class="text-xs text-gray-500 truncate flex-1">
+          {{ aiPrompt ? aiPrompt : 'AI 自然语言查表 · 点击展开' }}
+        </span>
+        <span
+          v-if="autoContext"
+          class="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-bold shrink-0"
+        >智能关联</span>
+        <ChevronDownIcon class="w-3.5 h-3.5 text-gray-400 shrink-0" />
+      </button>
+
+      <!-- 展开态：紧凑单行工具栏 -->
+      <div
+        v-else
+        class="bg-white px-2 py-1.5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-2 relative"
+        :class="isAiProcessing ? 'pointer-events-none' : ''"
+      >
+        <SparklesIcon class="w-4 h-4 text-purple-600 shrink-0" />
+
+        <Tooltip
+          :text="!isVectorSupported ? 'Redis 不支持向量搜索' : `智能关联元数据 · ${metaStats.dataset_count} 个可用数据集`"
+          position="bottom"
+        >
+          <button
+            type="button"
+            @click="toggleAutoContext"
+            class="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-all"
+            :class="[
+              autoContext ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200',
+              !isVectorSupported ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+            ]"
+          >
+            <CubeIcon class="w-3 h-3" />
+            智能关联
+          </button>
+        </Tooltip>
+
+        <Tooltip text="生成后自动试跑（失败则 AI 纠错一次）" position="top">
+          <button
+            type="button"
+            @click="aiAutoRun = !aiAutoRun"
+            class="shrink-0 px-2 py-1 rounded-full text-[10px] font-bold border transition-all"
+            :class="aiAutoRun ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-100 text-gray-500 border-gray-200'"
+          >自动试跑</button>
+        </Tooltip>
+
+        <div class="flex-1 relative flex items-center min-w-0 group/ai">
+          <input
+            v-if="hasPerm('element:lab:generate')"
+            ref="aiInputRef"
+            v-model="aiPrompt"
+            :disabled="isAiProcessing"
+            @keyup.enter="submitAiTask"
+            :placeholder="isAiProcessing ? 'AI 任务进行中...' : aiPlaceholder"
+            class="w-full py-1.5 pl-3 pr-16 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+
+          <div class="absolute right-1.5 flex items-center gap-0.5">
+            <Tooltip v-if="aiPrompt" text="清空输入" position="top">
+              <button @click="clearAiPrompt" class="text-gray-400 hover:text-red-500 transition-colors p-1">
+                <XMarkIcon class="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip text="试试这些提问示例" position="top" align="end">
+              <button
+                v-if="hasPerm('element:lab:generate')"
+                @click="showAiExamples = !showAiExamples"
+                class="text-gray-400 hover:text-indigo-600 transition-colors p-1"
+              >
+                <QuestionMarkCircleIcon class="w-4 h-4" />
+              </button>
+            </Tooltip>
+          </div>
+
+          <div v-if="showAiExamples" @click="showAiExamples = false" class="fixed inset-0 z-[99]"></div>
+          <div
+            v-if="showAiExamples"
+            class="absolute top-full left-0 right-0 mt-1.5 z-[100] bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden"
+          >
+            <div class="px-3 py-2 bg-gray-50 border-b flex justify-between items-center">
+              <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">提问示例</span>
+              <button @click="showAiExamples = false" class="text-gray-400 hover:text-gray-600"><XMarkIcon class="w-3.5 h-3.5" /></button>
+            </div>
+            <div class="max-h-48 overflow-y-auto">
+              <div
+                v-for="(example, eIdx) in aiExamples"
+                :key="eIdx"
+                @click="selectAiExample(example)"
+                class="px-3 py-2 text-xs text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer border-b last:border-none"
+              >{{ example }}</div>
+            </div>
+          </div>
+        </div>
+
+        <Tooltip v-if="labMode !== 'api' && hasPerm('element:lab:generate')" :text="hasCachedGlobalSuggestions ? `查看推荐结果（${suggestions.length} 个场景）` : '智能推荐查询场景'" position="top" align="end">
+          <button
+            :disabled="isAiProcessing"
+            @click="openSuggestionModal()"
+            class="shrink-0 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <SparklesIcon class="w-4 h-4" />
+          </button>
+        </Tooltip>
+
+        <Tooltip text="收起 AI 栏" position="top" align="end">
+          <button
+            type="button"
+            @click="aiBarCollapsed = true"
+            class="shrink-0 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+          >
+            <ChevronUpIcon class="w-4 h-4" />
+          </button>
+        </Tooltip>
+      </div>
+    </div>
+
+    <div
+      v-if="showAiFeedbackBar"
+      class="shrink-0 px-4 py-2 bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-indigo-100 flex items-center justify-between gap-3"
+    >
+      <LabAiFeedbackBar
+        :prompt="currentTab?.lastAiPrompt"
+        :rating="currentTab?.aiFeedbackRating ?? null"
+        @rate="submitAiFeedback"
+      />
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-[10px] text-indigo-400 hidden md:inline">本 Tab 内有效，切换/刷新后仍可评价</span>
+        <button
+          type="button"
+          class="p-1 rounded-md text-indigo-400 hover:text-indigo-700 hover:bg-indigo-100/80"
+          title="关闭"
+          @click="dismissAiFeedbackBar"
+        >
+          <XMarkIcon class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+
+    <div class="flex flex-col flex-1 min-h-0 space-y-4" :class="{ 'blur-sm grayscale opacity-50 pointer-events-none': noAccessToAnyDataSource || noLabModeAccess }">
+      <div class="flex flex-row overflow-hidden" :style="{ height: isFullscreen ? 'calc(100vh - 350px)' : `${editorHeight}px` }">
+        <SchemaSidebar 
+          v-show="!sidebarCollapsed" :style="{ width: `${sidebarWidth}px` }" class="flex-shrink-0"
+          :tables="availableTables" :loading="loadingTables" :collapsed="sidebarCollapsed" :columns-cache="columnsCache" :flash-title="flashTableTitle"
+          v-model="selectedTables" v-model:auto-context="autoContext" v-model:filter-to-selected="sidebarFilterSelected"
+          :data-source-info="currentDataSourceInfo" :is-admin="isAdmin"
+          :table-profiles-map="tableProfilesMap" :has-profiled="hasProfiled"
+          :source-id="selectedSourceId"
+          :join-paths="joinPaths"
+          :table-favorites="tableFavorites"
+          @refresh="fetchAvailableTables" @table-click="openTableDetail" @fetch-columns="fetchColumns" @column-dblclick="handleColumnInsert"
+          @fetch-profile-detail="fetchTableProfileDetail"
+          @table-profile-generate="handleTableProfileGenerate"
+          @table-ai="openTableAiSuggestion" :show-ai="isAiEnabled && hasPerm('element:lab:generate')"
+          @insert-join="insertJoinSnippet"
+          @toggle-favorite="toggleTableFavorite"
+          @toggle-pin="toggleTableFavoritePin"
+          @save-favorite-note="saveTableFavoriteNote"
+          @open-explorer="openTableExplorer"
+        />
+        <ResizeHandle v-if="!sidebarCollapsed" direction="horizontal" @resize="handleSidebarResize" />
+        <div class="flex-1 flex flex-col min-w-0">
+          <SqlEditor 
+            v-if="tabs.length > 0" ref="sqlEditorRef" :tabs="tabs" v-model:activeTabIndex="activeTabIndex" v-model:selectedSourceId="selectedSourceId"
+            v-model:preview-limit="previewLimit" v-model:unmask="unmaskData"
+            :data-sources="dataSources" :history="queryHistory" :is-ai-enabled="isAiEnabled" :executing="currentTab?.executing || false"
+            :ai-loading="aiLoading" :sidebar-collapsed="sidebarCollapsed" :has-perm="hasPerm" :available-tables="availableTables" :columns-cache="columnsCache"
+            class="h-full" :lab-mode="labMode" :recalled-context="currentTab?.recalledContext || []"
+            :is-admin="isAdmin" :sensitive-warnings="sensitiveWarnings" :has-profiled="hasProfiled"
+            @create-tab="createTab" @close-tab="closeTab" @close-all-tabs="closeAllTabs" @close-other-tabs="closeOtherTabs" @update-tab-name="handleTabRename" @run-query="runQuery" @run-ai-check="runAiAction" @open-publish="openPublishModal" @restore-history="restoreHistory" @delete-history="deleteHistory" @clear-history="clearAllHistory" @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed" @run-empty-test="runEmptyParamTest"
+            @cancel-query="cancelQuery" @run-explain="runExplain" @open-saved-queries="showSavedQueries = true" @open-table-explorer="openTableExplorer" @ai-edit-sql="handleAiEdit"
+            @save-history-as-template="saveHistoryAsTemplate"
+          />
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-[300px] flex flex-col">
+        <ResizeHandle direction="vertical" @resize="handleEditorResize" />
+        <ResultPanel 
+          v-if="currentTab" ref="resultPanelRef" v-model:activeSubTab="currentTab.activeSubTab"
+          :result="currentTab.result" :explain-result="explainResult" :error="currentTab.error" :executing="currentTab.executing" :ai-loading="aiLoading"
+          :ai-content="currentTab.aiContent" :optimized-sql="currentTab.optimizedSql" :lab-mode="labMode" :has-perm="hasPerm"
+          :is-ai-enabled="isAiEnabled" :is-admin="isAdmin" :sql="currentTab.sql" :recalled-context="currentTab.recalledContext"
+          :preview-limit="previewLimit" :preview-offset="previewOffset" :total-count="totalCount"
+          :compare-snapshot="currentTab.compareSnapshot"
+          :last-ai-prompt="currentTab.lastAiPrompt"
+          :ai-feedback-rating="currentTab.aiFeedbackRating ?? null"
+          :ai-logs="aiLogs"
+          class="flex-1"
+          @clear-result="handleClearResult" @apply-ai-fix="applyAiFix" @open-analysis="openAiAnalysis" @export-excel="exportToExcel"
+          @export-async="openExportPanel" @ai-fix-error="handleAiFixError" @page-change="handlePageChange"
+          @pin-baseline="pinBaseline"
+          @ai-feedback="submitAiFeedback"
+          @clear-ai-logs="clearAiLogs"
+        />
+      </div>
+    </div>
+
+    <AnalysisChat :is-open="showAnalysisChat" :initial-query="analysisChatQuery" :data="analysisChatData" :columns="analysisChatColumns" @close="showAnalysisChat = false" @save-session="saveAnalysisSession" />
+
+    <LabSavedQueriesPanel v-if="showSavedQueries" :source-id="selectedSourceId" :lab-mode="labMode" :current-sql="currentTab?.sql || ''" :test-params="currentTab?.testParams || {}" @load="loadSavedQuery" @close="showSavedQueries = false" />
+    <LabTableExplorer
+      v-if="showTableExplorer"
+      :source-id="selectedSourceId"
+      v-model="selectedTables"
+      :recent-tables="recentExplorerTables"
+      :table-favorites="tableFavorites"
+      @close="showTableExplorer = false"
+      @update:model-value="handleExplorerSelection"
+    />
+    <LabExportPanel
+      v-if="showExportPanel"
+      :source-id="selectedSourceId"
+      :sql="currentTab?.sql || ''"
+      :test-params="currentTab?.testParams || {}"
+      @close="showExportPanel = false"
+    />
+    <LabExportPanel
+      v-if="showDetailExportPanel"
+      :source-id="selectedSourceId"
+      :sql="detailPreviewSql"
+      :test-params="{}"
+      @close="showDetailExportPanel = false"
+    />
+    <LabSqlDiff v-if="showSqlDiff" :original="sqlDiffData.original" :modified="sqlDiffData.modified" @apply="applySqlDiff" @close="showSqlDiff = false" />
+
+    <LabPublishSuccessModal
+      :open="showPublishSuccess"
+      :resource-key="publishedResourceKey"
+      :lab-sql="currentTab?.sql || ''"
+      @close="showPublishSuccess = false"
+      @test="showPublishSuccess = false; showApiTestModal = true"
+      @edit="router.push(`/dashboard/resources/${publishedResourceKey}`); showPublishSuccess = false"
+    />
+    <LabApiTestModal :open="showApiTestModal" :resource-key="publishedResourceKey" @close="showApiTestModal = false" />
+    <LabSqlDiff
+      v-if="showPublishSqlDiff && publishSqlDiff.original"
+      :original="publishSqlDiff.original"
+      :modified="publishSqlDiff.modified"
+      @close="showPublishSqlDiff = false"
+      @apply="showPublishSqlDiff = false"
+    />
+
+    <div v-if="showRiskConfirm" class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h3 class="font-bold text-red-700 mb-2">高风险查询确认</h3>
+        <p class="text-sm text-gray-600 mb-4">该 SQL 可能扫描大量数据，是否仍要执行？</p>
+        <div class="flex gap-2 justify-end">
+          <button class="px-4 py-2 border rounded-lg text-sm" @click="showRiskConfirm = false">取消</button>
+          <button class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold" @click="confirmRiskRun">仍要执行</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showPublishCheck && publishCheckResult" class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
+        <h3 class="font-bold text-gray-800 mb-4">发布前体检报告</h3>
+        <div v-for="c in publishCheckResult.checks" :key="c.name" class="mb-3 p-3 rounded-lg border" :class="c.passed ? 'bg-green-50 border-green-100' : 'bg-amber-50 border-amber-100'">
+          <div class="text-sm font-bold">{{ c.name }} — {{ c.passed ? '通过' : '需关注' }}</div>
+          <p v-if="c.message" class="text-xs text-gray-600 mt-1">{{ c.message }}</p>
+          <ul v-if="c.warnings?.length" class="text-xs text-amber-700 mt-1 list-disc pl-4">
+            <li v-for="(w, i) in c.warnings" :key="i">{{ w.message }}</li>
+          </ul>
+        </div>
+        <div class="flex gap-2 justify-end mt-4">
+          <button class="px-4 py-2 border rounded-lg text-sm" @click="showPublishCheck = false">取消</button>
+          <button class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold" @click="proceedOpenPublish">继续发布</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- AI Meta Error Modal -->
+    <div v-if="showAiErrorModal" class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" @click.self="showAiErrorModal = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all animate-in zoom-in duration-200">
+        <div class="p-6 text-center">
+          <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-100 mb-4">
+            <ExclamationTriangleIcon class="h-6 w-6 text-amber-600" />
+          </div>
+          <h3 class="text-lg leading-6 font-bold text-gray-900 mb-2">生成受阻</h3>
+          <p class="text-sm text-gray-500 mb-6 leading-relaxed px-2">
+            {{ aiErrorMessage }}
+          </p>
+          <div class="flex flex-col gap-2">
+            <button @click="showAiErrorModal = false" class="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-lg transition-all text-sm">我知道了</button>
+            <router-link to="/dashboard/metadata" class="w-full py-2.5 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200 transition-all text-sm text-center">前往元数据中心</router-link>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inline Publish Modal -->
+    <div v-if="showPublishModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+        <div class="p-6 border-b bg-gray-50 flex justify-between items-center text-gray-900">
+          <div class="flex items-center gap-3">
+            <h3 class="text-lg font-bold">发布为 API</h3>
+            <span v-if="selectedFilters.length" class="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">自动识别参数</span>
+          </div>
+          <button @click="showPublishModal = false" class="text-gray-400 hover:text-gray-600 transition-colors"><XMarkIcon class="w-6 h-6" /></button>
+        </div>
+        <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">资源标识 (Key)</label>
+            <input v-model="publishForm.resource_key" placeholder="例如: user.list" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-mono transition-all" />
+            <button
+              v-if="publishSqlDiff.original"
+              type="button"
+              class="mt-2 text-xs text-violet-600 font-bold hover:underline"
+              @click="showPublishSqlDiff = true"
+            >与已存在 API 的 SQL 存在差异，点击查看</button>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">接口名称</label>
+            <input v-model="publishForm.resource_name" placeholder="输入易于理解的名称..." class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" />
+          </div>
+          <div class="space-y-1 relative">
+            <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">接口分组</label>
+            <div class="relative">
+              <input 
+                v-model="publishForm.resource_group" 
+                @focus="showGroupDropdown = true"
+                @blur="hideGroupDropdown"
+                placeholder="输入或选择分组..." 
+                class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+              />
+              <div v-if="showGroupDropdown && selectableGroups.length > 0" class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                <div 
+                  v-for="group in selectableGroups" :key="group"
+                  @mousedown="publishForm.resource_group = group; showGroupDropdown = false"
+                  class="px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 cursor-pointer transition-colors"
+                >
+                  {{ group }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">缓存时间 (秒)</label>
+            <input v-model.number="publishForm.cache_ttl" type="number" placeholder="例如: 300" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-mono transition-all" />
+          </div>
+
+          <!-- JSON Mock Preview -->
+          <div v-if="mockJsonResponse" class="border rounded-xl overflow-hidden mt-4">
+            <button @click="showMockPreview = !showMockPreview" class="w-full px-4 py-2 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors">
+              <span class="text-[10px] font-bold text-gray-500 uppercase">响应预览 (JSON)</span>
+              <ChevronRightIcon class="w-4 h-4 text-gray-400 transition-transform" :class="showMockPreview ? 'rotate-90' : ''" />
+            </button>
+            <div v-if="showMockPreview" class="bg-gray-900 p-4">
+              <pre class="text-[10px] text-green-400 font-mono overflow-auto max-h-48 custom-scrollbar">{{ JSON.stringify(mockJsonResponse, null, 2) }}</pre>
+            </div>
+          </div>
+
+          <!-- Filter Confirmation -->
+          <div v-if="selectedFilters.length > 0" class="space-y-2 mt-4">
+            <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">确认公开的过滤参数</label>
+            <div class="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-2">
+              <label v-for="v in selectedFilters" :key="v" class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" :value="v" checked disabled class="h-4 w-4 text-blue-600 rounded border-gray-300" />
+                <span class="text-xs text-gray-600 font-mono">{{ v }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="p-6 bg-gray-50 border-t flex gap-3">
+          <button @click="showPublishModal = false" class="flex-1 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">取消</button>
+          <button @click="handlePublish" :disabled="publishing || !publishForm.resource_name || !publishForm.resource_key" class="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md">
+            {{ publishing ? '发布中...' : '确认发布' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showTableSelector" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-lg relative shadow-2xl">
+        <button @click="showTableSelector = false" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><XMarkIcon class="w-6 h-6" /></button>
+        <h3 class="font-bold mb-2 flex items-center gap-2"><CircleStackIcon class="w-5 h-5 text-indigo-600" /> 选择 SQL 上下文表</h3>
+        <p class="text-[10px] text-gray-400 mb-4 uppercase tracking-wider font-bold">勾选的表将作为 AI 生成 SQL 的元数据参考</p>
+        
+        <div class="flex items-center gap-3 mb-3 px-2 py-2 bg-gray-50 rounded-lg border border-gray-100">
+          <input 
+            type="checkbox" 
+            :checked="selectedTables.length === availableTables.length && availableTables.length > 0"
+            :indeterminate="selectedTables.length > 0 && selectedTables.length < availableTables.length"
+            @change="(e) => {
+              const checked = (e.target as HTMLInputElement).checked;
+              selectedTables = checked ? availableTables.map(t => typeof t === 'string' ? t : t.name) : [];
+            }"
+
+            id="modal-select-all"
+            class="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" 
+          />
+          <label for="modal-select-all" class="text-xs font-black text-indigo-900 cursor-pointer">全选所有表 ({{ availableTables.length }})</label>
+        </div>
+
+        <div class="max-h-60 overflow-y-auto space-y-2 mb-6 border rounded-xl p-2 bg-gray-50 custom-scrollbar">
+          <label v-for="t in availableTables" :key="typeof t === 'string' ? t : t.name" class="flex items-center gap-3 p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all cursor-pointer group">
+            <input type="checkbox" :value="typeof t === 'string' ? t : t.name" v-model="selectedTables" class="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+            <div class="flex items-center justify-between flex-1">
+              <span class="text-sm text-gray-700 group-hover:text-indigo-600 font-medium">{{ typeof t === 'string' ? t : t.name }}</span>
+              <span v-if="typeof t !== 'string'" :class="t.type === 'VIEW' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'" class="text-[9px] px-1.5 py-0.5 rounded uppercase font-black">{{ t.type }}</span>
+            </div>
+          </label>
+        </div>
+
+        <button @click="showTableSelector = false" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">确认选择</button>
+      </div>
+    </div>
+
+    <div v-if="showExportConfirm" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+        <div class="p-6 text-center">
+          <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4"><ArrowsPointingOutIcon class="w-6 h-6 text-green-600" /></div>
+          <h3 class="text-lg font-bold mb-2">确认导出结果?</h3>
+          <div class="bg-gray-50 rounded-xl p-4 mb-6 text-sm space-y-2">
+            <div class="flex justify-between"><span class="text-gray-500">预计行数</span><span class="font-mono font-bold">{{ currentTab?.result?.rows.length }} 行</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">导出格式</span><span class="font-bold text-green-600">Excel (.xlsx)</span></div>
+          </div>
+          <div class="flex gap-3">
+            <button @click="showExportConfirm = false" class="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200">取消</button>
+            <button @click="executeExport" class="flex-1 py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 shadow-md">开始导出</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showDetailExportConfirm" class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+        <div class="p-6 text-center">
+          <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4"><ArrowsPointingOutIcon class="w-6 h-6 text-green-600" /></div>
+          <h3 class="text-lg font-bold mb-2">确认导出表预览?</h3>
+          <div class="bg-gray-50 rounded-xl p-4 mb-6 text-sm space-y-2">
+            <div class="flex justify-between"><span class="text-gray-500">表名</span><span class="font-mono font-bold">{{ detailTable }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">预计行数</span><span class="font-mono font-bold">{{ detailPreviewData?.rows.length }} 行</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">导出格式</span><span class="font-bold text-green-600">Excel (.xlsx)</span></div>
+          </div>
+          <div class="flex gap-3">
+            <button @click="showDetailExportConfirm = false" class="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200">取消</button>
+            <button @click="executeDetailExport" class="flex-1 py-2.5 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 shadow-md">开始导出</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showSuggestionModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" @click.self="showSuggestionModal = false">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[88vh] overflow-hidden animate-in zoom-in duration-300 border border-gray-100">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 shrink-0">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <SparklesIcon class="w-5 h-5 text-indigo-600" />
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-lg font-bold text-gray-900">AI 智能查询推荐</h3>
+                <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-semibold">
+                  {{ suggestions.length }} 个场景
+                </span>
+              </div>
+              <p class="text-xs text-gray-500 mt-0.5 truncate">{{ suggestionModalSubtitle }}</p>
+            </div>
+          </div>
+          <button type="button" @click="showSuggestionModal = false" class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors shrink-0">
+            <XMarkIcon class="w-5 h-5" />
+          </button>
+        </div>
+
+        <!-- Master-Detail Body -->
+        <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+          <!-- Left: scenario list -->
+          <div class="md:w-[280px] lg:w-[320px] shrink-0 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/80 flex flex-col min-h-0">
+            <div class="px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+              推荐场景
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+              <button
+                v-for="(item, idx) in suggestions"
+                :key="idx"
+                type="button"
+                class="w-full text-left px-3 py-2.5 rounded-lg border transition-all"
+                :class="selectedSuggestionIdx === idx
+                  ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-100'
+                  : 'border-transparent hover:bg-white hover:border-gray-200'"
+                @click="selectedSuggestionIdx = idx"
+              >
+                <div class="flex items-start gap-2">
+                  <span
+                    class="shrink-0 w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center mt-0.5"
+                    :class="selectedSuggestionIdx === idx ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'"
+                  >{{ idx + 1 }}</span>
+                  <span class="text-xs font-semibold leading-snug line-clamp-2" :class="selectedSuggestionIdx === idx ? 'text-indigo-900' : 'text-gray-700'">
+                    {{ item.title }}
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: detail panel -->
+          <div v-if="selectedSuggestion" class="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-5">
+              <div>
+                <h4 class="text-base font-bold text-gray-900 leading-snug">{{ selectedSuggestion.title }}</h4>
+                <p class="mt-2 text-sm text-gray-600 leading-relaxed">{{ selectedSuggestion.description }}</p>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">SQL 预览</span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-indigo-600 transition-colors"
+                    @click="copySuggestionSql(selectedSuggestion.sql)"
+                  >
+                    <ClipboardDocumentIcon class="w-3.5 h-3.5" />
+                    复制 SQL
+                  </button>
+                </div>
+                <div class="rounded-xl border border-gray-800 bg-[#1e1e1e] overflow-hidden">
+                  <pre class="p-4 text-[12px] leading-relaxed text-emerald-400 font-mono overflow-x-auto custom-scrollbar whitespace-pre-wrap max-h-[min(42vh,360px)]"><code>{{ selectedSuggestion.sql }}</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer actions (full modal width) -->
+        <div v-if="suggestions.length" class="shrink-0 px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p class="text-[11px] text-gray-400 leading-relaxed shrink-0">采用后将新建查询标签页；「全部应用」会为每个场景各建一个 Tab</p>
+          <div class="flex items-center justify-end gap-2 flex-nowrap shrink-0">
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors disabled:opacity-40"
+              :disabled="suggestions.length === 0"
+              @click="adoptAllSuggestions"
+            >
+              全部应用 ({{ suggestions.length }})
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-3 py-2 text-sm text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-40"
+              :disabled="loadingSuggestions"
+              @click="regenerateSuggestions"
+            >
+              重新生成
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              @click="showSuggestionModal = false"
+            >
+              关闭
+            </button>
+            <button
+              type="button"
+              class="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-40"
+              :disabled="!selectedSuggestion"
+              @click="selectedSuggestion && adoptSuggestion(selectedSuggestion.sql, selectedSuggestion.title)"
+            >
+              <PlayIcon class="w-4 h-4" />
+              采用此查询
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table Detail Modal (Structure & Preview) -->
+    <div v-if="showTableDetailModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in duration-300">
+        <div class="p-6 border-b bg-gray-50 flex justify-between items-center text-gray-900">
+          <div class="flex items-center gap-3">
+            <div class="p-2 bg-indigo-100 rounded-xl text-indigo-600"><TableCellsIcon class="w-6 h-6" /></div>
+            <div>
+              <h3 class="text-xl font-bold">{{ detailTable }}</h3>
+              <p class="text-[10px] text-gray-400 uppercase font-black tracking-widest">数据表详情与预览</p>
+            </div>
+          </div>
+          <button @click="showTableDetailModal = false" class="text-gray-400 hover:text-gray-600 transition-all"><XMarkIcon class="w-7 h-7" /></button>
+        </div>
+
+        <!-- Tab Header -->
+        <div class="px-6 bg-white border-b flex items-center justify-between gap-4">
+          <div class="flex gap-8">
+            <button
+              @click="detailActiveTab = 'structure'"
+              :class="detailActiveTab === 'structure' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+              class="py-4 border-b-2 font-bold text-sm transition-all"
+            >
+              表结构 ({{ detailMergedColumns.length }})
+            </button>
+            <button
+              @click="() => fetchTablePreview()"
+              :class="detailActiveTab === 'preview' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+              class="py-4 border-b-2 font-bold text-sm transition-all flex items-center gap-2"
+            >
+              数据预览
+              <div v-if="detailPreviewLoading" class="w-3 h-3 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+            </button>
+          </div>
+          <div v-if="detailActiveTab === 'preview'" class="flex items-center gap-2 shrink-0 py-2">
+            <Tooltip text="每页预览行数" position="bottom" align="end">
+              <select
+                :value="detailPreviewLimit"
+                :disabled="detailPreviewLoading"
+                class="h-8 px-2 text-xs border border-gray-200 rounded-md bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:opacity-50"
+                @change="onDetailPreviewLimitChange(Number(($event.target as HTMLSelectElement).value))"
+              >
+                <option v-for="n in DETAIL_PREVIEW_LIMIT_OPTIONS" :key="n" :value="n">{{ n }} 行/页</option>
+              </select>
+            </Tooltip>
+            <template v-if="detailPreviewData">
+            <Tooltip text="将当前结果设为对比基准" position="bottom" align="end">
+              <button @click="pinDetailBaseline" class="flex items-center px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold border border-violet-100 hover:bg-violet-100">
+                {{ detailCompareSnapshot ? '清除基准' : '固定基准' }}
+              </button>
+            </Tooltip>
+            <Tooltip text="基于当前结果集进行深度 AI 数据洞察" position="bottom" align="end">
+              <button
+                v-if="labMode === 'analyst' && isAiEnabled && hasPerm('element:lab:analysis')"
+                @click="openDetailAiAnalysis"
+                class="flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold border border-indigo-100 hover:bg-indigo-100 transition-all"
+              >
+                <SparklesIcon class="w-3.5 h-3.5 mr-1.5" /> AI 智能分析
+              </button>
+            </Tooltip>
+            <Tooltip text="将当前结果导出为 Excel 文件（预览数据）" position="bottom" align="end">
+              <button
+                v-if="labMode === 'analyst' && hasPerm('element:lab:export')"
+                @click="exportDetailToExcel"
+                class="flex items-center px-3 py-1.5 bg-green-50 text-green-600 rounded-lg text-xs font-bold border border-green-100 hover:bg-green-100 transition-all"
+              >
+                <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4 4m4-4v12" /></svg>
+                导出 Excel
+              </button>
+            </Tooltip>
+            <Tooltip text="后端异步全量导出（最多 5 万行）" position="bottom" align="end">
+              <button
+                v-if="hasPerm('element:lab:export')"
+                @click="openDetailExportPanel"
+                class="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-100 hover:bg-emerald-100 transition-all"
+              >
+                异步导出
+              </button>
+            </Tooltip>
+            </template>
+          </div>
+        </div>
+
+        <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50/30">
+          <!-- Structure View -->
+          <div v-if="detailActiveTab === 'structure'" class="flex-1 overflow-auto p-6 custom-scrollbar">
+            <div v-if="detailLoading" class="flex flex-col items-center justify-center py-20 space-y-4">
+              <div class="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+              <p class="text-sm text-gray-400 italic">正在读取表结构...</p>
+            </div>
+            <template v-else>
+              <div
+                v-if="detailTableProfile?.ai_term || detailTableProfile?.ai_description"
+                class="mb-4 p-4 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-2"
+              >
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">摸排画像</span>
+                  <span
+                    v-if="detailTableProfile?.confidence_score != null"
+                    class="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                    :class="detailTableProfile.confidence_score >= 80 ? 'bg-green-100 text-green-700' : detailTableProfile.confidence_score >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'"
+                  >置信度 {{ detailTableProfile.confidence_score }}%</span>
+                  <span
+                    v-for="tag in (detailTableProfile?.ai_tags || [])"
+                    :key="tag"
+                    class="text-[10px] px-2 py-0.5 bg-white border border-indigo-100 rounded-full text-gray-600"
+                  >{{ tag }}</span>
+                </div>
+                <div v-if="detailTableProfile?.ai_term" class="text-sm font-bold text-gray-900">{{ detailTableProfile.ai_term }}</div>
+                <div v-if="detailTableProfile?.ai_description" class="text-sm text-gray-600 leading-relaxed">{{ detailTableProfile.ai_description }}</div>
+              </div>
+              <table class="min-w-full divide-y divide-gray-200 bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">字段名</th>
+                    <th v-if="detailHasProfileTerms" class="px-6 py-3 text-left text-[10px] font-black text-indigo-400 uppercase tracking-widest">业务术语</th>
+                    <th class="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">物理类型</th>
+                    <th class="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                      描述/注释
+                      <span v-if="detailHasProfileInfo" class="ml-1 text-indigo-400 normal-case font-medium">（优先摸排）</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <tr v-for="col in detailMergedColumns" :key="col.name" class="hover:bg-indigo-50/30 transition-colors">
+                    <td class="px-6 py-4 text-sm font-bold text-gray-900 font-mono">{{ col.name }}</td>
+                    <td v-if="detailHasProfileTerms" class="px-6 py-4 text-sm text-indigo-600 font-medium">
+                      {{ col.term || '-' }}
+                    </td>
+                    <td class="px-6 py-4 text-xs text-indigo-600 font-medium">
+                      <span v-if="col.type" class="px-2 py-0.5 bg-indigo-50 rounded-full border border-indigo-100">{{ col.type }}</span>
+                      <span v-else class="text-gray-300">-</span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-600">
+                      <span :class="col.fromProfile ? 'text-gray-800' : 'text-gray-500'">{{ col.desc || col.comment || '-' }}</span>
+                      <span
+                        v-if="col.desc && col.comment && col.comment !== col.desc"
+                        class="block text-[10px] text-gray-400 mt-1"
+                      >库注释: {{ col.comment }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+          </div>
+
+          <!-- Preview View -->
+          <div v-else class="flex-1 min-h-0 flex flex-col bg-white">
+            <div v-if="detailPreviewLoading" class="flex flex-col items-center justify-center flex-1 space-y-4">
+              <div class="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+              <p class="text-sm text-gray-400 italic">正在查询前 {{ detailPreviewLimit }} 条数据...</p>
+            </div>
+            <LabResultDataView
+              v-else
+              :result="detailPreviewData"
+              :error="detailPreviewError"
+              :total-count="detailTotalCount"
+              :preview-limit="detailPreviewLimit"
+              :preview-offset="detailPreviewOffset"
+              :compare-snapshot="detailCompareSnapshot"
+              empty-text="表中暂无数据"
+              class="flex-1 min-h-0"
+              @clear="clearDetailPreview"
+              @page-change="handleDetailPageChange"
+              @clear-baseline="pinDetailBaseline"
+            />
+          </div>
+        </div>
+        
+        <div class="p-6 border-t bg-gray-50 flex justify-end">
+          <button @click="showTableDetailModal = false" class="px-8 py-2.5 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

@@ -1,0 +1,211 @@
+<!--
+  微信公众号排版 HTML — 南孜 AI 智能体平台 v1.0.5
+  使用说明：
+  1. 复制下方 <section> 内全部内容，粘贴到微信公众平台编辑器「HTML」模式（或 135/秀米 等工具）
+  2. 封面图可在编辑器中自行上传替换
+  3. 外链在发布前预览确认；部分链接需绑定公众号域名白名单
+  4. 不支持 <style>、<script>、class/id 选择器，全部采用内联 style
+-->
+
+<section style="box-sizing:border-box;font-size:16px;color:#3f3f3f;line-height:1.8;letter-spacing:0.5px;text-align:justify;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Arial,sans-serif;">
+
+  <!-- 标题区 -->
+  <section style="margin:0 0 24px 0;padding:20px 16px;background:linear-gradient(135deg,#070b14 0%,#0f172a 48%,#312e81 100%);border-radius:10px;text-align:center;box-shadow:0 4px 20px rgba(99,102,241,0.15);">
+    <p style="margin:0 0 8px 0;font-size:22px;font-weight:bold;color:#f8fafc;line-height:1.5;letter-spacing:1px;">🚀 南孜 AI 智能体平台 · v1.0.5 重磅发布</p>
+    <p style="margin:0;font-size:16px;font-weight:normal;color:#a5b4fc;line-height:1.6;letter-spacing:0.5px;">联邦查数加固 · 黄金报表 · SQL Server · 第三方用户同步</p>
+  </section>
+
+  <!-- 仓库链接 -->
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#1e40af;line-height:1.7;">
+      <strong style="color:#1e3a8a;">GitHub Repository：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform" style="color:#2563eb;text-decoration:none;word-break:break-all;">RandyChen1985/nanzi-ai-agent-platform</a>
+    </p>
+  </section>
+
+  <!-- 导语 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;line-height:1.9;">
+      v1.0.5 是一次<strong style="color:#4338ca;">ChatBI 联邦查数深度加固、数据门户黄金报表、SQL Server 与第三方用户同步</strong>的大版本更新。联邦 WHERE 探查与空结果自动重试全面增强；Portal 黄金 SQL 报表支持持久化、分享与个人偏好；新增 SQL Server 全链路支持；第三方用户同步重构为「用户名映射 + 扩展 JSON 聚合」。
+    </p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.8;">
+      本次变更范围自 <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">61681d9</code>（含）至
+      <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">099181d</code>，共
+      <strong>49 个提交</strong>，涉及 199 个文件、约 21,800 行新增代码。
+    </p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Key Features ========== -->
+  <section style="margin:0 0 20px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #2563eb;padding-left:12px;line-height:1.4;">🚀 Key Features</p>
+  </section>
+
+  <!-- Feature Card 01 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#eef6ff;border:1px solid #cfe3ff;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#1e40af;line-height:1.5;">01 🔗 ChatBI 联邦查数深度加固</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> memory_join 计划修正、联邦 SQL repair 与降级留空机制。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> WHERE 探查接入 Schema；空结果筛选诊断与自动重试。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> 子查询门禁、平台重试预算与 JOIN 异常拦截。</p>
+  </section>
+
+  <!-- Feature Card 02 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#b45309;line-height:1.5;">02 📊 数据门户黄金报表体系</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#f59e0b;font-weight:bold;">●</span> Portal 保存/分享/运行黄金 SQL 报表，持久化至数据库。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#f59e0b;font-weight:bold;">●</span> 个人偏好（收藏/置顶/运行历史）、放大浏览与表格视图切换。</p>
+  </section>
+
+  <!-- Feature Card 03 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#4338ca;line-height:1.5;">03 🗄️ SQL Server 全链路支持</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#6366f1;font-weight:bold;">●</span> 新增 SQL Server 数据源（ODBC）、元数据导入与本地只读查询。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#6366f1;font-weight:bold;">●</span> 修复 sqlglot 方言映射，ChatBI 可正常解析 T-SQL；Docker 镜像含 ODBC 驱动。</p>
+  </section>
+
+  <!-- Feature Card 04 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#047857;line-height:1.5;">04 👥 第三方用户同步（重构）</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#10b981;font-weight:bold;">●</span> 以<strong>用户名</strong>为映射主键：不存在则新增，已存在则更新。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#10b981;font-weight:bold;">●</span> 来源表多字段聚合为 JSON 写入 extra_data；支持定时同步。</p>
+  </section>
+
+  <!-- Feature Card 05 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#7e22ce;line-height:1.5;">05 🤖 子代理与 Office 文档工具</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#a855f7;font-weight:bold;">●</span> 子代理委派链路优化；新增 Word/Excel 文档工具与生成文件下载。</p>
+  </section>
+
+  <!-- Feature Card 06 -->
+  <section style="margin:0 0 28px 0;padding:16px 14px;background-color:#f1f5f9;border:1px solid #cbd5e1;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#334155;line-height:1.5;">06 ⚙️ 平台管理与运维</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> 品牌个性化、知识库总开关、主助手动态专家清单。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> 智能体中心拖拽排序；Redis 诊断增强；行级权限重写完善。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> 数据门户 Redis 缓存 TTL 延长至 90 天。</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Breaking Changes ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #dc2626;padding-left:12px;line-height:1.4;">⚠️ Breaking Changes</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;width:30%;">项目</th>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">数据库</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">须执行 V82 ~ V87 六个增量脚本。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">用户同步</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">改为用户名映射，旧 field_map.id 已废弃。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">知识库</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">新增总开关，关闭后相关入口不可用。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">Docker</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">SQL Server 需含 ODBC 驱动的新镜像。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Database Upgrades ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #10b981;padding-left:12px;line-height:1.4;">🗄️ Database Upgrades</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">从 v1.0.4 升级至 v1.0.5，须执行 <strong>6 个</strong>增量 SQL 脚本：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;width:35%;">脚本</th>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;">内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V82</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">黄金 SQL 报表持久化与分享表。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V83</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">报表用户偏好（收藏/置顶/运行历史）。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V84</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">品牌个性化配置项。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V85</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">第三方用户同步默认配置。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V86</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">主助手 {agent_roster} 动态注入。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V87</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">知识库总开关 knowledge_base_enabled。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Upgrade Guide ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #7c3aed;padding-left:12px;line-height:1.4;">📦 Upgrade Guide</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;"># 拉取代码 → 更新依赖 → 执行 V82~V87 → 编译前端 → ./dev.sh</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;">./db-prod/apply-sql-native.sh</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Test Checklist ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #0891b2;padding-left:12px;line-height:1.4;">✅ Test Checklist</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background-color:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>联邦查询</strong>：WHERE 探查、空结果重试、子查询门禁</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>黄金报表</strong>：保存/分享/运行、个人偏好</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>SQL Server</strong>：数据源配置与 ChatBI T-SQL 执行</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>第三方用户同步</strong>：字段映射、预览、手动/定时同步</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>回归测试</strong>：pytest 全量通过</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Downloads ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 12px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #d97706;padding-left:12px;line-height:1.4;">💾 Downloads</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">📦 Source Code：nanzi-ai-agent-platform-1.0.5.zip / .tar.gz</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">🐳 Docker：nanzi-ai-agent_1.0.5_linux-amd64_*.tar / arm64_*.tar</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">
+      🔗 <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/releases/tag/1.0.5" style="color:#2563eb;text-decoration:none;">GitHub Releases v1.0.5</a>
+    </p>
+  </section>
+
+  <!-- 页脚 -->
+  <section style="margin:32px 0 0 0;padding:16px;text-align:center;background:#f9fafb;border-radius:8px;">
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.7;">感谢所有参与 v1.0.5 版本发布的开发者 🎉</p>
+  </section>
+
+</section>

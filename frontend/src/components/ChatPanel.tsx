@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { EChartWidget } from "./EChartWidget";
 import { SqlCodeBlock } from "./SqlCodeBlock";
-import type { AskResponse, HistoryRecord, PreferenceProfile } from "../types";
+import { AttributionWidget } from "./AttributionWidget";
+import { LineageGraphWidget } from "./LineageGraphWidget";
+import type { AskResponse, DataSourceInfo, HistoryRecord, PreferenceProfile } from "../types";
+import { dataSourceLabel, hasQuerySql, normalizeDataSource, queryErrorTitle } from "../lib/chatPresentation";
 
-const API_BASE = "http://localhost:8000/api";
-const HISTORY_PAGE_SIZE = 3;
+const API_BASE = "/api";
+// 历史记录按可用高度分页：先把当前页铺满，再翻下一页。
+const HISTORY_ITEM_GAP = 12; // 与列表的 gap-3 保持一致
+const HISTORY_ITEM_FALLBACK_HEIGHT = 96; // 首条记录渲染前的估算行高
 
-export const ChatPanel: React.FC = () => {
-  const [question, setQuestion] = useState("");
-  const [dialect, setDialect] = useState("doris");
+interface ChatPanelProps {
+  initialQuestion?: string;
+}
+
+export const ChatPanel: React.FC<ChatPanelProps> = ({ initialQuestion }) => {
+  const [question, setQuestion] = useState(initialQuestion || "");
+  const [dialect, setDialect] = useState("postgres");
   const [user, setUser] = useState("anonymous"); // 默认模拟用户
   const [role, setRole] = useState("user");       // 默认角色权限
 
@@ -18,9 +27,13 @@ export const ChatPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   const [response, setResponse] = useState<AskResponse | null>(null);
+  const [dataSource, setDataSource] = useState<DataSourceInfo | null>(null);
+  const [dataSourceUnavailable, setDataSourceUnavailable] = useState(false);
 
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(3);
+  const historyListRef = useRef<HTMLDivElement>(null);
   const [preference, setPreference] = useState<PreferenceProfile | null>(null);
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [isEditingPreference, setIsEditingPreference] = useState(false);
@@ -63,14 +76,64 @@ export const ChatPanel: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
+    const controller = new AbortController();
+    fetch(`${API_BASE}/chat/data-source`, { signal: controller.signal })
+      .then(async res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.mode !== "demo" && data.mode !== "configured") throw new Error("Unknown data source");
+        setDataSource(normalizeDataSource(data));
+      })
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setDataSourceUnavailable(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(history.length / historyPageSize));
     if (historyPage > totalPages) {
       setHistoryPage(totalPages);
     }
-  }, [history.length, historyPage]);
+  }, [history.length, historyPage, historyPageSize]);
+
+  // 侧栏与左侧主区同高，可用高度随之变化；按实测行高重新计算每页条数。
+  const measureHistoryPageSize = useCallback(() => {
+    const container = historyListRef.current;
+    if (!container) return;
+    const available = container.clientHeight;
+    if (available <= 0) return;
+    const record = container.querySelector<HTMLElement>("[data-history-record]");
+    const itemHeight = record?.offsetHeight || HISTORY_ITEM_FALLBACK_HEIGHT;
+    const fits = Math.floor((available + HISTORY_ITEM_GAP) / (itemHeight + HISTORY_ITEM_GAP));
+    setHistoryPageSize(previous => (previous === Math.max(1, fits) ? previous : Math.max(1, fits)));
+  }, []);
+
+  useEffect(() => {
+    const container = historyListRef.current;
+    if (!container) return;
+    // Answer rendering is what changes the column height, so re-measure on it
+    // directly: ResizeObserver callbacks are not delivered while a tab is hidden.
+    measureHistoryPageSize();
+    const observer = typeof ResizeObserver === "undefined"
+      ? null : new ResizeObserver(measureHistoryPageSize);
+    observer?.observe(container);
+    window.addEventListener("resize", measureHistoryPageSize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measureHistoryPageSize);
+    };
+  }, [measureHistoryPageSize, history.length, response, loading, preference, recommendations]);
+
+  useEffect(() => {
+    if (initialQuestion) {
+      setQuestion(initialQuestion);
+      handleSend(initialQuestion);
+    }
+  }, [initialQuestion]);
 
   const handleSend = async (text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || loading) return;
     setLoading(true);
     setResponse(null);
 
@@ -111,6 +174,14 @@ export const ChatPanel: React.FC = () => {
       }
       const data: AskResponse = await res.json();
       setResponse(data);
+      if (data.data_source_info) {
+        setDataSource(normalizeDataSource(data.data_source_info));
+        setDataSourceUnavailable(false);
+      } else if (data.details?.data_source) {
+        const mode = data.details.data_source;
+        setDataSource(previous => previous?.mode === mode ? previous : normalizeDataSource({ mode, label: dataSourceLabel(mode) }));
+        setDataSourceUnavailable(false);
+      }
     } catch (e) {
       setResponse({
         success: false,
@@ -179,12 +250,12 @@ export const ChatPanel: React.FC = () => {
   );
   const totalHistoryPages = Math.max(
     1,
-    Math.ceil(sortedHistory.length / HISTORY_PAGE_SIZE)
+    Math.ceil(sortedHistory.length / historyPageSize)
   );
   const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
   const visibleHistory = sortedHistory.slice(
-    (currentHistoryPage - 1) * HISTORY_PAGE_SIZE,
-    currentHistoryPage * HISTORY_PAGE_SIZE
+    (currentHistoryPage - 1) * historyPageSize,
+    currentHistoryPage * historyPageSize
   );
 
   const startEditingPreference = () => {
@@ -222,7 +293,12 @@ export const ChatPanel: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-7xl mx-auto w-full items-stretch min-h-[750px]">
-      
+      <div style={{ gridColumn: "1 / -1" }} className="flex flex-wrap items-center gap-3 text-xs" role="status" aria-live="polite">
+        <span className={`px-3 py-1.5 rounded-lg border font-semibold ${dataSource?.mode === "demo" ? "border-amber-500/40 bg-amber-950/30 text-amber-200" : "border-slate-700 bg-slate-900/70 text-slate-200"}`}>
+          当前数据源：{dataSource?.label || (dataSourceUnavailable ? "暂时无法确认" : "正在确认")}
+        </span>
+        {dataSource && <span className="text-gray-400">{dataSource.description}</span>}
+      </div>
       {/* 左侧：输入框 + 结果展示区 */}
       <div className="lg:col-span-8 flex flex-col gap-6 justify-between h-full">
         <div className="flex flex-col gap-6 flex-1">
@@ -256,6 +332,32 @@ export const ChatPanel: React.FC = () => {
 
               {response.success ? (
                 <>
+                  {/* 顶栏徽标：技能调度与缓存加速状态 */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      {response.skill_type === "attribution" && (
+                        <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-gradient-to-r from-orange-500/20 to-rose-500/20 text-orange-300 border border-orange-500/30">
+                          🎯 Skill-Hub: 多维异动归因下钻
+                        </span>
+                      )}
+                      {response.skill_type === "lineage" && (
+                        <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-300 border border-purple-500/30">
+                          🕸️ Skill-Hub: 湖图双引擎数据血缘
+                        </span>
+                      )}
+                      {(!response.skill_type || response.skill_type === "query") && (
+                        <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30">
+                          ⚡ 语义层确定性 DSL 编译
+                        </span>
+                      )}
+                    </div>
+                    {response.cache_hit && (
+                      <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        ⚡ 语义多级缓存已命中 ({response.cache_type === "exact" ? "L1 精确哈希" : "L2 向量语义"})
+                      </span>
+                    )}
+                  </div>
+
                   {/* 第一层：结论摘要 */}
                   <div className="glass-card p-6 border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-950/10 to-slate-900/40">
                     <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">
@@ -265,6 +367,16 @@ export const ChatPanel: React.FC = () => {
                       {response.conclusion}
                     </p>
                   </div>
+
+                  {/* 专项技能卡片渲染：异动归因诊断 */}
+                  {response.attribution_data && (
+                    <AttributionWidget data={response.attribution_data} />
+                  )}
+
+                  {/* 专项技能卡片渲染：湖图数据血缘拓扑 */}
+                  {response.lineage_data && (
+                    <LineageGraphWidget data={response.lineage_data} />
+                  )}
 
                   {/* 第二层：智能可视化图表 */}
                   {response.chart && response.chart.type !== "table" && (
@@ -386,24 +498,22 @@ export const ChatPanel: React.FC = () => {
                     )}
                   </details>
                 </>
-              ) : (
+              ) : response.clarification?.need_clarification && !response.error ? null : (
                 // Guardrail 拦截与错误展示
                 <div className="glass-card p-6 border-l-4 border-l-red-500 bg-red-950/15 border-red-500/20">
                   <div className="flex items-start gap-3">
                     <div className="text-red-400 text-2xl font-bold leading-none">⚠️</div>
                     <div className="flex-1">
                       <h3 className="text-red-400 text-sm font-semibold mb-2">
-                        {response.error && (response.error.includes("Guardrail") || response.error.includes("拦截") || response.error.includes("熔断") || response.error.includes("安全防护")) 
-                          ? "安全防护审计未通过 (Guardrail Exception)" 
-                          : "系统处理异常"}
+                        {queryErrorTitle(response)}
                       </h3>
                       <p className="text-gray-300 text-sm font-medium leading-relaxed">
                         {response.error}
                       </p>
 
-                      {response.details && (
+                      {response.details && hasQuerySql(response.details.sql) && (
                         <div className="mt-4 border-t border-red-500/10 pt-4">
-                          <span className="text-gray-500 text-xs font-semibold block mb-1">被拦截 SQL 语句 ({response.details.dialect})：</span>
+                          <span className="text-gray-500 text-xs font-semibold block mb-1">查询 SQL ({response.details.dialect})：</span>
                           <SqlCodeBlock sql={response.details.sql} />
                         </div>
                       )}
@@ -461,17 +571,101 @@ export const ChatPanel: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* 前沿特色能力快捷体验胶囊 */}
+          <div className="mb-3 flex flex-wrap gap-1.5 items-center">
+            <span className="text-[10px] text-gray-500 font-bold mr-1">前沿特性体验:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("华东区昨天的退款额是多少");
+                handleSend("华东区昨天的退款额是多少");
+              }}
+              className="px-2.5 py-1 bg-slate-900/80 hover:bg-purple-950/40 border border-slate-700/80 hover:border-purple-500/40 rounded-lg text-[11px] text-slate-300 hover:text-purple-300 transition-all cursor-pointer flex items-center gap-1"
+            >
+              <span>💡</span> 基础指标问数
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("华东区昨天的退款额是多少");
+                handleSend("华东区昨天的退款额是多少");
+              }}
+              className="px-2.5 py-1 bg-emerald-950/30 hover:bg-emerald-950/60 border border-emerald-500/30 hover:border-emerald-500/60 rounded-lg text-[11px] text-emerald-300 transition-all cursor-pointer flex items-center gap-1"
+              title="二次提问相同或相似语义问题，验证 <5ms 多级语义缓存极速命中"
+            >
+              <span>⚡</span> 语义缓存极速命中
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("为什么华东区退款额上升");
+                handleSend("为什么华东区退款额上升");
+              }}
+              className="px-2.5 py-1 bg-amber-950/30 hover:bg-amber-950/60 border border-amber-500/30 hover:border-amber-500/60 rounded-lg text-[11px] text-amber-300 transition-all cursor-pointer flex items-center gap-1"
+              title="多维下钻切片与瀑布流贡献率分解"
+            >
+              <span>📊</span> 退款额异动归因
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("GMV指标的数据血缘是怎样的");
+                handleSend("GMV指标的数据血缘是怎样的");
+              }}
+              className="px-2.5 py-1 bg-blue-950/30 hover:bg-blue-950/60 border border-blue-500/30 hover:border-blue-500/60 rounded-lg text-[11px] text-blue-300 transition-all cursor-pointer flex items-center gap-1"
+              title="ODS->DWD->DWS->ADS 全链路图谱"
+            >
+              <span>🌐</span> 湖仓双引擎血缘
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("过去30天各品类退款额是多少");
+                handleSend("过去30天各品类退款额是多少");
+              }}
+              className="px-2.5 py-1 bg-red-950/30 hover:bg-red-950/60 border border-red-500/30 hover:border-red-500/60 rounded-lg text-[11px] text-red-300 transition-all cursor-pointer flex items-center gap-1"
+              title="按品类查询近30天退款金额"
+            >
+              <span>📋</span> 品类退款额
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("昨天听书各分类播放量是多少");
+                handleSend("昨天听书各分类播放量是多少");
+              }}
+              className="px-2.5 py-1 bg-cyan-950/30 hover:bg-cyan-950/60 border border-cyan-500/30 hover:border-cyan-500/60 rounded-lg text-[11px] text-cyan-300 transition-all cursor-pointer flex items-center gap-1"
+              title="ListenBook 听书数仓业务问数"
+            >
+              <span>🎧</span> 听书业务问数
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuestion("为什么听书会员退款额上升");
+                handleSend("为什么听书会员退款额上升");
+              }}
+              className="px-2.5 py-1 bg-indigo-950/30 hover:bg-indigo-950/60 border border-indigo-500/30 hover:border-indigo-500/60 rounded-lg text-[11px] text-indigo-300 transition-all cursor-pointer flex items-center gap-1"
+              title="ListenBook 听书会员异动归因下钻"
+            >
+              <span>📉</span> 听书会员归因
+            </button>
+          </div>
+
           <div className="flex gap-3">
             <select
               value={dialect}
               onChange={(e) => setDialect(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+              className="bg-slate-900 border border-slate-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
             >
               <option value="doris">Doris 方言</option>
               <option value="clickhouse">ClickHouse 方言</option>
+              <option value="starrocks">StarRocks 方言</option>
               <option value="postgres">PostgreSQL 方言</option>
               <option value="mysql">MySQL 方言</option>
-              <option value="starrocks">StarRocks 方言</option>
+              <option value="duckdb">DuckDB 方言</option>
+              <option value="sqlite">SQLite 方言</option>
             </select>
 
             <input
@@ -486,7 +680,7 @@ export const ChatPanel: React.FC = () => {
             <button
               onClick={() => handleSend(question)}
               disabled={loading}
-              className="btn-gradient px-5 py-2 text-sm flex items-center gap-1.5 disabled:opacity-50"
+              className="btn-gradient px-5 py-2 text-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
             >
               {loading ? "执行中..." : "发送"}
             </button>
@@ -691,19 +885,20 @@ export const ChatPanel: React.FC = () => {
         )}
 
         {/* L1 历史记录与一键重跑 */}
-        <div className="glass-card p-6 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 flex-1 flex flex-col mt-auto">
+        <div className="glass-card p-6 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 flex-1 min-h-0 flex flex-col mt-auto">
           <h3 className="text-base font-bold text-gray-200 mb-4 flex items-center gap-2">
             <span className="text-blue-400">🔄</span>
             历史查询与重跑 (L1 记忆)
           </h3>
 
-          <div className="flex flex-col gap-3 overflow-y-auto pr-1 flex-1 max-h-[350px]">
+          <div ref={historyListRef} className="flex flex-col gap-3 overflow-y-auto pr-1 flex-1 min-h-0">
             {history.length === 0 ? (
               <p className="text-xs text-gray-600 text-center py-6">暂无历史查询记录</p>
             ) : (
               visibleHistory.map((record) => (
                 <div
                   key={record.id}
+                  data-history-record=""
                   className="bg-slate-900/60 hover:bg-purple-950/10 border border-slate-800 hover:border-purple-500/20 rounded-lg p-3 cursor-pointer group transition-all relative"
                   onClick={() => handleSend(record.question)}
                 >
@@ -738,7 +933,7 @@ export const ChatPanel: React.FC = () => {
             )}
           </div>
 
-          {history.length > HISTORY_PAGE_SIZE && (
+          {totalHistoryPages > 1 && (
             <nav className="history-pagination mt-auto pt-3 border-t border-slate-800/50" aria-label="历史查询分页">
               <button
                 type="button"

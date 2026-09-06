@@ -1,0 +1,25 @@
+# Git pre-commit 钩子：提交前自动运行 ruff/black/基础检查。
+# 首次使用：uv run pre-commit install（安装 git hook），之后 git commit 自动触发。
+# 手动全量执行：uv run pre-commit run --all-files
+# 版本更新：uv run pre-commit autoupdate
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml

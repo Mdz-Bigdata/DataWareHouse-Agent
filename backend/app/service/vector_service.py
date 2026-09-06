@@ -88,7 +88,12 @@ class VectorService:
         获取文本 Embedding 向量。自动根据 llm_config.json 选用在线大模型 API 
         或本地降级哈希算法。
         """
-        config_path = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
+        # Migrating project fixtures to PostgreSQL must not add a model dependency.
+        from app.service.db_service import db_service
+        if db_service.is_sample_data:
+            return self._get_local_hash_embedding(text)
+
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "llm_config.json")
         api_key = ""
         base_url = ""
         
@@ -193,6 +198,8 @@ class VectorService:
         print(f"[VectorService] Ingested {len(metric_points)} metrics into '{self.metrics_collection}'.")
         print(f"[VectorService] Ingested {len(dim_points)} dimensions into '{self.dims_collection}'.")
         print(f"[VectorService] Ingested {len(value_points)} enum values into '{self.value_collection}'.")
+        from app.service.hybrid_retriever import hybrid_retriever
+        hybrid_retriever.build_bm25_indices(semantic_layer)
 
     def ingest_fewshot_examples(self):
         """导入 Few-shot 示例"""
@@ -305,9 +312,21 @@ class VectorService:
                     payload["name"] = payload.get("field_name")
                     results.append(payload)
                     
-        # 4. 执行 Schema Linking topological Rerank (拓扑连通性与词汇匹配精排重采样)
-        results = self._rerank_schema_links(query, results)
-        return results
+        # 4. 融合 BM25 稀疏检索结果 (Hybrid Retrieval)
+        from app.service.hybrid_retriever import hybrid_retriever
+        if not hybrid_retriever.is_indexed:
+            hybrid_retriever.build_bm25_indices(semantic_layer)
+
+        bm25_m_hits = hybrid_retriever.bm25_metrics.search(query, top_k=limit)
+        bm25_d_hits = hybrid_retriever.bm25_dims.search(query, top_k=limit)
+        bm25_all = bm25_m_hits + bm25_d_hits
+
+        # 融合稠密与稀疏
+        fused_candidates = hybrid_retriever.fuse_rrf(results, bm25_all)
+
+        # 5. 执行 Schema Linking topological Rerank (拓扑连通性与词汇匹配精排重采样)
+        final_results = self._rerank_schema_links(query, fused_candidates)
+        return final_results
 
     def _rerank_schema_links(self, query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -425,9 +444,19 @@ class VectorService:
 
     def ingest_error_corrections(self):
         """
-        从 user_memory 加载所有已存的物理纠错经验并写入 Qdrant 向量库中
+        从 user_memory 加载所有已存的物理纠错经验并写入 Qdrant 向量库中（同步重建）
         """
         from app.model.user_memory import user_memory
+        from qdrant_client.http.models import VectorParams, Distance
+        
+        # 重建以确保彻底同步物理删除
+        if self.client.collection_exists(collection_name=self.error_correction_collection):
+            self.client.delete_collection(collection_name=self.error_correction_collection)
+        self.client.create_collection(
+            collection_name=self.error_correction_collection,
+            vectors_config=VectorParams(size=self.embedding_dim, distance=Distance.COSINE)
+        )
+        
         corrections = user_memory.get_error_corrections()
         points = []
         point_id = 2000
@@ -447,6 +476,7 @@ class VectorService:
         if points:
             self.client.upsert(collection_name=self.error_correction_collection, points=points)
             print(f"[VectorService] Ingested {len(points)} error corrections into Qdrant.")
+
 
     def recall_error_corrections(self, query: str, error_message: str = "", limit: int = 1) -> List[Dict[str, Any]]:
         """

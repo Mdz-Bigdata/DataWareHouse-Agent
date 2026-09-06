@@ -1,0 +1,110 @@
+# 应用配置。敏感值必须通过环境变量或未提交的 app_config.local.yaml 提供。
+app:
+  name: listen-book-data-agent
+  environment: ${oc.env:APP_ENV,development}
+
+# 日志配置
+logging:
+  file:
+    enable: true
+    level: INFO
+    path: logs
+    rotation: "10 MB"
+    retention: "7 days"
+  console:
+    enable: true
+    level: INFO
+
+# 元数据库配置
+db_meta:
+  host: ${oc.env:META_DB_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:META_DB_PORT,23306}}
+  user: ${oc.env:META_DB_USER,listenbook}
+  password: ${oc.env:META_DB_PASSWORD,replace-me}
+  database: ${oc.env:META_DB_NAME,listenbook_meta}
+
+# 听书业务数据库配置
+db_dw:
+  host: ${oc.env:AUDIO_DB_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:AUDIO_DB_PORT,23306}}
+  user: ${oc.env:AUDIO_QUERY_USER,listenbook_reader}
+  password: ${oc.env:AUDIO_QUERY_PASSWORD,replace-me}
+  database: ${oc.env:AUDIO_DB_NAME,audio}
+  # Phase 3.3：数据源方言。支持 mysql/postgresql/clickhouse/doris，默认 mysql。
+  dialect: ${oc.env:AUDIO_DB_DIALECT,mysql}
+
+# qdrant的配置
+qdrant:
+  host: ${oc.env:QDRANT_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:QDRANT_PORT,16433}}
+  embedding_size: ${oc.decode:${oc.env:EMBEDDING_SIZE,1024}}
+  collection_prefix: ${oc.env:QDRANT_COLLECTION_PREFIX,listenbook}
+
+# embedding的配置
+embedding:
+  host: ${oc.env:EMBEDDING_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:EMBEDDING_PORT,8081}}
+  model: ${oc.env:EMBEDDING_MODEL,BAAI/bge-large-zh-v1.5}
+
+# es的配置
+es:
+  host: ${oc.env:ES_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:ES_PORT,19200}}
+  index_name: ${oc.env:ES_INDEX_PREFIX,listenbook}
+
+# Redis 配置（Phase 4.1）。不可用时自动降级为直查，不影响服务。
+redis:
+  host: ${oc.env:REDIS_HOST,127.0.0.1}
+  port: ${oc.decode:${oc.env:REDIS_PORT,16379}}
+  db: ${oc.decode:${oc.env:REDIS_DB,0}}
+  password: ${oc.env:REDIS_PASSWORD,}
+  meta_ttl_seconds: ${oc.decode:${oc.env:REDIS_META_TTL,600}}
+  query_ttl_seconds: ${oc.decode:${oc.env:REDIS_QUERY_TTL,300}}
+
+# OpenTelemetry 配置（Phase 4.3）。生产建议开启并指向 OTel Collector。
+otel:
+  enable: ${oc.decode:${oc.env:OTEL_ENABLE,false}}
+  otlp_endpoint: ${oc.env:OTEL_OTLP_ENDPOINT,}
+  service_name: ${oc.env:OTEL_SERVICE_NAME,listen-book-data-agent}
+
+# llm的配置
+llm:
+  provider: ${oc.env:LLM_PROVIDER,deepseek}
+  model_name: ${oc.env:LLM_MODEL,deepseek-chat}
+  api_key: ${oc.env:LLM_API_KEY,replace-me}
+  base_url: ${oc.env:LLM_BASE_URL,https://api.deepseek.com}
+  temperature: 0.0
+  timeout_seconds: ${oc.decode:${oc.env:LLM_TIMEOUT_SECONDS,60}}
+  # 落库密钥的主密钥，生产环境必须显式设置
+  key_master_secret: ${oc.env:LLM_KEY_MASTER_SECRET,}
+
+query:
+  timeout_seconds: ${oc.decode:${oc.env:SQL_QUERY_TIMEOUT_SECONDS,30}}
+  max_result_rows: ${oc.decode:${oc.env:SQL_MAX_RESULT_ROWS,500}}
+  correction_attempts: ${oc.decode:${oc.env:SQL_CORRECTION_ATTEMPTS,2}}
+  explain_cost_budget: ${oc.decode:${oc.env:SQL_EXPLAIN_COST_BUDGET,5000000}}
+  explain_rows_budget: ${oc.decode:${oc.env:SQL_EXPLAIN_ROWS_BUDGET,5000000}}
+  generation_mode: ${oc.env:QUERY_GENERATION_MODE,legacy}
+
+# 认证配置。生产环境必须通过 AUTH_SECRET_KEY / AUTH_ADMIN_PASSWORD 覆盖默认值。
+auth:
+  secret_key: ${oc.env:AUTH_SECRET_KEY,dev-only-secret-change-me}
+  token_ttl_minutes: ${oc.decode:${oc.env:AUTH_TOKEN_TTL_MINUTES,720}}
+  admin_username: ${oc.env:AUTH_ADMIN_USERNAME,admin}
+  admin_password: ${oc.env:AUTH_ADMIN_PASSWORD,admin123}
+
+# CORS 配置（Phase 0.4）。生产同域部署可设 enable=false；开发态前后端分离需要开启。
+# ALLOWED_ORIGINS 用逗号分隔，如 "http://localhost:5173,http://localhost:8080"。
+cors:
+  enable: ${oc.decode:${oc.env:CORS_ENABLE,true}}
+  allowed_origins: ${oc.env:ALLOWED_ORIGINS,http://localhost:5173}
+  allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  allowed_headers: ["Authorization", "Content-Type", "Accept"]
+  allow_credentials: true
+
+# 限流配置（Phase 0.5）。格式遵循 slowapi/limits 语法：<次数>/<时间窗口>。
+# login：按 IP 防爆破；query：按用户保护 LLM 成本。
+rate_limit:
+  enable: ${oc.decode:${oc.env:RATE_LIMIT_ENABLE,true}}
+  login: ${oc.env:RATE_LIMIT_LOGIN,10/minute}
+  query: ${oc.env:RATE_LIMIT_QUERY,30/minute}

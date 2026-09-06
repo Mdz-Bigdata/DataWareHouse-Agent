@@ -15,6 +15,14 @@ class ChartConfig(BaseModel):
     title: str
     config: dict
 
+class DataSourceInfo(BaseModel):
+    mode: str
+    engine: str
+    label: str
+    description: str
+    data_origin: str
+    database_identity: str
+
 class QueryDetails(BaseModel):
     sql: str
     dialect: str
@@ -23,6 +31,8 @@ class QueryDetails(BaseModel):
     source_desc: str
     filters: List[dict]
     estimated_rows: Optional[int] = 0
+    data_source: Optional[str] = None
+    time_scope: Optional[str] = None
 
 class ClarificationOption(BaseModel):
     label: str
@@ -35,6 +45,8 @@ class ClarificationInfo(BaseModel):
 
 class AskResponse(BaseModel):
     success: bool
+    data_source_info: Optional[DataSourceInfo] = None
+    skill_type: Optional[str] = "query"
     conclusion: Optional[str] = None
     chart: Optional[ChartConfig] = None
     data: Optional[List[dict]] = None
@@ -42,6 +54,12 @@ class AskResponse(BaseModel):
     error: Optional[str] = None
     details: Optional[QueryDetails] = None
     clarification: Optional[ClarificationInfo] = None
+    attribution_data: Optional[dict] = None
+    lineage_data: Optional[dict] = None
+    cache_hit: Optional[bool] = False
+    cache_type: Optional[str] = None
+    matched_question: Optional[str] = None
+    similarity_score: Optional[float] = None
 
 class HistoryRecord(BaseModel):
     id: int
@@ -69,3 +87,23 @@ class QueryDSL(BaseModel):
     order_by: Optional[List[dict]] = Field(default=None, description="排序规则，例如：[{'field': 'gmv', 'direction': 'desc'}]")
     limit: Optional[int] = Field(default=10, description="返回行数限制，默认 10")
 
+
+class ErrorCorrectionRecord(BaseModel):
+    """
+    自愈纠错历史记录
+    """
+    question: str = Field(..., description="用户的自然语言提问")
+    error_message: str = Field(..., description="发生的错误信息")
+    wrong_sql: str = Field(..., description="修正前的错误 SQL")
+    corrected_sql: str = Field(..., description="自愈修正后的 SQL")
+    created_at: Optional[str] = Field(None, description="录入时间")
+
+
+class AddErrorCorrectionRequest(BaseModel):
+    """
+    手动录入纠错记录请求
+    """
+    question: str = Field(..., description="用户提问句")
+    error_message: str = Field(..., description="报错日志")
+    wrong_sql: str = Field(..., description="问题 SQL")
+    corrected_sql: str = Field(..., description="修复后 SQL")

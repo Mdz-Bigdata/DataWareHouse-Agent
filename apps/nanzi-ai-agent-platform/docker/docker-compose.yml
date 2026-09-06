@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  ai-agent:
+    image: nanzi-ai-agent:latest
+    container_name: nanzi-ai-agent
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ~/.agents/skills:/app/data/skills
+    environment:
+      # Service Config
+      - API_SERVICE_ENV=${API_SERVICE_ENV:-dev}
+      - API_SERVICE_LOG_LEVEL=${API_SERVICE_LOG_LEVEL:-INFO}
+
+      # MySQL (Mock / External)
+      - MYSQL_HOST=${MYSQL_HOST:-mysql} # 假设有名为 mysql 的服务或外部注入
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_DB=${MYSQL_DB:-nanzi_ai_agent_platform}
+      - MYSQL_USER=${MYSQL_USER:-root}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-root123}
+
+      # Redis (Internal Service)
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-root123}
+      - REDIS_ENABLE=${REDIS_ENABLE:-true}
+
+      # Security
+      - API_SERVICE_API_KEY_HASH_ALGORITHM=${API_SERVICE_API_KEY_HASH_ALGORITHM:-sha256}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+      # Jira Integration
+      - JIRA_URL=${JIRA_URL}
+      - JIRA_USERNAME=${JIRA_USERNAME}
+      - JIRA_PASSWORD=${JIRA_PASSWORD}
+    depends_on:
+      - redis
+
+    restart: unless-stopped
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: nanzi-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+

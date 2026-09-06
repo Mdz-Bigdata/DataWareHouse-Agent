@@ -1,0 +1,1223 @@
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.services.ai.turn_classifier import (
+    TurnClassification,
+    TurnType,
+    adapt_classification_for_agent,
+    classify_turn_heuristic,
+    classify_turn_from_intent,
+    resolve_turn_for_session,
+    turn_type_label,
+    should_inject_user_context,
+)
+from app.services.ai.intent_service import IntentResponse, IntentType
+from app.services.ai.data_query_turn_classifier import (
+    DataQueryTurnType,
+    _classify_with_llm,
+    data_query_turn_type_label,
+    filter_satisfied_missing_fields,
+    looks_like_chart_format_correction,
+    resolve_data_query_turn_classification,
+)
+
+
+pytestmark = pytest.mark.no_infrastructure
+
+
+def _mock_chat_client(content: str):
+    chat_client = AsyncMock()
+    chat_client.generate_text.return_value = content
+    return chat_client
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("把这个流程保存为技能", TurnType.META_ACTION),
+        ("保存这个结果", TurnType.CONTEXT_ACTION),
+        ("使用用户列表查询技能", TurnType.SKILL_EXECUTION),
+        ("查询用户列表并可视化分析", TurnType.DATA_QUERY_REQUEST),
+        ("高温告警的标准处理流程是什么", TurnType.KNOWLEDGE),
+    ],
+)
+def test_classify_turn_heuristic_fixed_cases(query, expected):
+    result = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=False)
+    assert result is not None
+    assert result.turn_type == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "联网搜索一下有孚网络的最新信息",
+        "上网查查这家公司的最新新闻",
+        "百度一下今天的科技资讯",
+        "帮我搜索一下 GPT 的最新进展",
+        "有孚网络最新消息",
+        "搜索有孚网络的最新信息",
+    ],
+)
+def test_web_search_query_routes_to_general(query):
+    result = classify_turn_heuristic(query, can_do_data=False, has_last_data_result=False)
+    assert result is not None
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "查一下目前的库存",
+        "查一下现在有多少告警",
+        "统计本月的订单数量",
+    ],
+)
+def test_data_query_not_misrouted_as_web_search(query):
+    # 查数语句不应被联网搜索启发式短路（仍交给意图 LLM 处理）
+    result = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=False)
+    assert result is None or result.turn_type != TurnType.GENERAL
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "查一下今天上海天气",
+        "查询 Python list 的用法",
+        "帮我分析一下这段话",
+    ],
+)
+def test_general_boundary_queries_short_circuit_to_general(query):
+    result = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=False)
+    assert result is not None
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+def test_platform_self_service_query_stays_general_even_with_knowledge_binding():
+    result = classify_turn_heuristic(
+        "那如何安装 skills 技能呢",
+        can_do_data=False,
+        has_last_data_result=False,
+        knowledge_dataset_ids=["4525d66cec7111f0a3d00242ac120006"],
+        agent_has_knowledge_binding=True,
+    )
+    assert result is not None
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+def test_internal_sop_still_classified_as_knowledge():
+    result = classify_turn_heuristic(
+        "高温告警的标准处理流程是什么",
+        can_do_data=False,
+        has_last_data_result=False,
+    )
+    assert result is not None
+    assert result.turn_type == TurnType.KNOWLEDGE
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "查询高温告警的标准处理流程",
+        "查一下机房巡检怎么操作",
+    ],
+)
+def test_knowledge_boundary_allows_generic_query_verbs(query):
+    result = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=False)
+    assert result is not None
+    assert result.turn_type == TurnType.KNOWLEDGE
+    assert result.intent == IntentType.KNOWLEDGE_BASE
+
+
+def test_classify_turn_from_intent_web_search_overrides_knowledge_without_binding():
+    intent = IntentResponse(
+        intent=IntentType.KNOWLEDGE_BASE,
+        confidence=0.8,
+        reasoning="用户想查有孚网络的最新信息",
+        entities=["有孚网络"],
+    )
+    result = classify_turn_from_intent(
+        intent,
+        can_do_data=False,
+        user_query="搜索一下有孚网络的最新信息",
+        has_knowledge_binding=False,
+    )
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+def test_classify_turn_from_intent_web_search_overrides_knowledge_even_when_bound():
+    intent = IntentResponse(
+        intent=IntentType.KNOWLEDGE_BASE,
+        confidence=0.8,
+        reasoning="用户想查最新信息",
+        entities=[],
+    )
+    result = classify_turn_from_intent(
+        intent,
+        can_do_data=False,
+        user_query="搜索一下最新信息",
+        has_knowledge_binding=True,
+    )
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+def test_classify_turn_from_intent_platform_self_service_overrides_knowledge():
+    intent = IntentResponse(
+        intent=IntentType.KNOWLEDGE_BASE,
+        confidence=0.88,
+        reasoning="用户询问安装技能的操作流程或方法",
+        entities=["skills"],
+    )
+    result = classify_turn_from_intent(
+        intent,
+        can_do_data=False,
+        user_query="那如何安装 skills 技能呢",
+        has_knowledge_binding=True,
+    )
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "你好",
+        "您好",
+        "hello",
+        "你是谁",
+        "谢谢",
+    ],
+)
+def test_greeting_routes_to_general_without_intent_llm(query):
+    result = classify_turn_heuristic(query, can_do_data=False, has_last_data_result=False)
+    assert result is not None
+    assert result.turn_type == TurnType.GENERAL
+    assert result.skip_intent_llm is True
+    assert result.intent == IntentType.GENERAL
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "你好，查一下机房列表",
+        "您好，高温告警处理流程是什么",
+    ],
+)
+def test_greeting_compound_not_short_circuited(query):
+    result = classify_turn_heuristic(query, can_do_data=False, has_last_data_result=False)
+    assert result is None or not (
+        result.skip_intent_llm and result.reasoning and "问候" in result.reasoning
+    )
+
+
+def test_reuse_previous_result_requires_cached_result():
+    result = classify_turn_heuristic(
+        "把刚才的结果画成柱状图",
+        can_do_data=True,
+        has_last_data_result=False,
+    )
+    assert result is None
+
+    result = classify_turn_heuristic(
+        "把刚才的结果画成柱状图",
+        can_do_data=True,
+        has_last_data_result=True,
+    )
+    assert result.turn_type == TurnType.DATA_QUERY_REQUEST
+    assert result.skip_intent_llm is True
+
+
+def test_classify_turn_from_intent_data_query():
+    intent = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.9,
+        reasoning="查业务数据",
+        entities=[],
+    )
+    result = classify_turn_from_intent(intent, can_do_data=True)
+    assert result.turn_type == TurnType.DATA_QUERY_REQUEST
+
+
+def test_low_confidence_data_query_prefers_general_when_boundary_is_ambiguous():
+    intent = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.55,
+        reasoning="可能是查询请求，但不确定是否为内部业务数据",
+        entities=[],
+    )
+    result = classify_turn_from_intent(
+        intent,
+        can_do_data=True,
+        user_query="帮我查一下这个怎么弄",
+    )
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.GENERAL
+    assert "低置信度" in result.reasoning
+
+
+def test_classify_turn_from_intent_knowledge():
+    intent = IntentResponse(
+        intent=IntentType.KNOWLEDGE_BASE,
+        confidence=0.88,
+        reasoning="问 SOP",
+        entities=[],
+    )
+    result = classify_turn_from_intent(intent, can_do_data=True)
+    assert result.turn_type == TurnType.KNOWLEDGE
+    assert result.requires_knowledge_search is True
+
+
+def test_classify_turn_heuristic_with_bound_knowledge_dataset_ids():
+    rid = "4525d66cec7111f0a3d00242ac120006"
+    result = classify_turn_heuristic(
+        "换电过程中可以开门吗？",
+        can_do_data=False,
+        knowledge_dataset_ids=[rid],
+    )
+    assert result is not None
+    assert result.turn_type == TurnType.KNOWLEDGE
+    assert result.skip_intent_llm is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_turn_for_session_skips_intent_llm_when_dataset_ids_bound():
+    with patch(
+        "app.services.ai.turn_classifier.intent_service.identify_intent",
+        AsyncMock(),
+    ) as mock_identify:
+        classification, intent_info, elapsed_ms = await resolve_turn_for_session(
+            "换电过程中可以开门吗？",
+            [{"role": "user", "content": "换电过程中可以开门吗？"}],
+            can_do_data=False,
+            knowledge_dataset_ids=["4525d66cec7111f0a3d00242ac120006"],
+        )
+
+    mock_identify.assert_not_awaited()
+    assert classification.turn_type == TurnType.KNOWLEDGE
+    assert intent_info is None
+    assert elapsed_ms == 0.0
+
+
+def test_classify_turn_from_intent_data_query_on_non_data_agent():
+    intent = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.9,
+        reasoning="用户想查业务指标",
+        entities=[],
+    )
+    result = classify_turn_from_intent(intent, can_do_data=False)
+    assert result.turn_type == TurnType.GENERAL
+    assert result.intent == IntentType.DATA_QUERY
+    assert "无 data_query 能力" in result.reasoning
+
+
+@pytest.mark.asyncio
+async def test_resolve_turn_for_session_non_data_agent_uses_intent_llm_when_heuristic_misses():
+    with patch(
+        "app.services.ai.turn_classifier.intent_service.identify_intent",
+        AsyncMock(
+            return_value=IntentResponse(
+                intent=IntentType.KNOWLEDGE_BASE,
+                confidence=0.91,
+                reasoning="用户在询问处理指引",
+                entities=[],
+            )
+        ),
+    ) as mock_identify:
+        classification, intent_info, elapsed_ms = await resolve_turn_for_session(
+            "机房温度过高时应该注意什么",
+            [{"role": "user", "content": "机房温度过高时应该注意什么"}],
+            can_do_data=False,
+        )
+
+    mock_identify.assert_awaited_once()
+    assert classification.turn_type == TurnType.KNOWLEDGE
+    assert classification.requires_knowledge_search is True
+    assert classification.skip_intent_llm is False
+    assert intent_info.intent == IntentType.KNOWLEDGE_BASE
+    assert elapsed_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_turn_for_session_non_data_agent_skips_intent_llm_on_heuristic_hit():
+    with patch(
+        "app.services.ai.turn_classifier.intent_service.identify_intent",
+        AsyncMock(),
+    ) as mock_identify:
+        classification, intent_info, elapsed_ms = await resolve_turn_for_session(
+            "高温告警的标准处理流程是什么",
+            [{"role": "user", "content": "高温告警的标准处理流程是什么"}],
+            can_do_data=False,
+        )
+
+    mock_identify.assert_not_awaited()
+    assert classification.turn_type == TurnType.KNOWLEDGE
+    assert classification.skip_intent_llm is True
+    assert intent_info is None
+    assert elapsed_ms == 0.0
+
+
+def test_classify_turn_from_intent_knowledge_non_data_agent():
+    intent = IntentResponse(
+        intent=IntentType.KNOWLEDGE_BASE,
+        confidence=0.88,
+        reasoning="问 SOP",
+        entities=[],
+    )
+    result = classify_turn_from_intent(intent, can_do_data=False)
+    assert result.turn_type == TurnType.KNOWLEDGE
+    assert result.requires_knowledge_search is True
+
+
+def test_turn_type_label():
+    assert turn_type_label(TurnType.DATA_QUERY_REQUEST) == "数据查询请求"
+    assert data_query_turn_type_label(DataQueryTurnType.REUSE_PREVIOUS_RESULT) == "复用上一轮结果"
+    assert data_query_turn_type_label(DataQueryTurnType.CLARIFICATION_OR_NON_DATA) == "需澄清或非查数请求"
+
+
+@pytest.mark.asyncio
+async def test_data_query_classifier_prompt_includes_federated_turn_type():
+    captured = {}
+
+    class FakeChatClient:
+        async def generate_text(self, messages):
+            captured["messages"] = messages
+            return '{"turn_type":"federated_data_query","reasoning":"用户显式要求跨数据集关联查询"}'
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=object()),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=FakeChatClient(),
+    ):
+        classification = await _classify_with_llm(
+            "跨数据集关联 CRM 和员工数据",
+            [{"role": "user", "content": "跨数据集关联 CRM 和员工数据"}],
+            has_last_data_result=False,
+        )
+
+    prompt_text = "\n".join(str(getattr(msg, "content", msg)) for msg in captured["messages"])
+    assert "federated_data_query" in prompt_text
+    assert classification.turn_type == DataQueryTurnType.FEDERATED_DATA_QUERY
+
+
+def test_chart_format_correction_does_not_capture_fresh_query_requests():
+    assert looks_like_chart_format_correction("把刚才的图改成柱状图") is True
+    assert looks_like_chart_format_correction("显示数值标签") is True
+    assert looks_like_chart_format_correction("按地区把颜色改为分组再查一遍") is False
+    assert looks_like_chart_format_correction("重新查询本月数据并显示数值") is False
+
+
+def test_shared_turn_classification_is_generic_not_chatbi_specific():
+    classification = TurnClassification(
+        turn_type=TurnType.DATA_QUERY_REQUEST,
+        reasoning="数据查询请求",
+        intent=IntentType.DATA_QUERY,
+    )
+
+    assert not hasattr(classification, "requires_fresh_data")
+    assert not hasattr(classification, "requires_few_shot")
+    assert not hasattr(classification, "use_data_executor")
+
+
+def test_adapt_classification_for_non_data_agent():
+    base = classify_turn_heuristic("查询用户列表", can_do_data=True, has_last_data_result=False)
+    assert base is None or base.turn_type == TurnType.DATA_QUERY_REQUEST
+    data_query = TurnClassification(
+        turn_type=TurnType.DATA_QUERY_REQUEST,
+        reasoning="test",
+        intent=IntentType.DATA_QUERY,
+    )
+    adapted = adapt_classification_for_agent(data_query, can_do_data=False)
+    assert adapted.turn_type == TurnType.DATA_QUERY_REQUEST
+
+
+def test_should_inject_user_context():
+    assert should_inject_user_context(TurnType.DATA_QUERY_REQUEST) is True
+    assert should_inject_user_context(TurnType.SKILL_EXECUTION) is True
+    assert should_inject_user_context(TurnType.CONTEXT_ACTION) is True
+
+
+def test_should_inject_ltm_for_chatbi_turns():
+    from app.services.ai.turn_classifier import should_inject_ltm
+
+    assert should_inject_ltm(TurnType.DATA_QUERY_REQUEST) is True
+    assert should_inject_ltm(TurnType.SKILL_EXECUTION) is True
+    assert should_inject_ltm(TurnType.GENERAL) is True
+
+
+def test_classify_turn_from_intent_data_query_request_via_reasoning():
+    intent = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.92,
+        reasoning="用户是对上一轮表格结果的分析追问",
+        entities=[],
+    )
+    # 通用分类只保留“数据查询请求”，不表达 ChatBI 具体请求类别。
+    cached_result_turn = classify_turn_from_intent(intent, can_do_data=True, user_query="分析一下", has_last_data_result=True)
+    assert cached_result_turn.turn_type == TurnType.DATA_QUERY_REQUEST
+
+    no_cached_result_turn = classify_turn_from_intent(intent, can_do_data=True, user_query="分析一下", has_last_data_result=False)
+    assert no_cached_result_turn.turn_type == TurnType.DATA_QUERY_REQUEST
+
+
+def test_classify_turn_from_intent_data_query_request_via_query_keywords():
+    intent = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.95,
+        reasoning="数据图表请求",
+        entities=[],
+    )
+    # 情况 C：有缓存，提问中含有“折线图”等广义追问词 → 仍只表达数据查询请求
+    followup_turn = classify_turn_from_intent(intent, can_do_data=True, user_query="帮我转为折线图", has_last_data_result=True)
+    assert followup_turn.turn_type == TurnType.DATA_QUERY_REQUEST
+
+    # 情况 D：有缓存，但原句纯粹是查数且推理无追问 → 仍只表达数据查询请求
+    new_query_turn = classify_turn_from_intent(intent, can_do_data=True, user_query="查询上海数据", has_last_data_result=True)
+    assert new_query_turn.turn_type == TurnType.DATA_QUERY_REQUEST
+
+
+def test_classify_turn_heuristic_formatting_correction_to_data_query_request():
+    # 验证在快通道中，排版/渲染纠错命令且有缓存数据时，能直接短路识别为数据查询请求
+    query = "你输出的 markdown 不符合规范，渲染失败呢"
+    
+    # 通用分类只表达数据查询请求；复用上一轮结果由 DataQueryTurnClassifier 内部处理。
+    cached_result_turn = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=True)
+    assert cached_result_turn is not None
+    assert cached_result_turn.turn_type == TurnType.DATA_QUERY_REQUEST
+    assert cached_result_turn.skip_intent_llm is True
+
+    # 情况 B：无缓存 → 规则不短路，返回 None 交给大模型进行深层语义兜底/分析
+    res_none = classify_turn_heuristic(query, can_do_data=True, has_last_data_result=False)
+    assert res_none is None
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_owns_reuse_previous_result_semantics():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("reuse follow-up should short-circuit before classifier LLM")),
+    ):
+        classification, _, elapsed_ms = await resolve_data_query_turn_classification(
+            "可视化分析一下",
+            [
+                {"role": "user", "content": "查询算力SU回款"},
+                {"role": "assistant", "content": "| 月份 | 回款率 |\n| --- | --- |\n| 2026-01 | 85.5% |"},
+                {"role": "user", "content": "可视化分析一下"},
+            ],
+            has_last_data_result=True,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.RESULT_ANALYSIS
+    assert classification.requires_fresh_data is False
+    assert classification.requires_few_shot is False
+    assert classification.skip_intent_llm is True
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_reuses_from_history_when_redis_missing():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("history reuse should short-circuit before classifier LLM")),
+    ):
+        classification, _, elapsed_ms = await resolve_data_query_turn_classification(
+            "可视化分析一下",
+            [
+                {"role": "user", "content": "查询算力SU回款"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "| 月份 | 总应收款(万元) | 回款率 |\n"
+                        "| --- | --- | --- |\n"
+                        "| 2026-01 | 1027.32 | 85.55% |\n"
+                        "### 分析解读\n回款率在 3 月超过 100%。"
+                    ),
+                },
+                {"role": "user", "content": "可视化分析一下"},
+            ],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.RESULT_ANALYSIS
+    assert classification.requires_fresh_data is False
+    assert classification.skip_intent_llm is True
+    assert "查数展示" in classification.reasoning or "结构化查询结果" in classification.reasoning
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_reuses_result_for_date_formatting_followup():
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"用户只要求调整上一轮结果的日期展示格式"}')
+
+    with patch("app.services.ai.config.AgentConfigProvider.get_configured_llm", AsyncMock(return_value=llm)), \
+         patch("app.services.ai.data_query_turn_classifier.chat_client_from_handle", return_value=chat_client):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "创建日期按 yyyy-MM-dd 显示",
+            [{"role": "user", "content": "创建日期按 yyyy-MM-dd 显示"}],
+            has_last_data_result=True,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.RESULT_PRESENTATION
+    assert classification.requires_fresh_data is False
+    assert classification.requires_few_shot is False
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_metadata_query_uses_schema_without_sql():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("metadata query should short-circuit before classifier LLM")),
+    ):
+        classification, intent_info, elapsed_ms = await resolve_data_query_turn_classification(
+            "说明智能体有哪些可查询字段和分析口径",
+            [{"role": "user", "content": "说明智能体有哪些可查询字段和分析口径"}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.METADATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert classification.requires_sql_query is False
+    assert classification.requires_few_shot is False
+    assert classification.skip_intent_llm is True
+    assert intent_info.intent == IntentType.DATA_QUERY
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_rejects_reuse_without_reusable_result():
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"用户是在要求可视化上一轮结果"}')
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ) as mock_get_llm, patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "可视化分析一下",
+            [{"role": "user", "content": "可视化分析一下"}],
+            has_last_data_result=False,
+        )
+
+    mock_get_llm.assert_awaited_once()
+    assert classification.turn_type == DataQueryTurnType.CLARIFICATION_REQUIRED
+    assert classification.requires_fresh_data is False
+    assert classification.requires_few_shot is False
+    assert classification.missing_fields == ("result_context",)
+    assert "可信" in classification.reasoning or "没有可复用" in classification.reasoning
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_short_circuits_general_chat_without_sql():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("general chat should not call classifier LLM")),
+    ):
+        classification, intent_info, elapsed_ms = await resolve_data_query_turn_classification(
+            "你好，你是谁",
+            [],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NON_DATA_REQUEST
+    assert classification.requires_fresh_data is False
+    assert classification.requires_few_shot is False
+    assert classification.skip_intent_llm is True
+    assert intent_info.intent == IntentType.GENERAL
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_first_turn_business_scope_is_metadata_navigation():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("business-scope navigation should use the metadata fast path")),
+    ):
+        classification, _, elapsed_ms = await resolve_data_query_turn_classification(
+            "这里主要覆盖哪些业务主题和指标",
+            [],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.METADATA_QUERY
+    assert classification.requires_sql_query is False
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_first_turn_gray_request_uses_semantic_classifier():
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"non_data_request","reasoning":"用户询问通用分析方法而非查询内部数据"}'
+    )
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ) as get_llm, patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "销售额通常应该怎么分析",
+            [],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NON_DATA_REQUEST
+    get_llm.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_first_turn_classifier_failure_does_not_query_schema():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=RuntimeError("classifier unavailable")),
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "帮我处理一下",
+            [],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NON_DATA_REQUEST
+    assert classification.requires_sql_query is False
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_first_turn_explicit_query_keeps_zero_llm_fast_path():
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("explicit data query should not call classifier LLM")),
+    ):
+        classification, _, elapsed_ms = await resolve_data_query_turn_classification(
+            "查本月各区域销售额",
+            [],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_sql_query is True
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "llm_type", "expected", "fresh"),
+    [
+        ("分析刚才结果的主要变化", "result_analysis", DataQueryTurnType.RESULT_ANALYSIS, False),
+        ("把刚才的图改成柱状图", "result_presentation", DataQueryTurnType.RESULT_PRESENTATION, False),
+        ("把刚才结果导出成 Excel", "result_action", DataQueryTurnType.RESULT_ACTION, False),
+        ("再按区域拆一下", "data_followup_query", DataQueryTurnType.DATA_FOLLOWUP_QUERY, True),
+    ],
+)
+async def test_data_query_turn_classifier_splits_result_behaviors(query, llm_type, expected, fresh):
+    llm = object()
+    chat_client = _mock_chat_client(
+        f'{{"turn_type":"{llm_type}","reasoning":"测试细分结果行为"}}'
+    )
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "assistant", "content": "已返回销售数据表格。"}, {"role": "user", "content": query}],
+            has_last_data_result=True,
+        )
+    assert classification.turn_type == expected
+    assert classification.requires_fresh_data is fresh
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "把刚才结果导出成 Excel",
+        "订阅刚才的结果",
+        "把结果发给老板",
+        "基于这个结果创建监控",
+    ],
+)
+async def test_result_actions_stay_in_chatbi_without_classifier_llm(query):
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("result action should use deterministic classification")),
+    ):
+        classification, _, elapsed_ms = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "assistant", "content": "已返回销售数据表格。"}],
+            has_last_data_result=True,
+        )
+    assert classification.turn_type == DataQueryTurnType.RESULT_ACTION
+    assert classification.requires_fresh_data is False
+    assert classification.requires_sql_query is False
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    ["现在是什么模型", "你用的哪个模型", "帮我写一封邮件", "翻译一下这段话"],
+)
+async def test_data_query_turn_classifier_routes_non_data_requests_without_clarification(query):
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(side_effect=AssertionError("non-data request should not call classifier LLM")),
+    ):
+        classification, intent_info, elapsed_ms = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "user", "content": query}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NON_DATA_REQUEST
+    assert classification.missing_fields == ()
+    assert classification.requires_sql_query is False
+    assert classification.skip_intent_llm is True
+    assert intent_info.intent == IntentType.GENERAL
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_downgrades_soft_clarification_gaps():
+    """对象已明确时，仅缺时间/指标/维度不应整轮澄清拦截。"""
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"缺少时间范围与指标口径",'
+        '"missing_fields":["time_range","metric","dimension"]}'
+    )
+    query = "查看智能体主表中的智能体名称和引擎类型，并关联 AI代理访问日志表统计近期的调用情况"
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "user", "content": query}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert "不拦截澄清" in classification.reasoning
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_preserves_hard_clarification_gaps_from_llm():
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"完全说不清查什么对象",'
+        '"missing_fields":["data_object"]}'
+    )
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "查一下情况",
+            [{"role": "user", "content": "查一下情况"}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.CLARIFICATION_REQUIRED
+    assert classification.missing_fields == ("data_object",)
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_downgrades_time_only_clarification_for_actionable_query():
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"查数对象明确但缺少时间范围",'
+        '"missing_fields":["time_range"]}'
+    )
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "统计各机房 PUE",
+            [{"role": "user", "content": "统计各机房 PUE"}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert "不拦截澄清" in classification.reasoning
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_downgrades_misreported_data_object_for_concrete_query():
+    """问题已点名数据中心/动环等对象时，LLM 误报 data_object 不应拦截。"""
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"查数需求还缺少必要条件",'
+        '"missing_fields":["data_object","metric"]}'
+    )
+    query = (
+        "数据巡检，按各数据中心显示一下他们动环的指标数据的最后时间，"
+        "并计算与现在的间隔时间，我要排除数据的延迟性。把结果发给钉钉"
+    )
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "user", "content": query}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert "原问题已覆盖" in classification.reasoning or "不拦截澄清" in classification.reasoning
+
+
+def test_filter_satisfied_missing_fields_drops_already_stated_gaps():
+    query = (
+        "按各数据中心显示动环指标最后时间，并计算与现在的间隔时间"
+    )
+    assert filter_satisfied_missing_fields(
+        query, ("data_object", "metric", "time_range", "dimension")
+    ) == ()
+
+
+def test_filter_satisfied_missing_fields_keeps_unsatisfied_hard_gaps():
+    query = "查看各机房动环指标"
+    assert filter_satisfied_missing_fields(
+        query, ("data_object", "metric", "result_context")
+    ) == ("result_context",)
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_keeps_only_unsatisfied_gaps_in_clarification():
+    """缺口自检后仍剩硬缺口时继续澄清，但建议只展示未满足字段。"""
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"缺对象且无上轮结果",'
+        '"missing_fields":["data_object","metric","result_context"]}'
+    )
+    query = "查看各机房动环指标延迟"
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "user", "content": query}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.CLARIFICATION_REQUIRED
+    assert classification.missing_fields == ("result_context",)
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_never_clarifies_taskcenter_automation():
+    """TaskCenter 自动化指令无人可答澄清，即使 LLM 要求补充信息也必须继续查数。"""
+    llm = object()
+    chat_client = _mock_chat_client(
+        '{"turn_type":"clarification_required","reasoning":"查数需求还缺少必要条件",'
+        '"missing_fields":["data_object","metric"]}'
+    )
+    query = (
+        "【自动化指令-任务ID: 1】@📊数据智能助手\n"
+        "这是 TaskCenter 自动任务的本次独立触发。请立即实际执行任务，不要只回复计划、准备开始或执行思路。\n"
+        "任务内容：数据巡检，按各数据中心显示一下他们动环的指标数据的最后时间，"
+        "并计算与现在的间隔时间，我要排除数据的延迟性。把结果发给钉钉"
+    )
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            [{"role": "user", "content": query}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert "自动化任务" in classification.reasoning or "原问题已覆盖" in classification.reasoning
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_requires_recent_context_for_reuse():
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"用户要求分析上一轮结果"}')
+
+    stale_history = [
+        {"role": "user", "content": "查询用户列表"},
+        {"role": "assistant", "content": "已返回用户列表。"},
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好。"},
+        {"role": "user", "content": "你是谁"},
+        {"role": "assistant", "content": "我是助手。"},
+        {"role": "user", "content": "帮我写个说明"},
+        {"role": "assistant", "content": "好的。"},
+        {"role": "user", "content": "分析一下"},
+    ]
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "分析一下",
+            stale_history,
+            has_last_data_result=True,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.CLARIFICATION_REQUIRED
+    assert classification.requires_fresh_data is False
+    assert "最近对话" in classification.reasoning
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "我要看各机房数据采集是否延迟",
+        "我要看各门店库存是否异常",
+        "检查各客户订单同步状态",
+        "查看各项目回款是否延迟",
+        "确认各渠道线索是否断流",
+    ],
+)
+async def test_data_query_turn_classifier_rescues_business_status_query_from_stale_reuse(query):
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"误判为基于上一轮结果继续分析"}')
+
+    stale_history = [
+        {"role": "user", "content": "查询用户列表"},
+        {"role": "assistant", "content": "已返回用户列表。"},
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好。"},
+        {"role": "user", "content": "你是谁"},
+        {"role": "assistant", "content": "我是助手。"},
+        {"role": "user", "content": "帮我写个说明"},
+        {"role": "assistant", "content": "好的。"},
+        {"role": "user", "content": query},
+    ]
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            stale_history,
+            has_last_data_result=True,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert classification.requires_few_shot is True
+    assert "明确新数据查询" in classification.reasoning
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["帮我看看这个状态", "这个是否正常"])
+async def test_data_query_turn_classifier_keeps_vague_status_followup_as_clarification(query):
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"用户像是在追问上一轮状态"}')
+
+    stale_history = [
+        {"role": "user", "content": "查询用户列表"},
+        {"role": "assistant", "content": "已返回用户列表。"},
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "你好。"},
+        {"role": "user", "content": "你是谁"},
+        {"role": "assistant", "content": "我是助手。"},
+        {"role": "user", "content": "帮我写个说明"},
+        {"role": "assistant", "content": "好的。"},
+        {"role": "user", "content": query},
+    ]
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ), patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            query,
+            stale_history,
+            has_last_data_result=True,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.CLARIFICATION_REQUIRED
+    assert "最近对话" in classification.reasoning
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_allows_polite_followup_with_reusable_result():
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"reuse_previous_result","reasoning":"用户礼貌地要求分析当前数据结果"}')
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ) as mock_get_llm, patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "你好，帮我分析这个数据",
+            [
+                {"role": "assistant", "content": "已返回用户列表数据结果。"},
+                {"role": "user", "content": "你好，帮我分析这个数据"},
+            ],
+            has_last_data_result=True,
+        )
+
+    mock_get_llm.assert_awaited_once()
+    assert classification.turn_type == DataQueryTurnType.REUSE_PREVIOUS_RESULT
+    assert classification.requires_fresh_data is False
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_uses_llm_for_explicit_new_query():
+    llm = object()
+    chat_client = _mock_chat_client('{"turn_type":"new_data_query","reasoning":"用户明确询问用户数量，需要重新查询数据"}')
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ) as mock_get_llm, patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "How many users?",
+            [{"role": "user", "content": "How many users?"}],
+            has_last_data_result=False,
+        )
+
+    mock_get_llm.assert_awaited_once()
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert classification.skip_intent_llm is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_turn_reuses_routing_intent_evidence_without_second_llm_call():
+    """外层已完成语义识别时，通用会话分类不得再次调用意图模型。"""
+    evidence = IntentResponse(
+        intent=IntentType.DATA_QUERY,
+        confidence=0.9,
+        reasoning="请求结构化记录",
+        entities=[],
+    )
+
+    with patch(
+        "app.services.ai.intent_service.intent_service.identify_intent",
+        new_callable=AsyncMock,
+    ) as mock_identify:
+        classification, intent_info, elapsed_ms = await resolve_turn_for_session(
+            "列出任意记录",
+            [{"role": "user", "content": "列出任意记录"}],
+            can_do_data=False,
+            intent_evidence=evidence,
+        )
+
+    mock_identify.assert_not_awaited()
+    assert classification.intent == IntentType.DATA_QUERY
+    assert classification.turn_type == TurnType.GENERAL
+    assert intent_info == evidence
+    assert elapsed_ms == 0.0
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_falls_back_to_rules_when_llm_invalid():
+    llm = object()
+    chat_client = _mock_chat_client("not json")
+
+    with patch("app.services.ai.config.AgentConfigProvider.get_configured_llm", AsyncMock(return_value=llm)), \
+         patch("app.services.ai.data_query_turn_classifier.chat_client_from_handle", return_value=chat_client):
+        classification, _, _ = await resolve_data_query_turn_classification(
+            "查询用户列表并可视化分析",
+            [{"role": "user", "content": "查询用户列表并可视化分析"}],
+            has_last_data_result=False,
+        )
+
+    assert classification.turn_type == DataQueryTurnType.NEW_DATA_QUERY
+    assert classification.requires_fresh_data is True
+    assert classification.skip_intent_llm is True
+
+
+@pytest.mark.asyncio
+async def test_data_query_turn_classifier_uses_llm_fallback_with_history_context():
+    content = (
+        '{"turn_type":"reuse_previous_result",'
+        '"reasoning":"用户是在要求把上一轮用户列表里的日期列改成短日期展示，不需要重新查数"}'
+    )
+    llm = object()
+    chat_client = _mock_chat_client(content)
+
+    with patch(
+        "app.services.ai.config.AgentConfigProvider.get_configured_llm",
+        AsyncMock(return_value=llm),
+    ) as mock_get_llm, patch(
+        "app.services.ai.data_query_turn_classifier.chat_client_from_handle",
+        return_value=chat_client,
+    ):
+        classification, intent_info, elapsed_ms = await resolve_data_query_turn_classification(
+            "把那列弄成短日期就行",
+            [
+                {"role": "user", "content": "帮我查一下用户列表的数据呢"},
+                {"role": "assistant", "content": "已返回用户列表，其中包含创建日期字段。"},
+                {"role": "user", "content": "把那列弄成短日期就行"},
+            ],
+            has_last_data_result=True,
+        )
+
+    mock_get_llm.assert_awaited_once()
+    chat_client.generate_text.assert_awaited_once()
+    assert classification.turn_type == DataQueryTurnType.REUSE_PREVIOUS_RESULT
+    assert classification.requires_fresh_data is False
+    assert classification.requires_few_shot is False
+    assert classification.skip_intent_llm is False
+    assert "短日期" in classification.reasoning
+    assert intent_info.confidence == 0.85
+    assert elapsed_ms >= 0

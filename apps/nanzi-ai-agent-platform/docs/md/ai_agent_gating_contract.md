@@ -1,0 +1,263 @@
+# AI Agent 门控契约 v1
+
+本文档定义各类 Agent 在路由、工具调用、外部执行、数据真实性、SQL 安全和输出兜底上的门控契约。它的目标不是描述所有实现细节，而是把“哪些门控是必须的、哪些是不适用、哪些是当前缺口”显式写清楚，作为后续开发和测试验收的共同依据。
+
+## 适用范围
+
+当前契约覆盖以下执行路径：
+
+- ChatBI / DataQuery：`DataQueryExecutor` + `DataAgentRunner`
+- General Assistant：`AssistantExecutor` + `AssistantAgentRunner`
+- Knowledge Agent：`KnowledgeExecutor` + `KnowledgeAgentRunner`
+- RAGFlow 外部引擎：`RAGExecutor`
+- OpenClaw 外部引擎：`OpenClawExecutor`
+
+核心入口：
+
+- `app/services/ai/dispatcher.py`
+- `app/services/ai/agent_service.py`
+- `app/services/ai/data_query_turn_classifier.py`
+- `app/services/ai/runners/data_agent_runner.py`（薄编排与 Runner 门面）
+- `app/services/ai/runners/chatbi/`（ChatBI 守卫与 ReAct 域实现，见 `README.md`）
+- `app/services/ai/runners/assistant_agent_runner.py`
+- `app/services/ai/tool_nudge_policy.py`
+- `app/services/ai/skill_resolver.py`
+- `app/services/ai/intent_service.py`
+- `app/services/ai/router_service.py`
+- `app/services/ai/runners/knowledge_agent_runner.py`
+- `app/services/ai/runtime/agentscope/tools.py`
+- `app/services/ai/runtime/agentscope/event_stream.py`
+
+Main 与 ChatBI 的最终事实判断统一委托给 `GroundingService.audit()`；KnowledgeAgent 保留独立 NLI 反思，但通过同一服务生成最终消息内提示。会话必须显式传入布尔值 `debug_options.grounding_enabled=true` 才启用这些审核，默认关闭；关闭不影响 Runner 流式输出、常规工具调用、KnowledgeAgent 检索或 ChatBI SQL/Schema 安全门禁。
+
+## 门控矩阵
+
+| Agent 类型 | 路由/意图门控 | 工具权限门控 | 外部执行挂起 | 数据/知识真实性门控 | SQL 安全门控 | 输出安全/反幻觉 | 中断恢复 | 当前契约状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ChatBI / DataQuery | 必须。外层只选 DataQuery，内部以 `DataQueryTurnClassifier` 为最终判定 | 必须。AgentScope runtime tool scope 统一处理 | 必须。支持 `external_execution_required` | 必须。schema、few-shot、结果复用、空结果、异常结果均需可观测 | 必须。只读 SQL、schema-before-sql、静态风险、重复 SQL、修复轮次、最终 guard | 会话可选，默认关闭。开启后最终文字超出成功数据结果时保留正文并追加风险提示 | 必须。pending snapshot 保存 data run state | 基本完整，需收口测试和少数边界顺序 |
+| General Assistant | 必须。使用会话级通用分类；GENERAL 路由提示若与用户明确的公网/运行状态意图冲突，以统一请求决策升级证据要求 | 必须。AgentScope runtime tool scope 统一处理；可选工具预检（`agent_tool_preflight_mode`） | 必须。支持 `external_execution_required` | 会话可选，默认关闭。开启后普通 GENERAL 直接流式；明确来源请求和旧查数 Guard 才进入事实审核 | 不适用 | 柔性。开启时保留正文并按证据匹配结果追加来源或风险提示，不再发送阻断卡片 | 必须。AgentScope pending 恢复后遵循本轮开关 | 基础完整，不等同 ChatBI 强门控 |
+| Knowledge Agent | 必须。知识库问答可优先于普通对话 | 必须。AgentScope runtime tool scope 统一处理 | 必须。支持 `external_execution_required` | 必须。dataset 范围、自动检索、空召回、引用约束 | 不适用 | 会话可选，默认关闭。开启后先反思重写；最终仍不一致时保留最后回答并追加风险提示 | 必须。AgentScope pending 恢复 | 基本完整，需明确 dataset 缺失与后续反幻觉测试关系 |
+| RAGFlow 外部引擎 | 弱。适配器内只做查询提取和日志 | 不适用。外部引擎不走本地 AgentScope 工具权限 | 不适用。当前无统一挂起恢复 | 依赖 RAGFlow 返回引用和错误 | 不适用 | 弱。无本地二次反幻觉审计 | 不适用 | 非统一门控路径，需明确为外部引擎自管或补统一适配 |
+| OpenClaw 外部引擎 | 弱。主要交给 OpenClaw 处理 | 不适用。外部引擎不走本地 AgentScope 工具权限 | 不适用。当前无统一挂起恢复 | 部分。透传用户可访问 dataset 给外部引擎 | 不适用 | 必须。输入和输出安全审计可配置 | 不适用 | 有安全审计，但非统一 AgentScope 门控 |
+
+## 通用 AgentScope 工具门控契约
+
+适用于 ChatBI、General Assistant、Knowledge Agent。
+
+1. Runtime tool 必须声明 `permission_scope`，可选值包括 `read`、`write`、`ask`、`dangerous`。
+2. `read` 工具默认允许自动执行。
+3. `dangerous` 工具必须拒绝执行。
+4. `write` / `ask` 工具默认必须触发用户确认，除非运行时 `approval_mode` 明确允许。
+5. AgentScope `REQUIRE_USER_CONFIRM` 必须映射为 SSE `permission_required`。
+6. AgentScope `REQUIRE_EXTERNAL_EXECUTION` 必须映射为 SSE `external_execution_required`。
+7. 挂起请求必须保存 `agent_state`、`stream_state`、`runner_context`、`tool_call` 和用户/会话信息。
+8. permission 恢复接口不得处理 external pending；external 恢复接口不得处理 permission pending。
+
+相关文件：
+
+- `app/services/ai/runtime/agentscope/tools.py`
+- `app/services/ai/runtime/agentscope/event_stream.py`
+- `app/services/ai/runtime/agentscope/pending_store.py`
+- `app/services/ai/runtime/agentscope/confirmations.py`
+- `app/services/ai/agent_service.py`
+
+## ChatBI / DataQuery 契约
+
+### 路由与分类
+
+1. 只要 Agent 配置包含 `data_query` capability，dispatcher 可以进入 `DataQueryExecutor`。
+2. 进入 `DataQueryExecutor` 后，ChatBI 内部行为必须以 `DataQueryTurnClassifier` 为最终判定，不能只依赖外层 router。
+3. 外层会话亲和性为三态（`KEEP` / `BREAK` / `UNCERTAIN`）：仅 `BREAK` 可在 Router 启发式层离开 ChatBI；`UNCERTAIN` 必须进入语义路由，不得直接 fallback Main。详见 `intent_service.DataSessionAffinity`。
+4. 分类类型必须覆盖（含兼容旧名）：
+   - `new_data_query` / `data_followup_query` / `federated_data_query`
+   - `metadata_query`
+   - `result_analysis` / `result_presentation` / `format_correction` / `reuse_previous_result`
+   - `result_action` / `context_action`
+   - `skill_execution`
+   - `non_data_request` / `clarification_required` / `clarification_or_non_data`（兼容）
+5. 非查数请求（`non_data_request`）必须按 `NonDataDisposition` 处置，而不是统一进入查数澄清模板：
+   - `LOCAL_HELP`：ChatBI 本地回答
+   - `RESULT_ACTION`：留在 ChatBI 工具/交付链（若分类漂移为 `NON_DATA`，Runner 应纠正）
+   - `DELEGATE_MAIN` / `DELEGATE_WEB`：经 `agent_handoff` 无感委派；失败才允许降级为「切换智能体」引导
+6. 仅「已确认有查数意图但缺执行条件」进入 `clarification_required`；澄清候选必须来自授权 Schema / 数据集 / 结果栈，禁止臆造字段。
+7. 首轮：高置信 `NEW_DATA_QUERY` / `METADATA_QUERY` / `NON_DATA_REQUEST` 可快通道；灰区必须分类，分类失败不得默认 Schema/SQL。
+8. 复用 / 结果分析 / 结果呈现必须同时满足：
+   - 当前会话存在可引用的结构化结果（结果栈或兼容的 `last_data_result`）
+   - 最近对话仍有可信的数据结果上下文
+9. 如果 LLM 误判为复用，但当前问题包含明确新查询诉求，应改按新数据查询或 `data_followup_query` 处理。
+10. Schema 连续未命中达到阈值时，必须走来源重判（`source_reclassification`），不得无限重试查库。
+
+### 结果栈与交付
+
+1. SQL 成功后应双写兼容键 `last_data_result` 与结果栈 `data_result_stack_v1`（`ChatBIResultRef`）。
+2. 简报 / 监控等交付动作必须绑定可追溯的 `result_id`（或明确「当前结果」）；不得让模型脱离结果节点编造关键数字。
+3. 混合任务计划仅允许对已实现的 `query` / `analyze` / `present` 串行执行；含 brief/monitor/action 的自然语言拆句不得伪装成查数子句。
+
+### 新数据查询执行顺序
+
+1. 新数据查询必须先进行用户需求分析，形成结构化 `DataQueryIntentFrame`（业务目标、指标、维度、筛选语义、时间范围、粒度）并派生 schema 检索词。
+2. `DataQueryIntentFrame` 必须作为字段绑定自检和空结果修复的依据；若 LLM 直接给出的 keywords 无效，但意图帧有效，应优先从意图帧派生 keywords，而不是机械回退到原始长句。
+3. 需要新 SQL 生成时必须进行 few-shot 案例检索；未命中或检索失败也必须有可观测日志。
+4. 必须先调用 `get_dataset_schema`，再允许调用 `execute_sql_query`。
+5. Agent 路径在 `execute_sql_query` 前必须通过 **SqlQueryBinding 预检**（`resolve_sql_schema_preflight_with_binding`）：字段/表名与 Schema 一致；Schema 外物理表仅在有元数据权限时放行，并回填 binding 的 `dataset_name`。
+6. `execute_sql_query_core` 优先读取 ContextVar / 参数中的 `SqlQueryBinding` 做表归属、权限、字段与 data_perm 列 meta；Gate 已预检通过时设 `preflight_validated=True`，Core 不重复字段校验。HTTP/门户直连无 binding 时回退 MetaTable 查库。
+7. schema prefetch 失败时：
+   - 元数据服务不可用：终止
+   - 无授权数据集：终止
+   - 元数据未同步知识库：终止
+   - 连续 schema miss 达到阈值：终止
+8. schema 返回多个高置信候选且分数接近时，必须先澄清数据集或指标口径，禁止直接 SQL。
+
+### 跨数据集联邦
+
+1. 单源 `execute_sql_query` 检测到 SQL 引用不属于当前 `dataset_name` 的表，且涉及多个 dataset 时，必须自动升级为联邦查询（G12）。
+2. 升级时必须构造 `SqlQueryBinding`（Schema + SQL 表 + MetaTable 反查），注入联邦 plan prompt 的【物理表与数据集绑定】块，并在解析 XML 后按 binding 修正 subquery 的 `dataset_name`。
+3. 禁止仅依赖 LLM 从 Schema 文本猜测 subquery 的 `dataset_name` 而无平台侧表→dataset 约束。
+
+### SQL 安全与修复
+
+1. 只允许只读查询，SQL 必须以 `SELECT` 或 `WITH` 开头。
+2. 禁止 `SELECT *`。
+3. JOIN 必须有明确 `ON` 条件。
+4. 明细查询建议尽量收窄时间、筛选条件或返回行数，但不作为统一硬拦截条件。
+5. 重复执行同一条已成功 SQL 时，应拦截重复调用，并复用首次成功结果进行最终回答。
+6. SQL 执行错误必须进入修复轮次，成功前不得回答。
+7. 空结果必须先诊断筛选条件、时间范围或 JOIN 条件；诊断 SQL 不能作为最终结论。
+   - 若存在 `DataQueryIntentFrame`，空结果修复必须结合原始筛选语义判断错值、错字段、别名、父级范围或分类条件，不能仅因候选值不包含用户原词就判定无数据。
+8. 比率/占比异常必须触发对账复核。
+9. 时间差/时延/时长异常必须触发复核时间字段方向、时区或单位换算。
+10. 工具重复调用同参且无进展时必须触发循环熔断。
+11. 如果模型在完成查数顺序前输出自然语言结论，最终 guard 必须拦截。
+
+### 当前已知边界
+
+1. SQL 静态风险门控目前会先于重复 SQL 门控触发。测试和产品预期需要统一：高风险重复 SQL 应优先报静态风险，还是优先复用缓存结果。
+2. 部分 runner 测试未 mock 配置/数据库，容易在无 Redis/MySQL 的本地沙箱里失败；这些失败不应直接等同业务门控失败。
+
+### 测试映射
+
+- `tests/ai/test_turn_classifier.py`
+- `tests/ai/runners/test_data_agent_runner.py`
+- `tests/ai/test_sql_query_binding.py`
+- `tests/ai/tools/test_data_api.py`
+- `tests/ai/test_dispatcher_data_executor_boundary.py`
+- `tests/ai/runtime/test_event_stream_observability.py`
+- `tests/ai/runtime/test_external_execution_resume.py`
+
+## General Assistant 契约
+
+1. General Assistant 必须使用会话级通用分类结果，包括 data query 降级、knowledge、context action、skill execution、meta action、general。
+2. 如果当前 Agent 无 `data_query` capability，但用户问题被识别为数据查询，必须按通用助手处理，并保留降级语义。
+3. General Assistant 不得连接 ChatBI 数据库，也不得编造内部业务数据。
+4. **数据反幻觉 Guard**（`AssistantAgentRunner.execute`）仅在以下条件**同时**满足时启用：
+   - 当前智能体为 **主通用助手**（`is_main_general_agent()`）；
+   - **非**专家直选 / `@` 提及 / 显式 `agent_id`（`route_hints.direct_agent_selection`）；
+   - 用户问题**非**联网/外部搜索（`looks_like_web_search_query`）；
+   - 轮次分类或意图为 `DATA_QUERY`，或问题含**强内部业务查数信号**（`looks_like_strong_business_data_request`）。
+5. 高风险提示条件（须本轮**未**发起/待确认工具调用，且输出命中以下之一）：
+   - 假装已转派 ChatBI / 正在检索内部数据集等话术；
+   - Markdown 表格 **且** 含内网 IP；
+   - Markdown 表格 **且** 含内部业务字段（主机名、资产、工单、数据集、表结构等）。
+   - **裸 Markdown 表格 alone 不触发**；系统负载等可通过 Bash/工具执行的请求，若已出现 `permission_required` / `external_execution_required` 或 tool log，视为已尝试工具，不拦截。
+6. 命中后保留原回答并在消息内容中追加高风险提示；不再替换正文、不发送 `grounding_blocked`、不展示智能体切换阻断卡片。
+7. `internal_data`、`internal_knowledge`、`user_file` 属于内部可信来源族。类型不完全一致时允许兼容输出，并明确提示内容来源不代表实时数据库状态。附件要求必须与已有来源要求合并，不能覆盖知识库或数据来源要求。
+8. 动态只读 MCP（查询、检索、获取、读取、查看类或 `annotations.readOnlyHint=true`）成功后签发 `external_tool`，成功空结果允许证明“暂无数据”。公开信息、运行状态及 `UNKNOWN` 请求只有在答案与结果不可逆内容指纹重合时才正常通过；该回执不能替代明确要求的 `internal_data`、`internal_knowledge` 等来源，疑似内部业务数据表也不会被它放行。MCP `isError`、SDK 异常、Generic API HTTP 4xx/5xx 不签发回执；创建、更新、删除、写入、发送、预订和执行类 MCP 不自动签发读取型事实凭证。
+9. AgentScope 原生工具与普通运行时工具共享证据签发入口；Main、KnowledgeAgent、ChatBI 的隐式工具统一补齐元数据。permission/external execution 挂起快照必须保存当前证据回执，并在恢复时校验用户与会话范围后恢复。
+10. **工具预检**（`tool_nudge_policy.resolve_tool_nudge`）：由已绑定工具的 `name + description` 与问题相关度驱动；配置 `agent_tool_preflight_mode`：`off` / `soft`（默认，注入便签）/ `hard`（便签 + 首步 `ToolChoice`）。问候、元操作、记忆类工具（`memory_search` 等）不促发。
+11. **Skill 自动扫描**（仅主助手）：未挂载/解析技能时，按 `skill_auto_scan_*` 配置扫描技能库并注入摘要（全文仍须 `read_skill_instruction`）。
+12. 绑定工具时必须走 AgentScope runtime tool 权限门控。
+13. 没有工具时走 simple synthesis，不适用工具权限/外部执行挂起。
+
+测试映射：
+
+- `tests/ai/executors/test_chat_executor.py`
+- `tests/ai/runners/test_assistant_agent_data_guard.py`
+- `tests/ai/test_tool_nudge_policy.py`
+- `tests/ai/test_skill_resolver.py`
+- `tests/ai/runtime/test_agentscope_tooling.py`
+- `tests/ai/runtime/test_event_stream_observability.py`
+
+## Knowledge Agent 契约
+
+1. 知识库问答必须确保 `search_knowledge_base` 工具可用。
+2. 执行 ReAct 前必须自动调用 `search_knowledge_base` 预检索。
+3. 检索范围必须来自显式参数、请求上下文、智能体绑定 dataset 或系统默认 dataset。
+4. 如果要求显式 dataset 但未提供，必须在检索前终止。
+5. 如果没有任何可用默认 dataset，也必须终止并提示管理员配置。
+6. 知识库服务不可用时必须终止，不得继续让模型脑补。
+7. 空召回时，如果模型输出长事实性回答，必须触发反思重写；耗尽后使用软风险提示。
+8. 有召回但最终事实性回答没有有效引用标记时，必须触发反思重写；耗尽后保留最后回答并追加风险提示。
+9. 模型输出中的无效引用标记必须过滤。
+10. 绑定业务工具时必须走 AgentScope runtime tool 权限门控。
+
+当前已知边界：
+
+1. dataset 缺失门控位于服务不可用/反幻觉门控之前。测试后续分支时需要显式 mock dataset 配置或上下文，否则会被前置 dataset gate 拦截。
+
+测试映射：
+
+- `tests/ai/executors/test_chat_executor.py`
+- `tests/ai/test_knowledge_utils.py`
+- `tests/ai/tools/test_knowledge_tool.py`
+
+## RAGFlow 外部引擎契约
+
+1. RAGFlow Agent 由 `engine_type == "RAGFLOW"` 直接进入 `RAGExecutor`。
+2. 当前路径不走本地 AgentScope runtime tool 权限门控。
+3. 当前路径不产生本地 `permission_required` 或 `external_execution_required`。
+4. 必须透出语义理解、知识库检索、引用和错误日志。
+5. 流式失败且尚未输出内容时可以重试；已输出内容后不得简单重试以免重复回答。
+6. 真实性主要依赖 RAGFlow 引擎返回内容和 citation，本地当前没有二次反幻觉审计。
+
+当前已知边界：
+
+1. 如果产品要求所有 agent 都统一支持工具确认、外部执行挂起和本地反幻觉审计，RAGFlow 需要新增适配层。
+2. 如果保持外部引擎自管，文档和测试必须明确它不适用本地 AgentScope 工具门控。
+
+## OpenClaw 外部引擎契约
+
+1. OpenClaw Agent 由 `engine_type == "OPENCLAW"` 直接进入 `OpenClawExecutor`。
+2. 当前路径不走本地 AgentScope runtime tool 权限门控。
+3. 当前路径不产生本地 `permission_required` 或 `external_execution_required`。
+4. 默认启用输入安全审计，除非配置关闭。
+5. 默认启用输出安全审计，发现不安全输出时必须发送 retraction。
+6. 如果存在用户信息，必须尽力解析并透传用户可访问的 RAGFlow metadata dataset。
+7. dataset 解析失败不能阻断 OpenClaw 主流程，但必须记录 warning。
+
+当前已知边界：
+
+1. OpenClaw 的工具执行、检索、推理安全主要依赖外部引擎。
+2. 如果要纳入统一门控，需要将外部工具调用事件标准化为本地 pending/permission 事件。
+
+## 验收规则
+
+新增或修改任一 Agent 门控时，至少满足以下要求：
+
+1. 文档矩阵必须同步更新。
+2. 明确该门控属于必需、不适用、外部自管或当前缺口。
+3. 必须有正向和拦截路径测试。
+4. ChatBI 新增门控必须覆盖：
+   - 正常查数不被误拦截
+   - 违规路径被拦截
+   - 关联日志或 trace 可见
+   - 修复或中断恢复路径不丢状态
+5. Knowledge 新增门控必须覆盖：
+   - dataset 缺失
+   - 空召回
+   - 服务不可用
+   - 有召回但无引用的事实性回答
+6. General 新增门控必须覆盖：
+   - 普通聊天不被误拦截
+   - 专家直选（`direct_agent_selection`）不触发数据 Guard
+   - 已 pending 工具调用（含 `permission_required`）不拦截
+   - 数据查询降级不编造数据
+   - 工具预检 off/soft/hard 行为（若涉及）
+   - 工具权限事件可恢复
+7. 外部引擎新增统一门控时，必须补充 RAGFlow/OpenClaw 与本地 SSE 事件的契约测试。
+
+## 当前建议优先级
+
+1. 收口 ChatBI runner 测试夹具，避免无 Redis/MySQL 环境下误报。
+2. 明确 SQL 静态风险门控和重复 SQL 门控的优先级，并同步测试。
+3. 为 Knowledge runner 的 dataset 前置门控补充独立测试，避免和服务不可用/反幻觉测试互相遮挡。
+4. 产品层决定 RAGFlow/OpenClaw 是“外部自管”还是“接入统一 AgentScope 门控适配层”。

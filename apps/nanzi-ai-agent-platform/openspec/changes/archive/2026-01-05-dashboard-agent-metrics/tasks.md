@@ -1,0 +1,4 @@
+- [ ] **API 增强**: 更新 `app/api/portal/endpoints/dashboard.py` 中的 `get_agent_stats`，增加按 `agent_id` 聚合的逻辑。 <!-- type: backend -->
+- [ ] **前端组件**: 在 `frontend/src/views/Dashboard.vue` 中增加“智能体性能”面板。 <!-- type: frontend -->
+- [ ] **图表集成**: 使用现有图表库（如有）或简单的 CSS/SVG 实现调用占比可视化。 <!-- type: frontend -->
+- [ ] **测试**: 验证 Dashboard 数据准确性。 <!-- type: test -->

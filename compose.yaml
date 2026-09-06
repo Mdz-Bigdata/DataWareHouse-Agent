@@ -1,0 +1,293 @@
+name: datawarehouse-unified-platform
+
+x-data-api-environment: &data-api-environment
+  MYSQL_HOST: ${DATA_API_MYSQL_HOST:-mysql}
+  MYSQL_PORT: ${DATA_API_MYSQL_PORT:-3306}
+  MYSQL_DB: ${DATA_API_MYSQL_DB:-nanzi_api_data_platform}
+  MYSQL_USER: ${DATA_API_MYSQL_USER:-root}
+  MYSQL_PASSWORD: ${DATA_API_MYSQL_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  REDIS_HOST: data-api-redis
+  REDIS_PORT: 6379
+  REDIS_DB: 0
+  REDIS_ENABLE: "true"
+  ENCRYPTION_KEY: ${DATA_API_ENCRYPTION_KEY:?Run ./platform.sh init first}
+  PLATFORM_COOKIE_NAME: nanzi_data_admin_token
+  PYTHONPATH: /integration:/app
+  # The standalone integration uses local API-key login, not upstream example SSO.
+  SSO_API_URL: ""
+  SSO_ACCESS_TOKEN: ""
+
+x-agents-environment: &agents-environment
+  MYSQL_HOST: ${AGENTS_MYSQL_HOST:-mysql}
+  MYSQL_PORT: ${AGENTS_MYSQL_PORT:-3306}
+  MYSQL_DB: ${AGENTS_MYSQL_DB:-nanzi_ai_agent_platform}
+  MYSQL_USER: ${AGENTS_MYSQL_USER:-root}
+  MYSQL_PASSWORD: ${AGENTS_MYSQL_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  REDIS_HOST: agents-redis
+  REDIS_PORT: 6379
+  REDIS_DB: 0
+  REDIS_ENABLE: "true"
+  ENCRYPTION_KEY: ${AGENTS_ENCRYPTION_KEY:?Run ./platform.sh init first}
+  PLATFORM_COOKIE_NAME: nanzi_agents_admin_token
+  PYTHONPATH: /integration:/app
+  SQL_EXECUTION_MODE: remote
+  APP_PUBLIC_URL: ${AGENTS_PUBLIC_URL:-http://localhost:8030}
+  SSO_API_URL: ""
+  SSO_ACCESS_TOKEN: ""
+
+services:
+  warehouse-postgres:
+    profiles: ["warehouse"]
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:${WAREHOUSE_POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_DB: ${WAREHOUSE_POSTGRES_DB:-datawarehouse}
+      POSTGRES_USER: ${WAREHOUSE_POSTGRES_USER:-warehouse}
+      POSTGRES_PASSWORD: ${WAREHOUSE_POSTGRES_PASSWORD:?Run ./start.sh or ./platform.sh init first}
+    volumes:
+      - warehouse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      start_period: 10s
+      retries: 30
+    restart: unless-stopped
+
+  platform-gateway:
+    build:
+      context: .
+      dockerfile: platform_gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PLATFORM_CORE_URL: ${PLATFORM_CORE_URL:-http://core-backend:8000}
+      PLATFORM_CORE_UI_URL: ${PLATFORM_CORE_UI_URL:-}
+      PLATFORM_DATA_API_URL: ${PLATFORM_DATA_API_URL:-http://data-api:8000}
+      PLATFORM_DATA_API_UI_URL: ${PLATFORM_DATA_API_UI_URL:-}
+      PLATFORM_DATA_API_ENABLED: ${PLATFORM_DATA_API_ENABLED:-true}
+      PLATFORM_AGENTS_URL: ${PLATFORM_AGENTS_URL:-http://agents:8001}
+      PLATFORM_AGENTS_UI_URL: ${PLATFORM_AGENTS_UI_URL:-}
+      PLATFORM_AGENTS_ENABLED: ${PLATFORM_AGENTS_ENABLED:-true}
+      PLATFORM_AUDIO_URL: ${PLATFORM_AUDIO_URL:-http://audio:8000}
+      PLATFORM_AUDIO_UI_URL: ${PLATFORM_AUDIO_UI_URL:-}
+      PLATFORM_AUDIO_ENABLED: ${PLATFORM_AUDIO_ENABLED:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  core-backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DB_TYPE: ${CORE_DB_TYPE:-sqlite}
+      DB_URL: ${CORE_DB_URL:-}
+    restart: unless-stopped
+
+  core-web:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - core-backend
+      - platform-gateway
+    restart: unless-stopped
+
+  data-api:
+    profiles: ["data-api", "agents", "nanzi", "full"]
+    build: &data-api-build
+      context: ./apps/nanzi-api-data-platform
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8020:8000"
+    environment: *data-api-environment
+    command: ["gunicorn", "app_entry:app", "-c", "gunicorn.conf.py"]
+    volumes:
+      - ./integrations/nanzi:/integration:ro
+      - data-api-files:/app/data
+    depends_on:
+      data-api-init:
+        condition: service_completed_successfully
+      data-api-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 12
+    restart: unless-stopped
+
+  data-api-init:
+    profiles: ["data-api", "agents", "nanzi", "full"]
+    build: *data-api-build
+    environment:
+      <<: *data-api-environment
+      PLATFORM_ADMIN_API_KEY: ${DATA_API_ADMIN_API_KEY:?Run ./platform.sh init first}
+    command: ["python", "/integration/bootstrap.py", "--platform", "data", "--migrations", "/app/db-prod"]
+    volumes:
+      - ./integrations/nanzi:/integration:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  agents:
+    profiles: ["agents", "nanzi", "full"]
+    build: &agents-build
+      context: ./apps/nanzi-ai-agent-platform
+      dockerfile: ../../integrations/nanzi/Dockerfile.agents
+    ports:
+      - "8030:8001"
+    environment: *agents-environment
+    command: ["uvicorn", "app_entry:app", "--host", "0.0.0.0", "--port", "8001"]
+    volumes:
+      - ./integrations/nanzi:/integration:ro
+      - agents-files:/app/data
+      - agents-skills:/app/data/skills
+    depends_on:
+      agents-init:
+        condition: service_completed_successfully
+      agents-redis:
+        condition: service_healthy
+      data-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 45s
+      retries: 12
+    restart: unless-stopped
+
+  agents-init:
+    profiles: ["agents", "nanzi", "full"]
+    build: *agents-build
+    environment:
+      <<: *agents-environment
+      PLATFORM_ADMIN_API_KEY: ${AGENTS_ADMIN_API_KEY:?Run ./platform.sh init first}
+      DATA_PLATFORM_API_KEY: ${DATA_API_ADMIN_API_KEY:?Run ./platform.sh init first}
+      DATA_PLATFORM_DATA_SOURCE: ${DATA_PLATFORM_DATA_SOURCE:-}
+    command: ["python", "/integration/bootstrap.py", "--platform", "agents", "--migrations", "/app/db-prod"]
+    volumes:
+      - ./integrations/nanzi:/integration:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      data-api-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  data-api-redis:
+    profiles: ["data-api", "agents", "nanzi", "full"]
+    image: redis:7-alpine
+    volumes:
+      - data-api-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  agents-redis:
+    profiles: ["agents", "nanzi", "full"]
+    image: redis/redis-stack-server:latest
+    volumes:
+      - agents-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  audio:
+    profiles: ["audio", "full"]
+    build:
+      context: ./apps/listen-book-data-agent
+      dockerfile: infra/Dockerfile
+    expose:
+      - "8000"
+    volumes:
+      - audio-logs:/app/logs
+    networks:
+      default:
+        aliases:
+          - app
+    depends_on:
+      - mysql
+      - redis
+      - qdrant
+      - elasticsearch
+    restart: unless-stopped
+
+  audio-web:
+    profiles: ["audio", "full"]
+    build: ./apps/listen-book-data-agent/frontend
+    ports:
+      - "8040:80"
+    depends_on:
+      - audio
+    restart: unless-stopped
+
+  mysql:
+    profiles: ["data-api", "agents", "nanzi", "audio", "full"]
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql/00-create-platform-databases.sql:/docker-entrypoint-initdb.d/00-create-platform-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    profiles: ["audio", "full"]
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  qdrant:
+    profiles: ["audio", "full"]
+    image: qdrant/qdrant:v1.16.2
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  elasticsearch:
+    profiles: ["audio", "full"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.0
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+volumes:
+  warehouse-postgres-data:
+  data-api-files:
+  agents-files:
+  agents-skills:
+  data-api-redis:
+  agents-redis:
+  mysql-data:
+  redis-data:
+  qdrant-data:
+  elasticsearch-data:
+  audio-logs:

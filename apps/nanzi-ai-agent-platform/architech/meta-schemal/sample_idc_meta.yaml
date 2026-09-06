@@ -1,0 +1,76 @@
+version: "1.0"
+domain: "IDC_Resources"
+description: "数据中心基础设施资源与动环监控元数据定义"
+
+entities:
+  - name: "monitor_pk_opt_all_1m"
+    term: "实时监控聚合表"
+    description: "核心表：存储所有设备（机房、机柜、配电柜等）的分时聚合监控数据，每分钟一条记录。"
+    synonyms: ["监控数据", "实时指标", "动环数据", "电力负荷"]
+    columns:
+      - name: "resource_id"
+        term: "资源ID"
+        description: "关联资源的唯一标识"
+        foreign_key: "cmdb_resources.id"
+
+      - name: "resource_type"
+        term: "资源类型"
+        description: "区分数据来源的设备类型"
+        enums:
+          - value: "room"
+            description: "物理机房"
+          - value: "rack"
+            description: "机柜"
+          - value: "pdu"
+            description: "配电单元/列头柜"
+
+      - name: "metric_pue"
+        term: "PUE"
+        type: "float"
+        description: "Power Usage Effectiveness，电能利用效率 = 总能耗 / IT设备能耗。理想值接近1.0。"
+        examples: [1.25, 1.4, 1.6]
+
+      - name: "total_power"
+        term: "总功率"
+        type: "float"
+        synonyms: ["总负荷", "实时功率"]
+        description: "单位：kW。该资源当前的实时总用电功率。"
+
+      - name: "record_time"
+        term: "记录时间"
+        type: "datetime"
+        description: "数据采集的时间点"
+
+  - name: "cmdb_resources"
+    term: "资源配置表"
+    description: "存储所有物理和逻辑资源的静态配置信息（位置、归属、规格等）。"
+    synonyms: ["资源表", "资产表", "设备表"]
+    columns:
+      - name: "id"
+        term: "ID"
+        description: "主键"
+
+      - name: "name"
+        term: "名称"
+        description: "资源名称，如 '302机房', 'A01机柜'"
+        examples: ["Room-302", "Rack-A01", "SH-IDC-01"]
+
+      - name: "region"
+        term: "区域/机楼"
+        description: "资源所属的物理区域"
+        enums:
+          - value: "shanghai_hq"
+            description: "上海总部"
+          - value: "beijing_b1"
+            description: "北京B1楼"
+
+relationships:
+  - source: "monitor_pk_opt_all_1m.resource_id"
+    target: "cmdb_resources.id"
+    type: "many_to_one"
+    description: "监控数据关联到对应的静态资源信息"
+
+metrics:
+  - name: "avg_pue_last_24h"
+    description: "过去24小时平均PUE"
+    sql_template: "SELECT AVG(metric_pue) FROM monitor_pk_opt_all_1m WHERE resource_id = {{id}} AND record_time >= NOW() - INTERVAL 1 DAY"

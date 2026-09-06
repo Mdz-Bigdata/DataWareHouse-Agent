@@ -1,0 +1,378 @@
+<!--
+  微信公众号排版 HTML — 南孜 AI 智能体平台 v1.0.1
+  使用说明：
+  1. 复制下方 <section> 内全部内容，粘贴到微信公众平台编辑器「HTML」模式（或 135/秀米 等工具）
+  2. 封面图 banner.png 需在编辑器中重新上传并替换下方占位图 src
+  3. 外链在发布前预览确认；部分链接需绑定公众号域名白名单
+  4. 不支持 <style>、<script>、class/id 选择器，全部采用内联 style
+-->
+
+<section style="box-sizing:border-box;font-size:16px;color:#3f3f3f;line-height:1.8;letter-spacing:0.5px;text-align:justify;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Arial,sans-serif;">
+
+  <!-- 标题区 -->
+  <section style="margin:0 0 24px 0;padding:20px 16px;background:linear-gradient(135deg,#1a56db 0%,#3b82f6 100%);border-radius:10px;text-align:center;">
+    <p style="margin:0 0 8px 0;font-size:22px;font-weight:bold;color:#ffffff;line-height:1.5;letter-spacing:1px;">🚀 南孜 AI 智能体平台 · v1.0.1 重磅发布</p>
+    <p style="margin:0;font-size:16px;font-weight:normal;color:#dbeafe;line-height:1.6;letter-spacing:0.5px;">执行引擎全面焕新 · 迈入 AgentScope 原生时代</p>
+  </section>
+
+  <!-- 仓库链接 -->
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#1e40af;line-height:1.7;">
+      <strong style="color:#1e3a8a;">GitHub Repository：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform" style="color:#2563eb;text-decoration:none;word-break:break-all;">RandyChen1985/nanzi-ai-agent-platform</a>
+    </p>
+  </section>
+
+  <!-- 导语 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;line-height:1.9;">
+      v1.0.1 是一次<strong style="color:#1d4ed8;">架构级升级版本</strong>，将 AI 执行层从 LangChain 全面迁移至
+      <a href="https://github.com/modelscope/agentscope" style="color:#2563eb;text-decoration:none;">AgentScope</a>
+      原生运行时，并重构 General / ChatBI / Knowledge 三条执行链路。
+    </p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.8;">
+      本次变更合并自
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/pull/1" style="color:#2563eb;text-decoration:none;">PR #1</a>
+      （<code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">6a1a1d4</code> → <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">40b0c57</code>），共
+      <strong>32 个提交</strong>，<strong>162 个文件</strong>，+18104 / -6582 行。
+    </p>
+  </section>
+
+  <!-- 封面图：发布前请在微信编辑器中重新上传 banner.png 并替换 src -->
+  <section style="margin:0 0 28px 0;text-align:center;">
+    <img src="../../images/banner.png" alt="南孜 AI 智能体平台" style="display:block;width:100%;max-width:100%;height:auto;margin:0 auto;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.08);" />
+  </section>
+
+  <!-- 分隔线 -->
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Key Features ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 20px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #2563eb;padding-left:12px;line-height:1.4;">🚀 Key Features</p>
+  </section>
+
+  <!-- Feature 1 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">1. ⚙️ AgentScope 运行时基建（核心迁移）</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>原生 AgentScope 运行时层</strong>：新增 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">app/services/ai/runtime/agentscope/</code>，涵盖 chat、tools、event_stream、state_store、pending_store、session_lock、workspace、stream_reconcile 等模块。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>统一工具链</strong>：工具注册中心切换为 RuntimeToolSpec + 原生 ReAct Agent，新增 tool_compat 兼容层，LLM 工厂切换为 AgentScope ChatModelBase。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>状态持久化与会话锁</strong>：持久化 AgentScope runtime state，支持 Redis 分布式会话锁，保障多实例部署下的会话一致性。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具确认与恢复闭环</strong>：支持 ASK 权限挂起、external execution 挂起、HTTP resume 端点及链式 permission 恢复。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>统一可观测事件流</strong>：SSE 事件标准化输出 model_call、tool_result_data、thinking 等，便于前端实时渲染与 Trace 审计。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 2 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">2. 🔀 执行层重构：Executor → Runner</p>
+    <section style="margin:0 0 12px 0;overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+        <thead>
+          <tr>
+            <th style="padding:10px 8px;background:#eff6ff;color:#1e40af;font-weight:bold;border:1px solid #bfdbfe;text-align:left;">场景</th>
+            <th style="padding:10px 8px;background:#eff6ff;color:#1e40af;font-weight:bold;border:1px solid #bfdbfe;text-align:left;">v1.0.0</th>
+            <th style="padding:10px 8px;background:#eff6ff;color:#1e40af;font-weight:bold;border:1px solid #bfdbfe;text-align:left;">v1.0.1</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">通用对话</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#6b7280;font-size:13px;">ChatExecutor / 手写 ReAct</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-size:13px;">AssistantExecutor → AssistantAgentRunner</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">ChatBI 查数</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#6b7280;font-size:13px;background:#f9fafb;">DataQueryExecutor 单体</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-size:13px;background:#f9fafb;">DataExecutor → DataAgentRunner</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">知识库问答</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#6b7280;font-size:13px;">挂在 Assistant 上</td>
+            <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-size:13px;">KnowledgeExecutor → KnowledgeAgentRunner</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>移除旧路径</strong>：删除 ChatExecutor 及 General 旧 ReAct 路径，仅保留 AgentScope 原生 Agent 执行链路。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>路由兜底</strong>：Router 支持 assistant / main / general-chat 多名称匹配（DB 迁移 V72 将 slug 统一为 main）。</p>
+    </section>
+  </section>
+
+  <!-- Feature 3 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">3. 📊 ChatBI 查数增强</p>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Schema 自动门控</strong>：ReAct 前自动 invoke get_dataset_schema；Runner 仅挂载 agent 配置工具，schema 未完成前拦截 SQL 并触发 repair。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Repair 重试机制</strong>：最多 2 轮 repair，按场景强制 tool_choice；拦截重复 execute_sql_query 调用。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>致命错误立即终止</strong>：元数据服务不可用（502/超时）、无授权数据集、RAG 未同步等场景返回明确提示并终止查数，不再让模型臆造结果。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具日志优化</strong>：execute_sql_query 的 SQL 与结果/错误分区展示；输出截断 1000 字符，避免日志膨胀。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>追问复用优化</strong>：基于上一轮结果分析/可视化时，修复 synthesis 重复输出问题。</p>
+    </section>
+  </section>
+
+  <!-- Feature 4 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">4. 💬 General / Assistant 流式与兜底</p>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>流式 reconcile</strong>：工具链结束后通过 stream_reconcile 判定是否需要 synthesis 补全。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>思考型模型兜底</strong>：无 TEXT_BLOCK_DELTA 时从 AgentState 恢复或 synthesis 兜底，避免空回复。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>流式正文清洗</strong>：剥离 think / function_calls 标签，避免整段内容被误丢弃。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具确认闭环</strong>：ASK 事件挂起 → 前端确认/拒绝 → resume 流恢复（含链式二次 permission 弹框）。</p>
+    </section>
+  </section>
+
+  <!-- Feature 5 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">5. 📚 Knowledge 知识库独立链路</p>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>自动预检索</strong>：平台在 ReAct 前自动 search_knowledge_base 并将检索结果注入上下文。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>服务不可用终止</strong>：RAGFlow 502/超时等故障返回 [知识库服务不可用] 标记，Runner 立即终止并提示用户，对齐 data/schema 侧处理。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>误判修复</strong>：仅识别显式错误标记（[知识库服务不可用]、[Tool Error]），避免检索正文中 503/timeout 等子串被误匹配。</p>
+    </section>
+  </section>
+
+  <!-- Feature 6 -->
+  <section style="margin:0 0 28px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">6. 🖥️ 前端接入 AgentScope 可观测 UI</p>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>SSE 事件统一处理</strong>：新增 agentscopeSseHandlers.ts，统一解析 AgentScope 可观测事件。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具审批与恢复</strong>：支持外部工具结果提交、resume 流、审批模式选择（ask / allow / deny）。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具日志分区渲染</strong>：SQL / 结果 / 错误分区展示；quickButtons 抽取与特殊字符链接修复。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>交互优化</strong>：/clear 改为 /new；ConfirmModal 支持 Enter 确认 / Esc 取消。</p>
+    </section>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Improvements ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #059669;padding-left:12px;line-height:1.4;">🛠 Improvements &amp; Stability</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background:#f0fdf4;border-radius:8px;">
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;color:#059669;margin-right:8px;">✓</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Token 统计修复</strong>：修复 AgentScope 路径下 Token 未入库问题，统一 trace 聚合口径。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;color:#059669;margin-right:8px;">✓</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>ChatBI 查数守卫</strong>：修复模型跳步直接回答、过渡语后继续查数被误拦截、FunctionTool 重复最终回答等边界问题。</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;color:#059669;margin-right:8px;">✓</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>工具输出截断</strong>：修复工具输出截断与 SQL 误判，修正模型调用日志计时。</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;color:#059669;margin-right:8px;">✓</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>架构文档对齐</strong>：新增 AGENTSCOPE_RUNTIME.md，更新 Chat 流程、Prompt 分层、工具调用等架构文档；OpenSpec 规格归档。</p>
+    </section>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Breaking Changes ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #dc2626;padding-left:12px;line-height:1.4;">⚠️ Breaking Changes &amp; Migration Notes</p>
+  </section>
+  <section style="margin:0 0 12px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#991b1b;line-height:1.7;">从 v1.0.0 升级至 v1.0.1 时，请特别注意以下变更：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;width:30%;">项目</th>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">Python 版本</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">需 <strong>Python 3.11+</strong></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">依赖</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">新增 agentscope 相关包，请重新执行 pip install -r requirements.txt</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">通用助手 slug</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">DB 迁移 V72 将 general-chat 等统一为 main</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">工具挂载</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">General / ChatBI 不再通过 workspace 自动注入 Grep / Read / Bash，完全依赖 agent 后端配置</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">旧执行路径</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">ChatExecutor 已删除，General 旧 ReAct 路径已移除</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Upgrade Guide ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #7c3aed;padding-left:12px;line-height:1.4;">📦 Upgrade Guide</p>
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#374151;">从 v1.0.0 升级</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 1. 拉取最新代码</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">git fetch origin &amp;&amp; git checkout main &amp;&amp; git pull</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 2. 确认 Python 版本 &gt;= 3.11</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">python3 --version</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 3. 更新依赖</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">source venv/bin/activate</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">pip install -r requirements.txt</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 4. 执行数据库迁移（含 V72 slug 统一）</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./db-prod/apply-sql-native.sh</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 5. 重新编译前端并启动</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">cd frontend &amp;&amp; npm install &amp;&amp; cd ..</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./dev.sh</p>
+  </section>
+  <p style="margin:0 0 28px 0;font-size:14px;color:#6b7280;line-height:1.8;">
+    完整部署说明请参考
+    <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/blob/main/HOW_TO_INSTALL.md" style="color:#2563eb;text-decoration:none;">HOW_TO_INSTALL.md</a>。
+  </p>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Test Checklist ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #0891b2;padding-left:12px;line-height:1.4;">✅ Test Checklist</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">升级后建议验证以下核心场景：</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background:#f0f9ff;border-radius:8px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>General 对话</strong>：普通问答、多轮上下文、工具调用后 synthesis 兜底</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>工具确认</strong>：ASK 挂起 → 确认/拒绝 → resume；链式二次 permission 弹框</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>外部执行</strong>：external_execution 挂起 → 提交结果 → resume 继续</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>ChatBI 新查数</strong>：自动 schema → SQL → 结果展示；schema 未完成时 SQL 被拦截</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>ChatBI repair</strong>：模型跳步、过渡语后继续查数、重复 SQL 拦截</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>ChatBI 致命错误</strong>：元数据 502、无授权数据集、RAG 未同步 → 明确提示并终止</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>ChatBI 追问复用</strong>：基于上一轮结果分析/可视化，无 synthesis 重复输出</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>Knowledge 问答</strong>：自动检索成功 → 正常回答；RAGFlow 不可用 → 终止；正文含 503 不误判</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>Token 统计</strong>：对话结束后历史记录 Token 数与 trace 一致</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>Embed UI</strong>：/new 弹框 Enter/Esc；工具日志 SQL/结果分区；审批模式切换</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>回归测试</strong>：pytest tests/ai/ 全量通过</p>
+  </section>
+  <p style="margin:0 0 28px 0;font-size:14px;color:#6b7280;line-height:1.8;">
+    完整测试清单见
+    <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/blob/main/tests/CHECKLIST.md" style="color:#2563eb;text-decoration:none;">tests/CHECKLIST.md</a>。
+  </p>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Downloads ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 12px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #d97706;padding-left:12px;line-height:1.4;">💾 Downloads / Assets</p>
+    <p style="margin:0 0 16px 0;font-size:15px;color:#374151;line-height:1.8;">本项目 v1.0.1 发布版本关联的源码、Docker 镜像资产归档包及配置文件如下：</p>
+  </section>
+  <section style="margin:0 0 16px 0;">
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">📦</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Source Code (zip)</strong>：nanzi-ai-agent-platform-1.0.1.zip</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">📦</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Source Code (tar.gz)</strong>：nanzi-ai-agent-platform-1.0.1.tar.gz</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">🐳</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Image for Linux amd64 (x86_64)</strong>：nanzi-ai-agent_1.0.1_linux-amd64_*.tar</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">🐳</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Image for Linux arm64 (aarch64)</strong>：nanzi-ai-agent_1.0.1_linux-arm64_*.tar</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;margin-right:8px;">⚙️</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Compose YAML file</strong>：docker-compose.yml</p>
+    </section>
+  </section>
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#fffbeb;border-radius:8px;text-align:center;">
+    <p style="margin:0;font-size:15px;color:#92400e;line-height:1.7;">
+      🔗 <strong>下载地址：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/releases/tag/1.0.1" style="color:#d97706;text-decoration:none;font-weight:bold;">GitHub Releases v1.0.1</a>
+    </p>
+  </section>
+
+  <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#374151;">🐳 离线/内网环境加载 Docker 镜像</p>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 1. 加载本地镜像归档</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker load -i nanzi-ai-agent_1.0.1_linux-amd64_*.tar</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 2. 检查是否加载成功</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker images | grep nanzi-ai-agent</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 3. 利用 docker-compose 快速拉起服务</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker-compose up -d</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Contributors ========== -->
+  <section style="margin:0 0 0 0;padding:20px 16px;background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);border-radius:10px;text-align:center;">
+    <p style="margin:0;font-size:16px;font-weight:bold;color:#374151;line-height:1.7;">🤝 Contributors</p>
+    <p style="margin:10px 0 0 0;font-size:15px;color:#6b7280;line-height:1.8;">感谢所有参与 AgentScope 迁移与 v1.0.1 发布的开发者！</p>
+  </section>
+
+</section>

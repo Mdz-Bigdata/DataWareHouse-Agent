@@ -1,0 +1,103 @@
+# ======================================
+# PyCharm / IDE 相关忽略
+# ======================================
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+gen/
+
+# ======================================
+# Python 编译缓存文件
+# ======================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ======================================
+# 虚拟环境（常用名称都包含）
+# ======================================
+venv/
+.env/
+.venv/
+env/
+virtualenv/
+ENV/
+
+# ======================================
+# 依赖与打包
+# ======================================
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.mypy_cache/
+.pytest_cache/
+
+# ======================================
+# 系统文件（Windows/Mac）
+# ======================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ======================================
+# 环境变量与私密配置
+# ======================================
+.env
+.env.local
+.env.*.local
+secrets.json
+config.json
+
+# Local application configuration and generated runtime data
+conf/app_config.local.yaml
+logs/
+infra/.env
+infra/models/
+infra/volumes/
+
+# ======================================
+# Node.js / Frontend
+# ======================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo
+
+# 上面的 Python 打包规则 `lib/` 会误伤前端源码目录，显式恢复
+!frontend/src/lib/
+!frontend/src/lib/**

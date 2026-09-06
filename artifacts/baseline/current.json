@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-07-22T13:00:00+08:00",
+  "git": {
+    "branch": "master",
+    "commit": "a633886899eea00f2dc4537445b3812e0e409ec9",
+    "dirty_worktree_preserved": true
+  },
+  "backend": {
+    "command": "backend/venv/bin/python -m pytest -q backend/tests",
+    "status": "blocked",
+    "reason": "The existing virtual environment does not contain pytest; the system pytest runner cannot collect the suite because sqlglot is not installed in that interpreter."
+  },
+  "frontend": {
+    "command": "npm run build",
+    "status": "passed",
+    "warning": "The production bundle contains a chunk larger than 500 kB."
+  },
+  "existing_api_route_count": 12,
+  "preserved_modified_files": [
+    "backend/app/api/chat.py",
+    "backend/app/model/user_memory.py",
+    "backend/app/schema/chat.py",
+    "backend/app/service/vector_service.py",
+    "backend/user_memory.json",
+    "frontend/src/App.tsx",
+    "frontend/src/types.ts"
+  ],
+  "preserved_untracked_feature_files": [
+    "frontend/src/components/FlywheelPanel.tsx"
+  ]
+}

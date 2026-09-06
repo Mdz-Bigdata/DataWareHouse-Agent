@@ -1,0 +1,17 @@
+version: 1
+recommendations:
+  - key: previous_month
+    question: 把时间范围改为上个月
+    intents: [aggregate, trend, ranking, compare, detail]
+    required_tables: []
+    priority: 300
+  - key: previous_period_comparison
+    question: 与上一周期对比同一指标
+    intents: [aggregate, trend, ranking, compare, detail]
+    required_tables: []
+    priority: 200
+  - key: weekly_grain
+    question: 按周查看同一指标趋势
+    intents: [aggregate, trend, ranking, compare, detail]
+    required_tables: []
+    priority: 100

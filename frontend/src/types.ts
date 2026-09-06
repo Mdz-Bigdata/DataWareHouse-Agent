@@ -25,6 +25,16 @@ export interface QueryDetails {
   source_desc: string;
   filters: Array<{ field: string; op: string; value: any }>;
   estimated_rows?: number;
+  data_source?: "demo" | "configured";
+}
+
+export interface DataSourceInfo {
+  mode: "demo" | "configured";
+  label: string;
+  engine?: string;
+  description?: string;
+  data_origin?: "project_fixture" | "business";
+  database_identity?: string;
 }
 
 export interface ClarificationOption {
@@ -38,8 +48,54 @@ export interface ClarificationInfo {
   options: ClarificationOption[];
 }
 
+export interface AttributionData {
+  analysis_type?: string;
+  metric_unit?: string;
+  metric_name: string;
+  metric_display: string;
+  dimension: string;
+  dimension_display: string;
+  total_value: number;
+  current_period?: { start: string; end: string };
+  baseline_period?: { start: string; end: string };
+  current_value?: number;
+  baseline_value?: number;
+  total_change?: number;
+  change_rate?: number | null;
+  top_driver: string;
+  top_driver_ratio: number;
+  waterfall_items: Array<{
+    name: string;
+    value: number;
+    ratio: number;
+    baseline_value?: number;
+    current_value?: number;
+  }>;
+}
+
+export interface LineageNode {
+  id: string;
+  name: string;
+  layer: string;
+  type: string;
+  domain: string;
+}
+
+export interface LineageEdge {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+export interface LineageData {
+  nodes: LineageNode[];
+  edges: LineageEdge[];
+}
+
 export interface AskResponse {
   success: boolean;
+  data_source_info?: DataSourceInfo;
+  skill_type?: string;
   conclusion?: string;
   chart?: ChartConfig;
   data?: Array<Record<string, any>>;
@@ -47,6 +103,12 @@ export interface AskResponse {
   error?: string;
   details?: QueryDetails;
   clarification?: ClarificationInfo;
+  attribution_data?: AttributionData;
+  lineage_data?: LineageData;
+  cache_hit?: boolean;
+  cache_type?: string;
+  matched_question?: string;
+  similarity_score?: number;
 }
 
 export interface HistoryRecord {
@@ -139,4 +201,59 @@ export interface TestConnectionResponse {
   message: string;
   text_models: string[];
   multimodal_models: string[];
+}
+
+export interface ErrorCorrectionRecord {
+  question: string;
+  error_message: string;
+  wrong_sql: string;
+  corrected_sql: string;
+  created_at?: string;
+}
+
+export interface CacheEntry {
+  key: string;
+  question: string;
+  role: string;
+  dialect: string;
+  hit_count: number;
+  ttl_remaining_sec: number;
+  has_embedding: boolean;
+}
+
+export interface CacheStats {
+  total_requests: number;
+  total_hits: number;
+  hit_ratio_percent: number;
+  exact_hits: number;
+  semantic_hits: number;
+  cached_exact_count: number;
+  cached_semantic_count: number;
+  cached_entries?: CacheEntry[];
+}
+
+export interface InferredMetric {
+  name: string;
+  field: string;
+  table: string;
+  display_name: string;
+  calculation: string;
+  default_agg: string;
+  aliases: string[];
+}
+
+export interface InferredDimension {
+  name: string;
+  table: string;
+  display_name: string;
+  aliases: string[];
+  value_range: string[];
+}
+
+export interface MetadataEnrichResult {
+  table_name: string;
+  domain: string;
+  description: string;
+  metrics: InferredMetric[];
+  dimensions: InferredDimension[];
 }

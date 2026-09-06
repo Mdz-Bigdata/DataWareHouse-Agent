@@ -1,15 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --page-bg-magenta: #ff99ff;
+  --bg-primary: #070a13;
+  --bg-surface: rgba(13, 20, 36, 0.72);
+  --border-subtle: rgba(255, 255, 255, 0.08);
 
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: var(--page-bg-magenta);
+  color: #f1f5f9;
+  background-color: var(--bg-primary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -22,7 +24,12 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--page-bg-magenta);
+  background: radial-gradient(circle at 15% 15%, rgba(124, 58, 237, 0.08) 0%, transparent 40%),
+              radial-gradient(circle at 85% 20%, rgba(37, 99, 235, 0.08) 0%, transparent 40%),
+              radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+              #070a13;
+  background-attachment: fixed;
+  color: #f1f5f9;
   overflow-x: hidden;
 }
 
@@ -215,9 +222,18 @@ body {
 .justify-center { justify-content: center; }
 .justify-end { justify-content: flex-end; }
 .flex-1 { flex: 1 1 0%; }
+.inline-block { display: inline-block; }
+.pointer-events-none { pointer-events: none; }
+.opacity-50 { opacity: 0.5; }
+.w-full { width: 100%; }
+.text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.font-bold { font-weight: 700; }
+.font-semibold { font-weight: 600; }
 
 /* 响应式 Grid 媒体查询 */
 @media (min-width: 1024px) {
+  .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lg\:grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .lg\:col-span-8 { grid-column: span 8 / span 8; }
   .lg\:col-span-4 { grid-column: span 4 / span 4; }
@@ -505,122 +521,30 @@ th { font-weight: 600; color: #9ca3af; }
   font-style: italic;
 }
 
-/* 白色卡片主题：页面背景保持 Magenta，导航栏保留深色 */
-.glass-card:not(.app-header) {
-  color: #111827;
-  background: #ffffff !important;
-  background-image: none !important;
-  border-color: #f0abfc;
-  box-shadow: 0 10px 30px rgba(112, 26, 117, 0.2);
+/* 统一深色毛玻璃卡片交互增强 */
+.glass-card {
+  background: rgba(13, 20, 36, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.glass-card:not(.app-header):hover {
-  border-color: #d946ef;
-  box-shadow: 0 14px 36px rgba(112, 26, 117, 0.26);
+.glass-card:hover {
+  border-color: rgba(147, 51, 234, 0.4);
+  box-shadow: 0 14px 36px rgba(124, 58, 237, 0.15);
 }
 
 .app-header {
-  color: rgba(255, 255, 255, 0.87);
-  background: rgba(7, 10, 19, 0.9) !important;
-  border-color: rgba(30, 41, 59, 0.8);
+  background: rgba(7, 10, 19, 0.85) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-main .glass-card [class*="bg-slate-"],
-main .glass-card[class*="bg-slate-"],
-main .glass-card [class~="bg-black"],
-main .glass-card[class~="bg-black"] {
-  background-color: #ffffff !important;
-  background-image: none !important;
-}
-
-main .glass-card .text-white,
-main .glass-card .text-gray-100 {
-  color: #111827;
-}
-
-main .glass-card .text-gray-200,
-main .glass-card .text-gray-300 {
-  color: #1f2937;
-}
-
-main .glass-card .text-gray-400 {
-  color: #4b5563;
-}
-
-main .glass-card .text-gray-500,
-main .glass-card .text-gray-600 {
-  color: #6b7280;
-}
-
-main .glass-card .text-purple-300,
-main .glass-card .text-purple-400 {
-  color: #7e22ce;
-}
-
-main .glass-card .text-blue-300,
-main .glass-card .text-blue-400 {
-  color: #1d4ed8;
-}
-
-main .glass-card .text-emerald-300,
-main .glass-card .text-emerald-400 {
-  color: #047857;
-}
-
-main .glass-card .text-pink-300 {
-  color: #be185d;
-}
-
-main .glass-card input,
-main .glass-card select,
-main .glass-card textarea {
-  color: #111827;
-  background: #ffffff !important;
-  border-color: #d8b4fe;
-}
-
-main .glass-card input::placeholder,
-main .glass-card textarea::placeholder {
-  color: #9ca3af;
-}
-
-.recommendation-chip__action {
-  color: #7e22ce;
-  background: #ffffff;
-  border-color: #e9d5ff;
-}
-
-.recommendation-chip__action:hover {
-  background: #fdf4ff;
-  border-color: #d946ef;
-}
-
-.sql-code-block {
-  color: #166534;
-  background: #ffffff;
-  border-color: #e9d5ff;
-}
-
-.sql-token--keyword {
-  color: #7e22ce;
-}
-
-.sql-token--function {
-  color: #0369a1;
-}
-
-.sql-token--string {
-  color: #a16207;
-}
-
-.sql-token--number {
-  color: #be185d;
-}
-
-.sql-token--identifier {
-  color: #1d4ed8;
-}
-
+/* 历史查询分页控件 (深色模式) */
 .history-pagination {
   display: flex;
   align-items: center;
@@ -628,50 +552,53 @@ main .glass-card textarea::placeholder {
   gap: 0.75rem;
   margin-top: 1rem;
   padding-top: 0.875rem;
-  border-top: 1px solid #e9d5ff;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .history-pagination__button {
   padding: 0.375rem 0.75rem;
-  color: #7e22ce;
-  background: #ffffff;
-  border: 1px solid #d8b4fe;
+  color: #c084fc;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(168, 85, 247, 0.3);
   border-radius: 6px;
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  transition: all 150ms ease;
 }
 
 .history-pagination__button:hover:not(:disabled) {
   color: #ffffff;
-  background: #d946ef;
-  border-color: #d946ef;
+  background: rgba(124, 58, 237, 0.4);
+  border-color: rgba(168, 85, 247, 0.6);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
 }
 
 .history-pagination__button:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #64748b;
 }
 
 .history-pagination__status {
-  color: #4b5563;
+  color: #94a3b8;
   font-size: 0.75rem;
   font-weight: 500;
 }
 
-/* 当前 Agent 阶段内嵌文件编辑器 */
+/* Agent 阶段内嵌文件编辑器 (深色模式) */
 .phase-file-editor {
   box-sizing: border-box;
   width: min(100%, 48rem);
   margin: 0.5rem auto 0;
   padding: 1rem;
-  color: #111827;
-  background: #ffffff;
-  border: 1px solid #d8b4fe;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(126, 34, 206, 0.12);
+  color: #f1f5f9;
+  background: rgba(11, 17, 32, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
 .phase-file-editor__header {
@@ -681,7 +608,7 @@ main .glass-card textarea::placeholder {
   gap: 1rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #e9d5ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .phase-file-editor__meta {
@@ -691,7 +618,7 @@ main .glass-card textarea::placeholder {
 .phase-file-editor__title {
   margin: 0;
   overflow: hidden;
-  color: #1f2937;
+  color: #f8fafc;
   font-size: 0.875rem;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -701,7 +628,7 @@ main .glass-card textarea::placeholder {
 .phase-file-editor__path {
   display: block;
   margin-top: 0.25rem;
-  color: #6b7280;
+  color: #94a3b8;
   font-size: 0.6875rem;
   overflow-wrap: anywhere;
 }
@@ -718,11 +645,11 @@ main .glass-card textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #7e22ce;
-  background: rgba(255, 255, 255, 0.88);
+  color: #a855f7;
+  background: rgba(7, 10, 19, 0.85);
   border-radius: 8px;
   font-size: 0.75rem;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(4px);
 }
 
 .phase-file-editor__textarea {
@@ -732,9 +659,9 @@ main .glass-card textarea::placeholder {
   min-height: 20rem;
   max-width: 100%;
   padding: 0.875rem;
-  color: #111827;
-  background: #ffffff;
-  border: 1px solid #d8b4fe;
+  color: #38bdf8;
+  background: #030712;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   outline: none;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -745,15 +672,15 @@ main .glass-card textarea::placeholder {
 
 .phase-file-editor__textarea:focus {
   border-color: #a855f7;
-  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.2);
 }
 
 .phase-file-editor__success {
   margin-top: 0.75rem;
   padding: 0.625rem;
-  color: #7e22ce;
-  background: #fdf4ff;
-  border: 1px solid #e9d5ff;
+  color: #34d399;
+  background: rgba(6, 78, 59, 0.2);
+  border: 1px solid rgba(52, 211, 153, 0.3);
   border-radius: 6px;
   font-size: 0.6875rem;
   line-height: 1.6;

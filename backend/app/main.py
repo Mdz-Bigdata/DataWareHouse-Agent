@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -33,10 +33,27 @@ def health_check():
     """
     系统健康检查接口
     """
-    return {"status": "healthy", "service": "DataWareHouse-Agent Backend"}
+    from app.service.db_service import db_service
+    from app.service.data_source_info import describe_data_source
+    from sqlalchemy import text
+    try:
+        if db_service.real_engine is not None:
+            with db_service.real_engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        else:
+            db_service.conn.execute("SELECT 1")
+        source = describe_data_source(db_service)
+    except Exception:
+        raise HTTPException(status_code=503, detail="当前数据库连接不可用") from None
+    return {"status": "healthy", "service": "DataWareHouse-Agent Backend",
+            "db_type": db_service.active_db_type,
+            "data_source": source["mode"],
+            "engine": source["engine"],
+            "data_origin": source["data_origin"],
+            "database_identity": source["database_identity"]}
 
 if __name__ == "__main__":
     # 获取环境变量 PORT，默认 8000
     port = int(os.getenv("PORT", 8000))
     print(f"Starting DataWareHouse-Agent Backend on port {port}...")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)

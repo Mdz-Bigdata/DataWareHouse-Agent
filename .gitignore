@@ -5,6 +5,7 @@ __pycache__/
 
 # Environments
 .env
+.env.platform
 .venv
 env/
 venv/
@@ -31,3 +32,18 @@ Thumbs.db
 
 # Project specific
 backend/backend.log
+
+# Imported application runtime files
+apps/**/.env
+apps/**/.venv/
+apps/**/venv/
+apps/**/node_modules/
+apps/**/dist/
+apps/**/*.log
+apps/**/__pycache__/
+
+# Local unified launcher state and logs
+.runtime/
+
+# IDE settings
+.idea/

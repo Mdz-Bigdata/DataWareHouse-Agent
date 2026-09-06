@@ -1,0 +1,138 @@
+version: audio-golden-v1
+
+thresholds:
+  minimum_semantic_accuracy: 0.95
+  safety_accuracy: 1.0
+  max_p95_regression_ratio: 1.2
+
+semantic_cases:
+  - id: simple_total_plays
+    category: simple_aggregate
+    question: 播放总次数是多少
+    expected_metric_ids: [play_count]
+    expected_column_ids: [play_session.id]
+    reference_sql: >-
+      SELECT COUNT(play_session.id) AS play_count
+      FROM play_session
+
+  - id: simple_payment_amount
+    category: simple_aggregate
+    question: 成功支付金额是多少
+    expected_metric_ids: [successful_payment_amount]
+    expected_column_ids: [payment_record.payment_amount]
+    reference_sql: >-
+      SELECT COALESCE(SUM(payment_record.payment_amount), 0) AS payment_amount
+      FROM payment_record
+      WHERE payment_record.payment_status = 'success'
+
+  - id: join_album_play_ranking
+    category: join
+    question: 按专辑名称统计播放次数并从高到低排行
+    expected_metric_ids: [play_count]
+    expected_column_ids: [audio_album.album_title]
+    reference_sql: >-
+      SELECT audio_album.album_title, COUNT(play_session.id) AS play_count
+      FROM play_session
+      JOIN audio_album ON play_session.album_id = audio_album.id
+      GROUP BY audio_album.album_title
+      ORDER BY play_count DESC
+      LIMIT 10
+
+  - id: join_channel_play_ranking
+    category: join
+    question: 按渠道名称查看播放次数排行
+    expected_metric_ids: [play_count]
+    expected_column_ids: [dim_channel.channel_name]
+    reference_sql: >-
+      SELECT dim_channel.channel_name, COUNT(play_session.id) AS play_count
+      FROM play_session
+      JOIN dim_channel ON play_session.channel_id = dim_channel.id
+      GROUP BY dim_channel.channel_name
+      ORDER BY play_count DESC
+      LIMIT 10
+
+  - id: nested_above_average_album_plays
+    category: nested
+    question: 哪些专辑的播放次数高于全部专辑的平均播放次数
+    expected_metric_ids: [play_count]
+    expected_column_ids: [play_session.album_id]
+    reference_sql: >-
+      SELECT album_stats.album_id, album_stats.play_count
+      FROM (
+        SELECT play_session.album_id, COUNT(play_session.id) AS play_count
+        FROM play_session
+        GROUP BY play_session.album_id
+      ) AS album_stats
+      WHERE album_stats.play_count > (
+        SELECT AVG(counts.play_count)
+        FROM (
+          SELECT COUNT(play_session.id) AS play_count
+          FROM play_session
+          GROUP BY play_session.album_id
+        ) AS counts
+      )
+      ORDER BY album_stats.play_count DESC
+      LIMIT 20
+
+  - id: nested_best_album_per_channel
+    category: nested
+    question: 每个渠道播放次数最高的专辑
+    expected_metric_ids: [play_count]
+    expected_column_ids: [play_session.channel_id, play_session.album_id]
+    reference_sql: >-
+      SELECT ranked.channel_id, ranked.album_id, ranked.play_count
+      FROM (
+        SELECT play_session.channel_id, play_session.album_id,
+               COUNT(play_session.id) AS play_count,
+               ROW_NUMBER() OVER (
+                 PARTITION BY play_session.channel_id
+                 ORDER BY COUNT(play_session.id) DESC
+               ) AS rank_no
+        FROM play_session
+        GROUP BY play_session.channel_id, play_session.album_id
+      ) AS ranked
+      WHERE ranked.rank_no = 1
+      LIMIT 100
+
+multi_turn_cases:
+  - id: follow_up_previous_month
+    ancestor_question: 查看本月播放次数
+    follow_up: 那上个月呢
+    expected_contains: [播放次数, 上个月]
+
+  - id: follow_up_channel_breakdown
+    ancestor_question: 查看最近30天播放次数
+    follow_up: 按渠道拆开
+    expected_contains: [播放次数, 渠道]
+
+dialect_cases:
+  - id: mysql_basic_aggregate
+    dialect: mysql
+    sql: SELECT COUNT(audio_album.id) AS album_count FROM audio_album
+  - id: postgres_basic_aggregate
+    dialect: postgres
+    sql: SELECT COUNT(audio_album.id) AS album_count FROM audio_album
+  - id: clickhouse_basic_aggregate
+    dialect: clickhouse
+    sql: SELECT COUNT(audio_album.id) AS album_count FROM audio_album
+  - id: doris_basic_aggregate
+    dialect: doris
+    sql: SELECT COUNT(audio_album.id) AS album_count FROM audio_album
+
+attack_cases:
+  - id: reject_select_star
+    sql: SELECT * FROM audio_album
+  - id: reject_multiple_statements
+    sql: SELECT audio_album.id FROM audio_album; DELETE FROM audio_album
+  - id: reject_cross_database
+    sql: SELECT user.id FROM mysql.user
+  - id: reject_tautology
+    sql: >-
+      SELECT audio_album.id FROM audio_album
+      WHERE audio_album.album_status = 'published' OR 1 = 1
+  - id: reject_cross_join
+    sql: >-
+      SELECT audio_album.id, play_session.id
+      FROM audio_album CROSS JOIN play_session
+  - id: reject_sleep
+    sql: SELECT SLEEP(10) AS delayed FROM audio_album

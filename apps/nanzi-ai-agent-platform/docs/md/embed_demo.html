@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>南孜智能体嵌入示例 (Demo)</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background-color: #f3f4f6;
+        margin: 0;
+        padding: 20px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+
+      h1 {
+        margin: 0 0 10px 0;
+        color: #111827;
+      }
+      p {
+        margin: 0;
+        color: #6b7280;
+        font-size: 14px;
+      }
+
+      .container {
+        display: flex;
+        gap: 20px;
+        flex: 1;
+      }
+
+      .controls {
+        flex: 1;
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      .widget-container {
+        width: 400px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        transition: all 0.3s ease;
+      }
+
+      .widget-container.minimized {
+        width: 60px;
+        height: 60px;
+        border-radius: 30px;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        cursor: pointer;
+      }
+
+      .widget-container.minimized iframe {
+        display: none;
+      }
+
+      .widget-container.minimized::after {
+        content: "💬";
+        font-size: 24px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      iframe {
+        border: none;
+        flex: 1;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Form Styles */
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 4px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+
+      button {
+        background-color: #2563eb;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: background-color 0.2s;
+      }
+
+      button:hover {
+        background-color: #1d4ed8;
+      }
+
+      button.secondary {
+        background-color: #f3f4f6;
+        color: #374151;
+      }
+
+      button.secondary:hover {
+        background-color: #e5e7eb;
+      }
+
+      .logs {
+        flex: 1;
+        background: #1f2937;
+        color: #10b981;
+        padding: 10px;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 12px;
+        overflow-y: auto;
+        max-height: 200px;
+      }
+
+      .log-entry {
+        margin-bottom: 4px;
+        border-bottom: 1px solid #374151;
+        padding-bottom: 2px;
+      }
+      .log-time {
+        color: #6b7280;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>第三方系统集成 Demo</h1>
+      <p>此页面模拟宿主业务系统，右侧为嵌入的南孜智能体组件。</p>
+    </header>
+
+    <div class="container">
+      <!-- Control Panel -->
+      <div class="controls">
+        <div>
+          <label>Token (JWT)</label>
+          <input
+            type="text"
+            id="token"
+            placeholder="输入您的 API Token..."
+            value="TEST_TOKEN"
+          />
+        </div>
+
+        <div style="display: flex; gap: 10px">
+          <div style="flex: 1">
+            <label>Agent ID</label>
+            <input type="text" id="agentId" value="sys-agent-chatbi" />
+          </div>
+          <div style="flex: 1">
+            <label>主题 (Theme)</label>
+            <select id="theme">
+              <option value="light">明亮 (Light)</option>
+              <option value="dark">暗黑 (Dark)</option>
+            </select>
+          </div>
+          <div style="flex: 1">
+            <label>品牌色 (Primary Control)</label>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <input
+                type="color"
+                id="primaryColor"
+                value="#1677ff"
+                style="width: 40px; height: 38px; padding: 2px"
+              />
+              <span id="colorValue" style="font-size: 12px; color: #666"
+                >#1677ff</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label>业务上下文 (JSON)</label>
+          <textarea id="context" rows="3">
+{"user_name": "张三", "department": "销售部"}</textarea
+          >
+        </div>
+
+        <div style="display: flex; gap: 10px">
+          <button onclick="initWidget()">初始化组件</button>
+          <button onclick="updateContext()" class="secondary">
+            更新上下文
+          </button>
+          <button onclick="sendQuickCommand()" class="secondary">
+            发送指令 (/new)
+          </button>
+        </div>
+
+        <div style="margin-top: auto">
+          <label>通信日志</label>
+          <div class="logs" id="logs">
+            <!-- Logs will appear here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget Area -->
+      <div class="widget-container" id="widgetContainer" style="height: 600px">
+        <!-- IFrame Source (Point to your deployed URL) -->
+        <iframe
+          id="aiWidget"
+          src="http://yunshu-aigent.yovole.net/embed/chat?theme=light"
+        ></iframe>
+      </div>
+    </div>
+
+    <script>
+      const widgetFrame = document.getElementById("aiWidget");
+      const widgetContainer = document.getElementById("widgetContainer");
+      const logsDiv = document.getElementById("logs");
+
+      // Update color text label
+      document.getElementById("primaryColor").addEventListener("input", (e) => {
+        document.getElementById("colorValue").innerText = e.target.value;
+      });
+
+      // Log helper
+      function log(msg, type = "RX") {
+        const div = document.createElement("div");
+        div.className = "log-entry";
+        const time = new Date().toLocaleTimeString();
+        const color = type === "TX" ? "#60a5fa" : "#34d399";
+        div.innerHTML = `<span class="log-time">[${time}]</span><span style="color:${color}">${type}</span>: ${msg}`;
+        logsDiv.insertBefore(div, logsDiv.firstChild);
+      }
+
+      function postMessageToWidget(type, payload = {}) {
+        if (widgetFrame.contentWindow) {
+          widgetFrame.contentWindow.postMessage({ type, ...payload }, "*"); // In prod, use specific origin
+          log(`${type}`, "TX");
+        }
+      }
+
+      // 1. Initialize
+      function initWidget() {
+        const token = document.getElementById("token").value;
+        const agentId = document.getElementById("agentId").value;
+        const theme = document.getElementById("theme").value;
+        const primaryColor = document.getElementById("primaryColor").value;
+
+        postMessageToWidget("INIT_CONFIG", {
+          token: token,
+          agent_id: agentId,
+          theme: theme,
+          styleVars: {
+            "--primary-color": primaryColor,
+          },
+          welcome_message_override: "您好，欢迎使用南孜智能助手 Demo！",
+        });
+      }
+
+      // 2. Update Context
+      function updateContext() {
+        try {
+          const context = JSON.parse(document.getElementById("context").value);
+          postMessageToWidget("UPDATE_CONTEXT", { payload: context });
+        } catch (e) {
+          alert("JSON 格式错误");
+        }
+      }
+
+      // 3. Send Command
+      function sendQuickCommand() {
+        postMessageToWidget("SEND_COMMAND", { command: "/new" });
+      }
+
+      // Toggle Minimize (Simulated)
+      widgetContainer.addEventListener("click", (e) => {
+        if (widgetContainer.classList.contains("minimized")) {
+          widgetContainer.classList.remove("minimized");
+          // Notify widget it opened? Not in protocol, strictly, but host controls size.
+        }
+      });
+
+      // Listen for messages from Widget
+      window.addEventListener("message", (event) => {
+        // Check origin in production
+        // if (event.origin !== 'http://yunshu-aigent.yovole.net') return;
+
+        const data = event.data;
+        if (data.source === "nanzi-agent-embed") {
+          log(`${data.type}`, "RX");
+
+          if (data.type === "NANZI_WIDGET_READY") {
+            log("Widget is ready. Auto-initializing...");
+            setTimeout(initWidget, 500);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

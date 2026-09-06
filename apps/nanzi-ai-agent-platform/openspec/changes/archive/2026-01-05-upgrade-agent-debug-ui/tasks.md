@@ -1,0 +1,5 @@
+- [x] **UI 改造**: 修改 `frontend/src/views/AgentDebug.vue`，引入侧边栏布局 (Sidebar)。 <!-- type: frontend -->
+- [x] **API 集成**: 在前端调用 `GET /api/v1/chat/history` 获取列表数据。 <!-- type: frontend -->
+- [x] **列表组件**: 实现历史记录列表项组件，显示时间、摘要、版本号。 <!-- type: frontend -->
+- [x] **联动逻辑**: 实现点击列表项 -> 触发 `fetchTrace` / `loadChat` 的逻辑。 <!-- type: frontend -->
+- [x] **分页/加载更多**: (可选) 支持滚动加载更多历史记录。 <!-- type: frontend -->

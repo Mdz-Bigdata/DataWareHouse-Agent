@@ -1,0 +1,103 @@
+[project]
+name = "data-agent"
+version = "0.1.0"
+description = "听书问数系统：基于 LangGraph 的自然语言数据查询代理"
+requires-python = ">=3.12"
+dependencies = [
+    "async-lru>=2.3.0",
+    "asyncmy==0.2.11",
+    "cryptography==46.0.4",
+    "elasticsearch[async]>=8,<9",
+    "fastapi[standard]==0.128.0",
+    "huggingface-hub==0.36.0",
+    "jieba==0.42.1",
+    "langchain==1.2.7",
+    "langchain-deepseek==1.0.1",
+    "langchain-huggingface==1.2.1",
+    "langgraph==1.0.7",
+    "loguru==0.7.3",
+    "omegaconf==2.3.0",
+    "pyjwt>=2.13.0",
+    "qdrant-client==1.16.2",
+    "sqlalchemy==2.0.46",
+    "sqlglot>=30.12.0",
+    # Phase 0.5：API 限流（装饰器模式，保护 LLM 成本端点与登录防爆破）
+    # 注意：必须配合 fastapi==0.128.0，勿升级至 >=0.137，否则 slowapi 默认限流失效。
+    "slowapi==0.1.10",
+    # Phase 0.6：Prometheus 指标采集
+    "prometheus-client==0.25.0",
+    # Phase 4.1：Redis 缓存（异步客户端，不可用时降级直查）
+    "redis==8.0.1",
+    # Phase 4.3：OpenTelemetry 分布式 tracing
+    # 注意：api/sdk/exporter 必须同版本；instrumentation 系列必须同版本。
+    # 0.65b0 的 beta 后缀是 OTel contrib 固定发版约定，非不稳定版。
+    "opentelemetry-api==1.44.0",
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-instrumentation-fastapi==0.65b0",
+    "opentelemetry-exporter-otlp-proto-http==1.44.0",
+]
+
+[dependency-groups]
+data = [
+    "pymysql>=1.1.2",
+    "python-dotenv>=1.1.1",
+    "rich>=14.2.0",
+    "tzdata>=2026.2",
+]
+dev = [
+    "aiosqlite>=0.22.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=0.23.0",
+    # 代码规范与静态检查（Phase 0.2 引入）
+    "ruff>=0.8.0",
+    "black>=24.10.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+]
+
+# ==================== 代码规范工具配置 ====================
+# 以下工具用于统一代码风格、静态检查与导入排序，配合 .pre-commit-config.yaml 使用。
+# 命令：ruff check . / ruff format . / black . / mypy app
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["frontend", "tools/audio_data"]
+
+[tool.ruff.lint]
+# 规则集选择：兼顾实用与严格，避免过度噪声
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes（未使用变量、import 等）
+    "I",    # isort（导入排序）
+    "UP",   # pyupgrade（语法现代化）
+    "B",    # flake8-bugbear（常见陷阱）
+    "SIM",  # flake8-simplify（简化写法）
+    "C4",   # flake8-comprehensions（推导式优化）
+]
+ignore = [
+    "E501",  # 行过长交给 black 处理，ruff 不重复报
+    "B008",  # 允许默认参数中调用函数（FastAPI Depends 惯用法）
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # 测试允许 assert False 等写法
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = "frontend"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# 渐进式引入：先扫描 app 主代码，不强制 strict，避免一次性产生海量第三方库错误。
+# 后续可逐步收紧至 strict，并扩展到 tests。
+files = ["app"]
+exclude = ["app/scripts/"]

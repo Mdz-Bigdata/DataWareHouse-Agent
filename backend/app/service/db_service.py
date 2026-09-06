@@ -2,30 +2,68 @@
 import os
 import sqlite3
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from pathlib import Path
+from datetime import timedelta
 import sqlglot
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.schema import CreateTable
+import hashlib
 from dotenv import load_dotenv
 
 # 自动加载当前目录或上层目录中的 .env 配置文件
 load_dotenv()
 
-# NOTE: 本模块提供基于内存 SQLite 的 Doris/ClickHouse/PostgreSQL 仿真数据库服务。
-# 它能将传入的不同数据库方言通过 SQLGlot 转译为 SQLite 方言并执行，同时内置了电商交易仿真数据。
+# Queries always use the selected database. SQLite source fixtures are only created
+# in SQLite mode; managed PostgreSQL stores the same initial rows persistently.
 
 class DBService:
     def __init__(self):
-        # 初始化内存 SQLite 连接
-        self.conn = sqlite3.connect(":memory:", check_same_thread=False)
-        self._register_sqlite_udfs()
-        self._initialize_mock_data()
-        
-        # 动态检测并构建真实物理数据库连接池
+        self.conn = None
         self.real_engine = None
         self.active_db_type = "sqlite"
+        self._has_project_fixture = False
+        self._has_business_tables = False
+        # Schemas searched for metadata, in the same precedence the database uses
+        # to resolve unqualified table names.
+        self.query_schemas: list[str] = []
         if os.getenv("DB_TYPE") != "sqlite":
             self._setup_real_database_connection()
+        if self.real_engine is None:
+            self.conn = sqlite3.connect(":memory:", check_same_thread=False)
+            self._register_sqlite_udfs()
+            self._initialize_mock_data()
+
+    @property
+    def has_project_fixture(self) -> bool:
+        """The destination carries this project's migrated demonstration schema."""
+        return getattr(self, "_has_project_fixture", False)
+
+    @property
+    def has_business_tables(self) -> bool:
+        """The destination carries relations this project did not create."""
+        return getattr(self, "_has_business_tables", False)
+
+    @property
+    def is_sample_data(self) -> bool:
+        """True only when every queryable row came from the project fixture."""
+        if self.real_engine is None:
+            return self.active_db_type == "sqlite"
+        return self.has_project_fixture and not self.has_business_tables
+
+    @property
+    def database_identity(self) -> str:
+        """Stable destination identity; passwords and other URL secrets are excluded."""
+        if self.real_engine is None:
+            return "sqlite:memory"
+        url = self.real_engine.url
+        driver = url.get_backend_name()
+        port = url.port or {"postgresql": 5432, "mysql": 3306}.get(driver, "")
+        identity = f"{driver}|{url.host or ''}|{port}|{url.database or ''}|{url.username or ''}"
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+    @property
+    def source_id(self) -> str:
+        return self.database_identity
 
     def _register_sqlite_udfs(self):
         """
@@ -36,7 +74,7 @@ class DBService:
             try:
                 dt = pd.to_datetime(date_str)
                 return dt.strftime("%Y-%m-01")
-            except:
+            except Exception:
                 return date_str
 
         def date_sub(*args):
@@ -48,7 +86,7 @@ class DBService:
                 try:
                     days = int(val)
                     break
-                except:
+                except Exception:
                     if isinstance(val, str):
                         import re
                         num = re.findall(r"\d+", val)
@@ -58,7 +96,7 @@ class DBService:
             try:
                 dt = pd.to_datetime(date_str)
                 return (dt - timedelta(days=days)).strftime("%Y-%m-%d")
-            except:
+            except Exception:
                 return date_str
 
         self.conn.create_function("toStartOfMonth", 1, to_start_of_month)
@@ -68,11 +106,9 @@ class DBService:
         self.conn.create_function("toIntervalDay", 1, lambda days: int(days))
 
     def _initialize_mock_data(self):
-        """
-        根据用户最新硬性指示：彻底移除所有仿真数据！
-        本方法不再灌装任何 mock 电商或文章种子数据集，保证物理数据源为唯一数据源。
-        """
-        pass
+        """Initialize the shared fixture only for explicitly selected SQLite mode."""
+        from app.service.warehouse_fixture import initialize_fixture
+        initialize_fixture(self.conn)
 
     def _setup_real_database_connection(self):
         """
@@ -87,17 +123,15 @@ class DBService:
         
         # 自动将异步连接协议重写为同步连接协议，以支持 pandas 和 SQLAlchemy 同步连接池
         if db_url:
-            if "postgresql+asyncpg://" in db_url:
-                db_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-            elif "mysql+aiomysql://" in db_url:
-                db_url = db_url.replace("mysql+aiomysql://", "mysql+pymysql://")
+            from app.service.warehouse_migration import sync_database_url
+            db_url = sync_database_url(db_url)
         
         pool_size = int(pool_size_env) if pool_size_env else 10
         max_overflow = int(max_overflow_env) if max_overflow_env else 20
         
         # 2. 如果环境变量没有提供 DB_URL / DATABASE_URL，则回退读取 llm_config.json
         if not db_url:
-            config_path = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
+            config_path = Path(__file__).resolve().parents[2] / "llm_config.json"
             if os.path.exists(config_path):
                 try:
                     import json
@@ -112,8 +146,8 @@ class DBService:
                             db_type = active_db
                             pool_size = conn_info.get("pool_size", pool_size)
                             max_overflow = conn_info.get("max_overflow", max_overflow)
-                except Exception as e:
-                    print(f"[DBService] 读取 llm_config.json 错误: {e}")
+                except Exception:
+                    raise RuntimeError("无法读取业务数据源配置，请检查 llm_config.json 格式。") from None
                     
         # 3. 如果成功获取连接串，初始化连接池
         if db_url:
@@ -130,122 +164,126 @@ class DBService:
                     else:
                         db_type = "mysql"
                         
+                connect_args = {"connect_timeout": 2}
+                is_postgres = "postgres" in db_type.lower()
+                if is_postgres:
+                    # Business relations keep priority over the demonstration schema,
+                    # so unqualified names resolve exactly as metadata discovery lists them.
+                    from app.service.warehouse_migration import FIXTURE_SCHEMA
+                    connect_args["options"] = f"-c search_path=public,{FIXTURE_SCHEMA}"
                 self.real_engine = create_engine(
                     db_url,
                     pool_size=pool_size,
                     max_overflow=max_overflow,
                     pool_pre_ping=True,
-                    connect_args={"connect_timeout": 2}
+                    connect_args=connect_args
                 )
-                self.active_db_type = db_type
-                print(f"[DBService] 真实物理数据源加载成功！类型: {self.active_db_type.upper()}, 连接地址: {db_url.split('@')[-1]}")
-            except Exception as e:
-                print(f"[DBService] 初始化数据库 Engine 失败: {e}。")
+                self.active_db_type = "postgresql" if is_postgres else db_type
+                with self.real_engine.connect() as connection:
+                    connection.execute(text("SELECT 1"))
+                    if self.real_engine.dialect.name == "postgresql":
+                        self._inspect_postgres_layout(connection)
+                print(f"[DBService] 物理数据源连接已验证！类型: {self.active_db_type.upper()}")
+            except Exception:
+                if self.real_engine is not None:
+                    self.real_engine.dispose()
+                raise RuntimeError("业务数据源初始化失败，请检查连接配置及数据库驱动；未切换到演示数仓。") from None
+        elif db_type and db_type.lower() != "sqlite":
+            raise RuntimeError("已选择业务数据源，但没有配置数据库连接地址；未切换到演示数仓。")
+
+    def _inspect_postgres_layout(self, connection) -> None:
+        """Record which schemas answer queries and where their rows came from."""
+        from app.service.warehouse_migration import FIXTURE_SCHEMA, MARKER_SCHEMA, is_project_fixture
+        self._has_project_fixture = is_project_fixture(connection)
+        inspector = inspect(connection)
+        available = set(inspector.get_schema_names())
+        self.query_schemas = [schema for schema in ("public", FIXTURE_SCHEMA) if schema in available]
+        self._has_business_tables = any(
+            inspector.get_table_names(schema=schema) or inspector.get_view_names(schema=schema)
+            for schema in available
+            if schema not in {FIXTURE_SCHEMA, MARKER_SCHEMA, "information_schema"}
+            and not schema.startswith("pg_")
+        )
+
+    def _execute_sqlite(self, sql: str, dialect: str = "doris") -> pd.DataFrame:
+        """
+        在数仓湖仓引擎 (SQLite 仿真底座) 上转译并执行查询
+        """
+        try:
+            translated_sqls = sqlglot.transpile(sql, read=dialect, write="sqlite")
+            sqlite_sql = translated_sqls[0]
+            db_name = self.get_active_db_name()
+            if db_name:
+                sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
+            import re
+            sqlite_sql = re.sub(r"TIMESTAMP_TRUNC\(([^,]+),\s*MONTH\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
+            sqlite_sql = re.sub(r"date_trunc\('month',\s*([^)]+)\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
+        except Exception:
+            sqlite_sql = sql
+            db_name = self.get_active_db_name()
+            if db_name:
+                sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
+
+        print(f"Executing query on Lakehouse Engine (SQLite):\n--- Source ({dialect}) ---\n{sql}\n--- Target (sqlite) ---\n{sqlite_sql}")
+        df = pd.read_sql_query(sqlite_sql, self.conn)
+        return df
 
     def execute_query(self, sql: str, dialect: str = "mysql") -> pd.DataFrame:
         """
-        接收指定方言的 SQL，将其转译并直接在物理数据库上执行。
-        如果物理执行失败，则直接抛出异常，绝不进行仿真降级。
+        在当前数据源执行查询。物理库错误交由调用方处理，不能用演示数据替代。
+        未启用物理连接时，使用本地 SQLite 演示数据源。
         """
         sql = sql.strip().rstrip(";")
-        
-        # 1. 物理数据库查询通道
-        if self.real_engine:
-            try:
-                db_type_lower = self.active_db_type.lower()
-                if "postgre" in db_type_lower:
-                    target_dialect = "postgres"
-                elif "clickhouse" in db_type_lower:
-                    target_dialect = "clickhouse"
-                elif "doris" in db_type_lower:
-                    target_dialect = "doris"
-                elif "starrocks" in db_type_lower:
-                    target_dialect = "starrocks"
-                else:
-                    target_dialect = "mysql"
-                    
-                translated_sqls = sqlglot.transpile(sql, read=dialect, write=target_dialect)
-                target_sql = translated_sqls[0]
-                
-                # PostgreSQL 不支持 database.table 语法，去掉 db_name 前缀
-                if "postgres" in target_dialect:
-                    db_name = self.get_active_db_name()
-                    target_sql = target_sql.replace(f"{db_name}.", "")
-                
-                print(f"Executing query on {self.active_db_type.upper()}:\n--- Source ({dialect}) ---\n{sql}\n--- Target ({self.active_db_type}) ---\n{target_sql}")
-                
-                with self.real_engine.connect() as connection:
-                    df = pd.read_sql_query(target_sql, connection)
-                return df
-            except Exception as e:
-                print(f"[DBService] 真实物理数据库执行失败: {e}。抛出错误，拒绝 Fallback 到仿真通道！")
-                raise e
+        if self.real_engine is None:
+            return self._execute_sqlite(sql, dialect)
+
+        db_type_lower = self.active_db_type.lower()
+        if "postgres" in db_type_lower:
+            target_dialect = "postgres"
+        elif db_type_lower in {"clickhouse", "doris", "starrocks", "sqlite"}:
+            target_dialect = db_type_lower
         else:
-            # 当物理库未连接时，走本地内存 SQLite 执行（用于单测）
-            try:
-                translated_sqls = sqlglot.transpile(sql, read=dialect, write="sqlite")
-                sqlite_sql = translated_sqls[0]
-                db_name = self.get_active_db_name()
-                if db_name:
-                    sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
-                import re
-                sqlite_sql = re.sub(r"TIMESTAMP_TRUNC\(([^,]+),\s*MONTH\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
-                sqlite_sql = re.sub(r"date_trunc\('month',\s*([^)]+)\)", r"strftime('%Y-%m-01', \1)", sqlite_sql, flags=re.IGNORECASE)
-            except Exception as e:
-                sqlite_sql = sql
-                db_name = self.get_active_db_name()
-                if db_name:
-                    sqlite_sql = sqlite_sql.replace(f"{db_name}.", "")
-                
-            print(f"Executing query on SQLite:\n--- Source ({dialect}) ---\n{sql}\n--- Target (sqlite) ---\n{sqlite_sql}")
-            df = pd.read_sql_query(sqlite_sql, self.conn)
-            return df
+            target_dialect = "mysql"
+
+        target_sql = sqlglot.transpile(sql, read=dialect, write=target_dialect)[0]
+
+        # PostgreSQL 使用 schema.table，移除当前数据库名而保留 schema。
+        if target_dialect == "postgres":
+            db_name = self.get_active_db_name()
+            if db_name:
+                query = sqlglot.parse_one(target_sql, read=target_dialect)
+                for table in query.find_all(sqlglot.exp.Table):
+                    if table.catalog == db_name:
+                        table.set("catalog", None)
+                    elif table.db == db_name:
+                        table.set("db", None)
+                target_sql = query.sql(dialect=target_dialect)
+
+        print(f"Executing query on {self.active_db_type.upper()}:\n--- Source ({dialect}) ---\n{sql}\n--- Target ({self.active_db_type}) ---\n{target_sql}")
+        with self.real_engine.connect() as connection:
+            return pd.read_sql_query(target_sql, connection)
 
     def get_active_db_name(self) -> str:
-        """
-        动态从当前物理连接串中解析当前的数据库名称。
-        - 优先从真实的 db_url 中提取最后一级路径作为数据库名。
-        - 若无法解析或使用 SQLite，则默认返回 'blog_converter' 兜底。
-        """
-        if os.getenv("DB_TYPE") == "sqlite":
+        """Return the database actually connected, never a stale .env fallback."""
+        if self.real_engine is None:
             return ""
-        db_url = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
-        if not db_url:
-            # 回退读取 llm_config.json
-            config_path = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
-            if os.path.exists(config_path):
-                try:
-                    import json
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        config_data = json.load(f)
-                    db_cfg = config_data.get("database")
-                    if db_cfg:
-                        active_db = db_cfg.get("active_db", "sqlite")
-                        if active_db != "sqlite":
-                            conn_info = db_cfg.get("connections", {}).get(active_db, {})
-                            db_url = conn_info.get("url")
-                except:
-                    pass
-        if db_url:
-            try:
-                # 解析 db_url 里的物理数据库名字。如 postgresql+psycopg2://localhost:5432/blog_converter?sslmode=disable
-                # 先剥离 url query 参数
-                main_part = db_url.split("?")[0]
-                db_name = main_part.split("/")[-1]
-                if db_name:
-                    return db_name
-            except:
-                pass
-        return "blog_converter"
+        return self.real_engine.url.database or ""
 
     def get_table_schema(self, table_name: str) -> str:
-        """
-        获取仿真表结构的 DDL 定义
-        """
+        """Read DDL from the active source only, honoring schema precedence."""
+        if self.real_engine is not None:
+            from sqlalchemy import MetaData, Table
+            inspector = inspect(self.real_engine)
+            schema = next((name for name in self.query_schemas
+                           if inspector.has_table(table_name, schema=name)), None)
+            if schema is None and not inspector.has_table(table_name):
+                return ""
+            table = Table(table_name, MetaData(), schema=schema, autoload_with=self.real_engine)
+            return str(CreateTable(table).compile(self.real_engine))
         cursor = self.conn.cursor()
-        cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
-        res = cursor.fetchone()
-        return res[0] if res else ""
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        row = cursor.fetchone()
+        return row[0] if row else ""
 
 # 单例实例，方便跨 API 和服务共享
 db_service = DBService()

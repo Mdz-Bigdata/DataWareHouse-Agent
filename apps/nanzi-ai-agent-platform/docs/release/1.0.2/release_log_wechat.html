@@ -1,0 +1,348 @@
+<!--
+  微信公众号排版 HTML — 南孜 AI 智能体平台 v1.0.2
+  使用说明：
+  1. 复制下方 <section> 内全部内容，粘贴到微信公众平台编辑器「HTML」模式（或 135/秀米 等工具）
+  2. 封面图 banner.png 需在编辑器中重新上传并替换下方占位图 src
+  3. 外链在发布前预览确认；部分链接需绑定公众号域名白名单
+  4. 不支持 <style>、<script>、class/id 选择器，全部采用内联 style
+-->
+
+<section style="box-sizing:border-box;font-size:16px;color:#3f3f3f;line-height:1.8;letter-spacing:0.5px;text-align:justify;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Arial,sans-serif;">
+
+  <!-- 标题区 -->
+  <section style="margin:0 0 24px 0;padding:20px 16px;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);border-radius:10px;text-align:center;">
+    <p style="margin:0 0 8px 0;font-size:22px;font-weight:bold;color:#ffffff;line-height:1.5;letter-spacing:1px;">🚀 南孜 AI 智能体平台 · v1.0.2 重磅发布</p>
+    <p style="margin:0;font-size:16px;font-weight:normal;color:#dbeafe;line-height:1.6;letter-spacing:0.5px;">长时记忆与本地向量检索 · 开启智能体验新篇章</p>
+  </section>
+
+  <!-- 仓库链接 -->
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#1e40af;line-height:1.7;">
+      <strong style="color:#1e3a8a;">GitHub Repository：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform" style="color:#2563eb;text-decoration:none;word-break:break-all;">RandyChen1985/nanzi-ai-agent-platform</a>
+    </p>
+  </section>
+
+  <!-- 导语 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;line-height:1.9;">
+      v1.0.2 版本是一次<strong style="color:#1d4ed8;">性能与稳定性里程碑升级</strong>。在本次更新中，平台不仅引入了艾宾浩斯长时记忆遗忘与凌晨固化归并机制，实现了基于本地 Redis (RediSearch) HNSW 向量库 of 本地化语义检索，而且彻底解耦了常规知识库与元数据 RAG 检索参数，同时对 ChatBI 执行流程进行了彻底的 Bug 修复（引入 ReAct 熔断机制防止空结果死循环，并简化 SQL 计划输出以提升性能）。
+    </p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.8;">
+      本次变更合并了自基础版本（从 <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">7f04baf</code> 至今）共
+      <strong>48 个提交</strong>，涉及大量核心后端逻辑与前端交互重构。
+    </p>
+  </section>
+
+  <!-- 封面图：发布前请在微信编辑器中重新上传 banner.png 并替换 src -->
+  <section style="margin:0 0 28px 0;text-align:center;">
+    <img src="../../images/banner.png" alt="南孜 AI 智能体平台" style="display:block;width:100%;max-width:100%;height:auto;margin:0 auto;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.08);" />
+  </section>
+
+  <!-- 分隔线 -->
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Key Features ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 20px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #2563eb;padding-left:12px;line-height:1.4;">🚀 Key Features</p>
+  </section>
+
+  <!-- Feature 1 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">1. 🧠 艾宾浩斯长时记忆（LTM）遗忘与固化管道</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>艾宾浩斯对数遗忘重排</strong>：引入艾宾浩斯记忆模型打分算法，结合 KNN 与 Fallback 检索策略，对用户会话记忆进行智能时间敏感重排。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>凌晨定时记忆归并降噪</strong>：新增凌晨 3:00 后台定时清理任务，基于 Cosine 相似度连通图聚类对碎片记忆进行大模型自动合并归纳（压缩至 50 字以内），继承引用次数并物理清扫旧片段。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>记忆管理前端控制台</strong>：个人中心新增“我的记忆”面板，重构了会话摘要时间线展示、记忆索引可视化管理、每日摘要卡片式交互、快速清除与搜索过滤功能。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 2 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">2. ⚡ 基于 RediSearch 的本地 HNSW 向量检索</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>本地表结构及字段向量化</strong>：支持在 local 模式下，系统调用本地 Embedding 服务计算向量，并通过本地 Redis 数据库构建高效的 HNSW 索引，进行超轻量级、无 RAGFlow 依赖的元数据语义搜索。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>ChatBI 案例库本地向量搜索</strong>：同步实现了案例库（ChatBI Examples）本地 Redis HNSW 向量索引与增量同步更新；在 Redis 发生故障时，系统会自动且无感地降级为 MySQL 关键字 LIKE 模糊匹配案例检索。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 3 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">3. 📚 知识库与元数据 RAGFlow 配置独立解耦</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>连接与检索参数彻底隔离</strong>：将常规知识库问答检索参数（<code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">knowledge_ragflow_</code>）与元数据检索（<code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">ragflow_</code>）彻底分离开，避免由于本地模式导致常规知识库配置连接断开或混淆的问题。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>UI 交互自适应隐藏与提示</strong>：当选择为 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">local</code> 模式时，页面会自动隐藏多余的输入框，并在下方动态展示漂亮的模式差异对比警告。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>物理清除废弃配置</strong>：在 SQL 迁移脚本中，追加了对已废弃的旧全局配置键的物理删除逻辑，防止界面混淆。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>统一指标命名</strong>：将所有出现相关引擎标签的地方统一改为更规范明晰的 <strong>“当前 知识库引擎(RAGFlow)：”</strong>。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 4 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">4. 🛠️ 查数流核心优化（熔断死循环与计划流精简）</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>ReAct 死循环熔断器（Halt ReAct）</strong>：一旦查数遭遇 SQL 报错、空结果或安全拦截等，系统会立即跳出当前的 ReAct 迭代循环，由前端呈现明确的平台门禁拦截指令，彻底规避空结果死循环导致的 Token 浪费与卡顿问题。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>简化计划输出</strong>：去除了强制模型输出计划的要求，简化提示词，允许模型以原生 tools 直接查数，显著缩短查数响应耗时。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>大模型调用明细看板</strong>：在 EmbedChat 中支持点击 Token 数量弹出大模型调用明细面板，方便全面追踪 Trace 阶段的用量。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 5 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">5. 🛡️ 查数安全与防幻觉拦截门禁</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>非查数请求短路澄清</strong>：分类层增加闲聊与无关问题的快速识别，直接跳过数据库和经验检索以极速返回澄清话术。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>JOIN 安全网关限制</strong>：新增 SQL 门禁 JOIN 无 LIMIT 拦截防护，防范大查询引发的数据膨胀问题。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>防幻觉强行门禁</strong>：通用助手与知识库助手在无工具调用或 RAG 检索无有效引用时，触发平台强行拦截，阻止幻觉回答。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 6 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">6. 🎨 界面灵动交互与微动效</p>
+    <section style="margin:0;padding:0;">
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>思考卡片时间轴化</strong>：重构了思考过程卡片，采用高密度轻量级时间轴设计，方便快速追溯每步工具调用的时间占比。</p>
+      </section>
+      <section style="display:flex;margin:0 0 8px 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>滑动选择条支持</strong>：大模型温度、权重系数全部 Slider 化。针对温度滑块附加了精准和随机的刻度说明标签。</p>
+      </section>
+      <section style="display:flex;margin:0 0 0 0;">
+        <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+        <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>输入区域灵动动效</strong>：AI 生成过程中，聊天输入框增加三点跳动、呼吸边框与背景微蓝等高品质微动效，回复完和重置后自动将焦点重置回输入框。</p>
+      </section>
+    </section>
+  </section>
+
+  <!-- Feature 7 -->
+  <section style="margin:0 0 28px 0;">
+    <p style="margin:0 0 12px 0;font-size:17px;font-weight:bold;color:#1e40af;line-height:1.5;">7. 🐳 Docker 镜像与 Playwright Linux 兼容</p>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;width:8px;height:8px;background:#3b82f6;border-radius:50%;margin:9px 10px 0 4px;"></span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Chromium 内核集成与崩溃修复</strong>：直接打包打入 Docker 镜像以支持网页抓取。新增 sandbox 安全策略限制参数，解决在 Linux/Docker 环境下 root 用户运行崩溃的问题。</p>
+    </section>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Breaking Changes ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #dc2626;padding-left:12px;line-height:1.4;">⚠️ Breaking Changes &amp; Migration Notes</p>
+  </section>
+  <section style="margin:0 0 12px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#991b1b;line-height:1.7;">从 v1.0.1 升级至 v1.0.2 时，请特别注意以下变更：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;width:30%;">项目</th>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">数据库变更</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">升级前必须导入执行 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">db-prod/</code> 目录下的增量升级脚本，旧版 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">ragflow_dataset_ids</code> 字段会被自动清洗删除。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">Redis 向量索引</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">升级后若开启了 Redis 本地向量化，需在参数配置页点击<strong>【一键重建本地向量索引】</strong>以生成缓存。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">大模型提示词 V8</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">系统提示词全面升级至 V8，以对齐 DataAgentRunner 的门控分工，请确保配置库已完成更新。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Database Upgrades ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #10b981;padding-left:12px;line-height:1.4;">🗄️ Database Incremental Upgrades</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">从 v1.0.1 升级至 v1.0.2 期间，平台数据库共引入了 5 个增量 SQL 升级脚本：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;width:35%;">脚本文件</th>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;">核心变更内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V73-update_chatbi_prompt_v8.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">更新 ChatBI 助手系统提示词为 V8 版本，精简了查数与门控交互，完美适配 DataAgentRunner。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V74-add_ebbinghaus_memory_configs.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">引入艾宾浩斯长时记忆算法的基础半衰期与凌晨降噪相似度聚类阈值等系统配置参数。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V75-add_global_embed_configs.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">插入全局 Embedding 服务参数配置（API 地址、API Key、模型名与维度），用于本地向量化索引计算。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V76-add_chatbi_sample_top_k.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">新增配置项 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">chatbi_sample_top_k</code>（默认值 5），以控制查数过程中的优质案例最大召回条数。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V77-add_knowledge_ragflow_configs.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">独立解耦常规知识库问答专属 RAGFlow 检索配置，并自动迁移老数据，同时物理清理删除已废弃的旧配置字段。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Upgrade Guide ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #7c3aed;padding-left:12px;line-height:1.4;">📦 Upgrade Guide</p>
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#374151;">从 v1.0.1 升级</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 1. 拉取最新代码</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">git fetch origin &amp;&amp; git checkout dev &amp;&amp; git pull origin dev</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 2. 确认 Redis 版本及组件（RediSearch 支持）</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker pull redis/redis-stack-server:latest</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 3. 更新依赖</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">source venv/bin/activate</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">pip install -r requirements.txt</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 4. 执行数据库迁移</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./db-prod/apply-sql-native.sh</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 5. 重新编译前端并启动</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">cd frontend &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; cd ..</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./dev.sh</p>
+  </section>
+  <p style="margin:0 0 28px 0;font-size:14px;color:#6b7280;line-height:1.8;">
+    完整部署说明请参考
+    <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/blob/main/HOW_TO_INSTALL.md" style="color:#2563eb;text-decoration:none;">HOW_TO_INSTALL.md</a>。
+  </p>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Test Checklist ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #0891b2;padding-left:12px;line-height:1.4;">✅ Test Checklist</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">升级后建议验证以下核心场景：</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background:#f0f9ff;border-radius:8px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>艾宾浩斯长时记忆</strong>：会话偏好提取与自动改写，个人中心“我的记忆”展示及清扫</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>本地 Redis 向量检索</strong>：local 模式连通性、元数据案例搜索及 Redis 宕机 LIKE 降级</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>常规知识库解耦</strong>：RAGFlow 解耦配置、前端 local 模式字段隐藏及 RAG 连通</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>熔断机制测试</strong>：SQL 执行报错或空结果立即 halt 熔断，退出 ReAct 循环</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>安全与防幻觉门禁</strong>：通用/知识库助手无有效信息源时触发幻觉防御性拦截</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>UI 灵动交互与 Slider</strong>：Slider 选择条拖拽刻度、生成中微动效、输入框聚焦自愈</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>回归测试</strong>：全量 pytest 自动化用例通过</p>
+  </section>
+  <p style="margin:0 0 28px 0;font-size:14px;color:#6b7280;line-height:1.8;">
+    完整测试清单见
+    <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/blob/main/tests/CHECKLIST.md" style="color:#2563eb;text-decoration:none;">tests/CHECKLIST.md</a>。
+  </p>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Downloads ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 12px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #d97706;padding-left:12px;line-height:1.4;">💾 Downloads / Assets</p>
+    <p style="margin:0 0 16px 0;font-size:15px;color:#374151;line-height:1.8;">本项目 v1.0.2 发布版本关联的源码、Docker 镜像资产归档包及配置文件如下：</p>
+  </section>
+  <section style="margin:0 0 16px 0;">
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">📦</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Source Code (zip)</strong>：nanzi-ai-agent-platform-1.0.2.zip</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">📦</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Source Code (tar.gz)</strong>：nanzi-ai-agent-platform-1.0.2.tar.gz</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">🐳</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Image for Linux amd64 (x86_64)</strong>：nanzi-ai-agent_1.0.2_linux-amd64_*.tar</p>
+    </section>
+    <section style="display:flex;margin:0 0 8px 0;">
+      <span style="flex-shrink:0;margin-right:8px;">🐳</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Image for Linux arm64 (aarch64)</strong>：nanzi-ai-agent_1.0.2_linux-arm64_*.tar</p>
+    </section>
+    <section style="display:flex;margin:0 0 0 0;">
+      <span style="flex-shrink:0;margin-right:8px;">⚙️</span>
+      <p style="margin:0;flex:1;font-size:15px;color:#374151;line-height:1.8;"><strong>Docker Compose YAML file</strong>：docker-compose.yml</p>
+    </section>
+  </section>
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#fffbeb;border-radius:8px;text-align:center;">
+    <p style="margin:0;font-size:15px;color:#92400e;line-height:1.7;">
+      🔗 <strong>下载地址：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/releases/tag/1.0.2" style="color:#d97706;text-decoration:none;font-weight:bold;">GitHub Releases v1.0.2</a>
+    </p>
+  </section>
+
+  <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#374151;">🐳 离线/内网环境加载 Docker 镜像</p>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 1. 加载本地镜像归档</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker load -i nanzi-ai-agent_1.0.2_linux-amd64_*.tar</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 2. 检查是否加载成功</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker images | grep nanzi-ai-agent</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 3. 利用 docker-compose 快速拉起服务</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">docker-compose up -d</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Contributors ========== -->
+  <section style="margin:0 0 0 0;padding:20px 16px;background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);border-radius:10px;text-align:center;">
+    <p style="margin:0;font-size:16px;font-weight:bold;color:#374151;line-height:1.7;">🤝 Contributors</p>
+    <p style="margin:10px 0 0 0;font-size:15px;color:#6b7280;line-height:1.8;">感谢所有参与 v1.0.2 版本发布的开发者！</p>
+  </section>
+
+</section>

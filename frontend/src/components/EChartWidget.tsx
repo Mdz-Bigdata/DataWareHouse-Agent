@@ -90,8 +90,8 @@ export const EChartWidget: React.FC<EChartWidgetProps> = ({ type, title, config 
         backgroundColor: "transparent",
         title: { text: title, textStyle: { fontSize: 14, color: "#fff", fontWeight: "normal" }, left: "center" },
         tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "#1e293b", borderColor: "#475569", textStyle: { color: "#fff" } },
-        legend: { top: "8%", textStyle },
-        grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+        legend: { show: (config.series?.length || 0) > 1, top: 32, type: "scroll", textStyle },
+        grid: { top: (config.series?.length || 0) > 1 ? 72 : 48, left: "3%", right: "4%", bottom: "3%", containLabel: true },
         xAxis: {
           type: "category",
           data: config.xAxis?.data || [],

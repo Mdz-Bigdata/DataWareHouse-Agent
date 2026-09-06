@@ -1,0 +1,46 @@
+# 应用容器编排。基础设施（mysql/qdrant/elasticsearch/embedding）复用
+# docker_windows 网络的现有容器，本文件只管应用本身。
+name: listenbook-data-agent
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: listenbook-data-agent:latest
+    container_name: listenbook-data-agent-app
+    restart: unless-stopped
+    env_file: .env
+    # FastAPI 不直接暴露到宿主机，只通过 web（Nginx）同域对外。
+    expose:
+      - "8000"
+    volumes:
+      - ../logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - docker_windows_default
+
+  # 前端工作台：Nginx 托管 React SPA 并同域反代 /api、/health、/ready、/debug
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: listenbook-data-agent-web:latest
+    container_name: listenbook-data-agent-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - docker_windows_default
+
+networks:
+  docker_windows_default:
+    external: true

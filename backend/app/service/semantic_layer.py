@@ -57,6 +57,28 @@ EXAMPLE_SQL: Dict[str, Any] = {}
 # 3. 语义层注册中心
 # =====================================================================
 
+def singular_table_term(table: str) -> str:
+    """Return the singular business term a table name refers to (categories -> category)."""
+    base = table.lower()
+    if base.startswith("dim_"):
+        base = base[4:]
+    if base.endswith("ies"):
+        return base[:-3] + "y"
+    if base.endswith("s") and not base.endswith("ss"):
+        return base[:-1]
+    return base
+
+
+def dimension_name_for(table: str, column: str) -> str:
+    """
+    维度命名：通用的 `name` 列必须按所属表限定（categories.name -> category_name），
+    否则不同业务域会注册出同名维度，查询时无法确定归属。
+    """
+    if column == "name":
+        return f"{singular_table_term(table)}_name"
+    return column
+
+
 class SemanticLayer:
     def __init__(self):
         self.metrics: Dict[str, Metric] = {}
@@ -95,30 +117,29 @@ class SemanticLayer:
         并为尚未在语义层建模的业务表加工指标、维度与 JOIN 路径关系。
         """
         from app.service.db_service import db_service
-        import pandas as pd
+        from sqlalchemy import inspect
         
-        # 1. 尝试连接物理数据库，若失败则回退到本地 SQLite
+        # 元数据必须与执行使用同一数据源，不能把演示表注册到物理库中。
         table_columns = {} # table_name -> list of (column_name, data_type)
         
-        if os.getenv("DB_TYPE") != "sqlite" and db_service.real_engine:
+        if db_service.real_engine is not None:
             try:
-                with db_service.real_engine.connect() as conn:
-                    df = pd.read_sql_query(
-                        "SELECT table_name, column_name, data_type "
-                        "FROM information_schema.columns "
-                        "WHERE table_schema = 'public'", conn
-                    )
-                    for _, row in df.iterrows():
-                        tbl = row["table_name"]
-                        col = row["column_name"]
-                        dtype = row["data_type"]
-                        if tbl not in table_columns:
-                            table_columns[tbl] = []
-                        table_columns[tbl].append((col, dtype))
+                inspector = inspect(db_service.real_engine)
+                # Walk schemas in resolution order so a name defined in several of
+                # them is modeled from the one an unqualified query actually reads.
+                schemas = getattr(db_service, "query_schemas", None) or [None]
+                for schema in schemas:
+                    names = inspector.get_table_names(schema=schema) + inspector.get_view_names(schema=schema)
+                    for tbl in dict.fromkeys(names):
+                        if tbl in table_columns:
+                            continue
+                        columns = inspector.get_columns(tbl, schema=schema)
+                        if columns:
+                            table_columns[tbl] = [(col["name"], str(col["type"])) for col in columns]
             except Exception as e:
-                print(f"[Auto Schema] PostgreSQL query failed: {e}. Falling back to SQLite.")
-                
-        if not table_columns:
+                print(f"[Auto Schema] Physical schema discovery failed: {e}")
+                return
+        else:
             try:
                 cursor = db_service.conn.cursor()
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -136,18 +157,27 @@ class SemanticLayer:
         # NOTE: 保存自动发现的表列映射，供 DSL 编译器动态解析时间列等
         self.discovered_table_columns = table_columns
 
-        # 2. 自动指标/维度加工逻辑
+        # 2. 自动指标/维度加工逻辑 (融合电商通用与 ListenBook 听书业务域)
         translation_dict = {
             "title": ["标题", "文章标题", "文章名称", "title"],
             "name": ["名称", "名字", "类别名称", "分类", "类别", "name"],
             "status": ["状态", "发布状态", "status"],
             "view_count": ["浏览量", "点击量", "阅读数", "阅读量", "view_count"],
             "created_at": ["创建时间", "发布时间", "created_at"],
+            "source_platform": ["来源", "来源平台", "发布平台", "文章来源", "source_platform"],
             "id": ["标识", "主键", "id"],
             "gmv": ["交易额", "销售额", "销售总额", "交易金额", "销售金额", "gmv"],
             "refund_amount": ["退款额", "退款金额", "退款总额", "refund_amount"],
             "order_count": ["订单数", "订单数量", "成交笔数", "order_count"],
-            "region_name": ["区域", "区域名称", "地区", "地区名称", "region_name"]
+            "region_name": ["区域", "区域名称", "地区", "地区名称", "region_name"],
+            "category_name": ["品类", "品类名称", "分类", "类目", "分类名称", "category_name"],
+            "play_count": ["播放量", "播放数", "收听量", "播放次数", "收听次数", "play_count"],
+            "play_duration_seconds": ["收听时长", "播放时长", "收听时间", "听书时长", "play_duration"],
+            "completion_rate": ["完播率", "完播比例", "完播", "completion_rate"],
+            "album_name": ["专辑", "专辑名称", "有声书", "书籍", "听书名", "album_name"],
+            "anchor_name": ["主播", "主播名称", "演播人", "播音员", "anchor_name"],
+            "plan_name": ["会员套餐", "VIP套餐", "订阅方案", "套餐名称", "plan_name"],
+            "paid_users": ["付费人数", "购买人数", "付费用户数", "paid_users"]
         }
 
         for tbl, cols in table_columns.items():
@@ -179,7 +209,7 @@ class SemanticLayer:
                 avail_dims = []
                 for c, _ in cols:
                     if c != pk_col and not c.endswith("_id"):
-                        dim_name = c
+                        dim_name = dimension_name_for(tbl, c)
                         if dim_name not in avail_dims:
                             avail_dims.append(dim_name)
 
@@ -205,16 +235,27 @@ class SemanticLayer:
                     if sum_metric_name not in self.metrics:
                         aliases = [sum_metric_name, c]
                         for k, v in translation_dict.items():
-                            if k in c:
+                            if k == c:
                                 aliases.extend([f"总{x}" for x in v])
                                 aliases.extend(v)
+                            elif c.startswith("audio_") and c[6:] == k:
+                                aliases.extend([f"听书{x}" for x in v])
+                                aliases.extend([f"会员{x}" for x in v])
+                        if c == "audio_gmv":
+                            aliases.extend(["听书会员收入", "会员收入", "听书收入"])
+                        if c == "audio_refund_amount":
+                            aliases.extend(["听书会员退款", "会员退款", "听书退款"])
                         self.register_metric(Metric(
                             name=sum_metric_name,
                             aliases=aliases,
                             description=f"自动加工发现的物理列 {tbl}.{c} 累加指标",
                             calculation=c,
-                            unit="个",
-                            available_dimensions=[col[0] for col in cols if col[0] not in ["id", c] and not col[0].endswith("_id")],
+                            unit=("元" if c.endswith(("amount", "gmv")) else
+                                  "%" if c.endswith(("rate", "ratio")) else
+                                  "秒" if c.endswith("seconds") else
+                                  "次" if c == "play_count" else "个"),
+                            available_dimensions=[dimension_name_for(tbl, col[0]) for col in cols
+                                                  if col[0] not in ["id", c] and not col[0].endswith("_id")],
                             default_agg="SUM",
                             source_table=tbl,
                             authorized_roles=["admin", "analyst", "user"]
@@ -225,16 +266,16 @@ class SemanticLayer:
             for c, dtype in cols:
                 if c.endswith("_id") or c == "id":
                     continue
-                dim_name = c
-                aliases = [c]
+                dim_name = dimension_name_for(tbl, c)
+                aliases = [dim_name]
                 for k, v in translation_dict.items():
-                    if k == c:
+                    if k == dim_name:
                         aliases.extend(v)
-                
-                if tbl == "categories" and c == "name":
-                    dim_name = "category_name" 
+
+                if dim_name == "category_name":
                     aliases.extend(["每类文章", "类别", "分类", "文章类别"])
-                
+
+
                 if (tbl, dim_name) not in self.table_dimensions:
                     self.register_dimension(Dimension(
                         name=dim_name,
@@ -279,12 +320,44 @@ class SemanticLayer:
         # 4. 基于图联通性，自动扩散可用维度 (多跳)
         # 对每一个注册的指标，如果它所在的表能够通过 get_join_path_chain 连通到某个维度的源表，则该维度可用。
         for m_name, m in list(self.metrics.items()):
-            for dim_name, d in self.dimensions.items():
+            for d in self.table_dimensions.values():
+                dim_name = d.name
                 if dim_name not in m.available_dimensions:
                     # 如果维度就在当前表，或者存在连通路径，则加入可用维度
                     if m.source_table == d.source_table or self.get_join_path_chain(m.source_table, d.source_table):
                         m.available_dimensions.append(dim_name)
                         print(f"[Auto Schema] Appended reachable dimension '{dim_name}' to metric '{m_name}' (Path: {m.source_table} -> {d.source_table})")
+
+    def mentioned_tables(self, question: str) -> List[str]:
+        """Honor physical table names explicitly supplied by the user."""
+        question = question.lower()
+        tables = set(self.discovered_table_columns) | {m.source_table for m in self.metrics.values()}
+        return sorted(table for table in tables if re.search(
+            r"(?<![a-z0-9_])" + re.escape(table.lower()) + r"(?![a-z0-9_])", question))
+
+    @staticmethod
+    def mentions_term(question: str, term: str) -> bool:
+        term = term.strip().lower()
+        if not term:
+            return False
+        if re.fullmatch(r"[a-z0-9_]+", term):
+            return bool(re.search(r"(?<![a-z0-9_])" + re.escape(term) + r"(?![a-z0-9_])", question.lower()))
+        return term in question.lower()
+
+    def suggested_dimensions(self, metric: Metric) -> List[str]:
+        """Return reachable grouping fields suitable for public query suggestions."""
+        measures = {(m.source_table, m.calculation) for m in self.metrics.values()
+                    if m.default_agg.upper() in ("SUM", "AVG")}
+        names = []
+        for name in metric.available_dimensions:
+            dimension = self.resolve_dimension(name, metric.source_table)
+            if (dimension is None or (dimension.source_table, dimension.source_column) in measures
+                    or any(token in name.lower() for token in
+                           ("phone", "mobile", "card", "email", "password", "token", "secret", "address"))
+                    or name in ("title", "content", "dt", "date", "created_at", "updated_at")):
+                continue
+            names.append(name)
+        return names
 
     def resolve_metric(self, term: str) -> Optional[Metric]:
         """通过指标名字或别名查找匹配"""
@@ -305,6 +378,18 @@ class SemanticLayer:
         term = term.strip().lower()
         if table_context and (table_context, term) in self.table_dimensions:
             return self.table_dimensions[(table_context, term)]
+        if table_context:
+            candidates = [dimension for dimension in self.table_dimensions.values()
+                          if term == dimension.name or term in dimension.aliases]
+            local = [dimension for dimension in candidates if dimension.source_table == table_context]
+            reachable = [dimension for dimension in candidates
+                         if self.get_join_path_chain(table_context, dimension.source_table)]
+            if local:
+                return local[0]
+            if len(reachable) == 1:
+                return reachable[0]
+            if candidates:
+                return None  # Never bind an identically named dimension in an unrelated business domain.
             
         if term in self.dimensions:
             return self.dimensions[term]
@@ -437,6 +522,11 @@ class DSLCompiler:
         self.layer = layer
         self.dialect = dialect
 
+    @staticmethod
+    def aggregate_alias(metric_name: str) -> str:
+        """Share aggregate column naming with consumers of compiled SQL results."""
+        return metric_name if metric_name.startswith("total_") else f"total_{metric_name}"
+
     def _resolve_time_column(self, table_name: str) -> Optional[str]:
         """
         动态解析指定表的业务分区时间列。
@@ -456,15 +546,36 @@ class DSLCompiler:
 
     def _table_ref(self, table_name: str) -> str:
         """
-        构建表引用：PostgreSQL 不使用 database.table 语法，直接返回表名。
+        构建表引用：PostgreSQL / SQLite 使用 schema 而非 database 前缀，直接返回表名。
         其他数据库（Doris/StarRocks/MySQL）使用 database.table 前缀。
         """
         from app.service.db_service import db_service
         active_type = getattr(db_service, 'active_db_type', '').lower()
-        if "postgres" in active_type or os.getenv("DB_TYPE", "").lower() == "postgres":
+        if ("postgres" in active_type or "sqlite" in active_type
+                or os.getenv("DB_TYPE", "").lower().startswith(("postgres", "sqlite"))):
             return table_name
         db_name = db_service.get_active_db_name()
+        # 只有合法标识符才能作为库名前缀；空库名或 ":memory:" 会生成无法解析的 SQL。
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db_name or ""):
+            return table_name
         return f"{db_name}.{table_name}"
+
+    def _reject_unbound_dimension(self, dim_name: str, main_table: str) -> None:
+        """
+        维度未能绑定到具体物理表时，绝不能退化成 `主表.维度名` 猜列：
+        该列可能根本不存在，或恰好命中另一个业务域的同名列，从而静默返回错误结果。
+        """
+        columns = {name for name, _ in
+                   getattr(self.layer, "discovered_table_columns", {}).get(main_table, [])}
+        if not columns or dim_name in columns:
+            return
+        owners = sorted({f"{dimension.source_table}.{dimension.source_column}"
+                         for dimension in self.layer.table_dimensions.values()
+                         if dim_name == dimension.name or dim_name in dimension.aliases})
+        detail = f"，同名维度分别来自：{'、'.join(owners)}" if owners else ""
+        raise ValueError(
+            f"编译 SQL 错误: 维度 '{dim_name}' 不是 {main_table} 的字段，且无法确定唯一归属{detail}。"
+            "请改用更明确的维度名称。")
 
     def compile(self, dsl: Dict[str, Any]) -> str:
         """
@@ -537,6 +648,7 @@ class DSLCompiler:
 
             dim = self.layer.resolve_dimension(dim_name, main_table)
             if not dim:
+                self._reject_unbound_dimension(dim_name, main_table)
                 select_parts.append(f"{main_table}.{dim_name} AS {dim_name}")
                 group_by_parts.append(f"{main_table}.{dim_name}")
                 continue
@@ -551,6 +663,7 @@ class DSLCompiler:
                 group_by_parts.append(f"{main_table}.{dim.source_column}")
 
         # 2.2 添加指标到 SELECT
+        metric_output_aliases = {}
         for m_item in metrics:
             m_name = m_item.get("name")
             agg = m_item.get("agg", None)
@@ -562,38 +675,46 @@ class DSLCompiler:
 
             calc = metric.calculation
             base_col = f"{main_table}.{calc}" if "." not in calc else calc
+            output_alias = self.aggregate_alias(metric.name)
             
             # 高阶分析函数物理生成逻辑 (同比/环比/累计/排名)
             if ratio_type == "mom":
+                output_alias = f"{m_name}_mom"
                 # 环比计算：(当前期 - 上一期) / 上一期 (使用 LAG 窗口函数)
                 select_parts.append(
                     f"(SUM({base_col}) - LAG(SUM({base_col}), 1) OVER (ORDER BY {main_table}.dt)) "
-                    f"/ NULLIF(LAG(SUM({base_col}), 1) OVER (ORDER BY {main_table}.dt), 0) AS {m_name}_mom"
+                    f"/ NULLIF(LAG(SUM({base_col}), 1) OVER (ORDER BY {main_table}.dt), 0) AS {output_alias}"
                 )
             elif ratio_type == "yoy":
+                output_alias = f"{m_name}_yoy"
                 # 同比计算：(当前期 - 去年同期) / 去年同期 (使用 LAG 窗口天数对齐)
                 select_parts.append(
                     f"(SUM({base_col}) - LAG(SUM({base_col}), 365) OVER (ORDER BY {main_table}.dt)) "
-                    f"/ NULLIF(LAG(SUM({base_col}), 365) OVER (ORDER BY {main_table}.dt), 0) AS {m_name}_yoy"
+                    f"/ NULLIF(LAG(SUM({base_col}), 365) OVER (ORDER BY {main_table}.dt), 0) AS {output_alias}"
                 )
             elif ratio_type == "cumulative":
+                output_alias = f"cumulative_{m_name}"
                 # 累计计算 (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
                 select_parts.append(
-                    f"SUM(SUM({base_col})) OVER (ORDER BY {main_table}.dt ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_{m_name}"
+                    f"SUM(SUM({base_col})) OVER (ORDER BY {main_table}.dt ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS {output_alias}"
                 )
             elif ratio_type == "rank":
+                output_alias = f"{m_name}_rank"
                 # 排名计算 (DENSE_RANK)
                 select_parts.append(
-                    f"DENSE_RANK() OVER (ORDER BY SUM({base_col}) DESC) AS {m_name}_rank"
+                    f"DENSE_RANK() OVER (ORDER BY SUM({base_col}) DESC) AS {output_alias}"
                 )
             elif metric.default_agg == "formula" or agg == "formula":
                 if calc == "refund_amount / NULLIF(gmv, 0)":
+                    output_alias = "refund_ratio"
                     select_parts.append("SUM(refund_amount) / NULLIF(SUM(gmv), 0) AS refund_ratio")
                 else:
-                    select_parts.append(f"({calc}) AS {metric.name}")
+                    output_alias = metric.name
+                    select_parts.append(f"({calc}) AS {output_alias}")
             else:
                 agg_func = agg if agg else metric.default_agg
-                select_parts.append(f"{agg_func}({base_col}) AS total_{metric.name}")
+                select_parts.append(f"{agg_func}({base_col}) AS {output_alias}")
+            metric_output_aliases.setdefault(metric.name, output_alias)
 
         # 3. 构造 JOIN 关联子句
         # 为了处理多跳关联，我们需要合并所有的关联边，避免重复 JOIN 同一张表
@@ -638,14 +759,18 @@ class DSLCompiler:
             end_date = datetime.now().strftime("%Y-%m-%d")
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-        start_chi, end_chi = align_timezone_range(start_date, end_date)
-        chi_start_day = start_chi[:10]
-        chi_end_day = end_chi[:10]
-        
         # 动态解析表的实际时间列，若表无时间列则跳过时间过滤
         time_col = self._resolve_time_column(main_table)
         if time_col:
-            where_conds.append(f"{main_table}.{time_col} BETWEEN '{chi_start_day}' AND '{chi_end_day}'")
+            column_types = dict(getattr(self.layer, "discovered_table_columns", {}).get(main_table, []))
+            time_type = str(column_types.get(time_col, "")).lower()
+            if "timestamp" in time_type or "datetime" in time_type or time_col == "publish_time":
+                # Timestamp columns need full converted instants, not truncated dates.
+                range_start, range_end = align_timezone_range(start_date, end_date)
+            else:
+                # Daily partitions identify business dates and must not shift timezones.
+                range_start, range_end = start_date[:10], end_date[:10]
+            where_conds.append(f"{main_table}.{time_col} BETWEEN '{range_start}' AND '{range_end}'")
 
         # 4.2 处理其余普通过滤器
         for filt in filters:
@@ -665,6 +790,8 @@ class DSLCompiler:
             if dim:
                 tbl_prefix = dim.source_table
                 phys_col = dim.source_column
+            else:
+                self._reject_unbound_dimension(field, main_table)
 
             if op == "eq":
                 where_conds.append(f"{tbl_prefix}.{phys_col} = '{val}'")
@@ -704,7 +831,7 @@ class DSLCompiler:
                 else:
                     m = self.layer.resolve_metric(ob_field)
                     if m:
-                        ob_col = "refund_ratio" if m.name == "refund_ratio" else f"total_{m.name}"
+                        ob_col = metric_output_aliases.get(m.name, ob_field)
                         order_cols.append(f"{ob_col} {direction}")
                     else:
                         order_cols.append(f"{ob_field} {direction}")
@@ -714,8 +841,7 @@ class DSLCompiler:
                 _tc = self._resolve_time_column(main_table) or "created_at"
                 sql_parts.append(f"ORDER BY DATE_TRUNC('month', {main_table}.{_tc}) ASC")
             elif group_by_parts:
-                m_name = metrics[0].get("name")
-                ob_col = "refund_ratio" if m_name == "refund_ratio" else f"total_{m_name}"
+                ob_col = metric_output_aliases[primary_metric.name]
                 sql_parts.append(f"ORDER BY {ob_col} DESC")
 
         if limit_val:

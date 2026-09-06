@@ -1,0 +1,259 @@
+<!--
+  微信公众号排版 HTML — 南孜 AI 智能体平台 v1.0.6
+  使用说明：
+  1. 复制下方 <section> 内全部内容，粘贴到微信公众平台编辑器「HTML」模式（或 135/秀米 等工具）
+  2. 封面图可在编辑器中自行上传替换
+  3. 外链在发布前预览确认；部分链接需绑定公众号域名白名单
+  4. 不支持 <style>、<script>、class/id 选择器，全部采用内联 style
+-->
+
+<section style="box-sizing:border-box;font-size:16px;color:#3f3f3f;line-height:1.8;letter-spacing:0.5px;text-align:justify;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Arial,sans-serif;">
+
+  <!-- 标题区 -->
+  <section style="margin:0 0 24px 0;padding:24px 16px;background:linear-gradient(135deg,#064e3b 0%,#022c22 48%,#111827 100%);border-radius:10px;text-align:center;box-shadow:0 4px 20px rgba(16,185,129,0.15);">
+    <p style="margin:0 0 8px 0;font-size:22px;font-weight:bold;color:#f8fafc;line-height:1.5;letter-spacing:1px;">🚀 南孜 AI 智能体平台 · v1.0.6 重磅发布</p>
+    <p style="margin:0;font-size:15px;font-weight:normal;color:#a7f3d0;line-height:1.6;letter-spacing:0.5px;">知识库运营看板 · Token额度预算 · 工作空间升级3.0 · 多渠道通知</p>
+  </section>
+
+  <!-- 仓库链接 -->
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#065f46;line-height:1.7;">
+      <strong style="color:#064e3b;">GitHub Repository：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform" style="color:#10b981;text-decoration:none;word-break:break-all;">RandyChen1985/nanzi-ai-agent-platform</a>
+    </p>
+  </section>
+
+  <!-- 导语 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;line-height:1.9;">
+      v1.0.6 是一次以<strong style="color:#059669;">“知识库开发与管理、Token 额度计费、工作空间及多端消息通知”</strong>为核心的里程碑大版本迭代。平台全面支持知识库虚拟文件夹分类、卡片独立折叠、自建徽章标记、AI 元数据智能分析与双栏推荐问题；全新上线知识库运营统计看板与原档高亮物理定位预览；同时引入 Token 额度控制机制（支持 `/quota` 快捷指令），工作空间文件浏览全面升级（支持回收站与私有 sandbox 目录），并重构个人消息配置支持多端连通性测试。
+    </p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.8;">
+      本次变更范围自 <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">d429e7f</code>（含）至
+      <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">64e40cf</code>，共
+      <strong>87 个提交</strong>，涉及 161 个文件、约 25,364 行新增代码。
+    </p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Key Features ========== -->
+  <section style="margin:0 0 20px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #10b981;padding-left:12px;line-height:1.4;">🚀 Key Features</p>
+  </section>
+
+  <!-- Feature Card 01 -->
+  <section style="margin:0 0 16px 0;padding:18px 16px;background-color:#f0fdf4;border:1px solid #a7f3d0;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#065f46;line-height:1.5;">01 📂 知识库开发与 RAG 管理体系深度加固</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>文档虚拟目录分类</strong>：支持多级虚拟文件夹逻辑划分，文件树拖拽归类与重命名，并在行 hover 时增加防文字重叠自适应。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>反向成员权限分配</strong>：支持按角色或用户批量对指定数据集分配或解绑操作权限，限权用户将无法越界访问敏感数据集。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>AI 元数据分析与回填</strong>：编辑元数据弹窗集成大模型，一键对多文件命名趋势进行语义推断，智能提取中英文标签和描述备注。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>双栏推荐提问交互</strong>：知识库置顶预设提问与大模型动态预测提问以独立双栏优雅排版呈现，支持直接发送或铅笔 ✏️ 编辑后再发送。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>友好错误翻译拦截</strong>：`RagFlowClient` 自动截获并翻译底层的 UUID 形式报错（如权限拒绝、找不到数据集等），转换为具备操作指引的中文友好提示。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#10b981;font-weight:bold;margin-right:6px;">●</span><strong>检索优化与 Mermaid 生成</strong>：识别代词指代追问，自动短路跳过 RAG 检索并复用历史引用；优化 Mermaid 流程图生成提示词确保页面无错渲染。
+    </p>
+  </section>
+
+  <!-- Feature Card 02 -->
+  <section style="margin:0 0 16px 0;padding:18px 16px;background-color:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#0891b2;line-height:1.5;">02 📊 知识库运营统计看板与原档高亮</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#06b6d4;font-weight:bold;margin-right:6px;">●</span><strong>运营看板统计看板</strong>：可视化统计看板正式上线，呈现高频使用排行、周检索趋势及缓存击中数据，刷新看板时自动触发 Redis→DB 实时物理落库同步。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#06b6d4;font-weight:bold;margin-right:6px;">●</span><strong>物理页码高亮滑出预览</strong>：引用的事实依据（Citations）支持直接定位到原始 PDF/Markdown 的物理页码，侧边一键滑出原档渲染页面并高亮匹配段落。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#06b6d4;font-weight:bold;margin-right:6px;">●</span><strong>埋点监控修复</strong>：彻底修复了部分极端场景下日志拦截器采集不到 Citation 引用元数据的 Bug，强化数据链路追踪。
+    </p>
+  </section>
+
+  <!-- Feature Card 03 -->
+  <section style="margin:0 0 16px 0;padding:18px 16px;background-color:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#334155;line-height:1.5;">03 🗂️ 工作空间文件浏览器升级 3.0</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#64748b;font-weight:bold;margin-right:6px;">●</span><strong>多维文件防灾与隔离</strong>：工作空间浏览偏好、最近打开文件改为 Redis 按 `user_id` 物理隔离，新增用户私有 `uploads/sandbox` 目录。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#64748b;font-weight:bold;margin-right:6px;">●</span><strong>回收站与快捷导航</strong>：支持文件软删除逻辑并移入回收站暂存，提供“最近打开”和“快捷收藏导航”面板。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#64748b;font-weight:bold;margin-right:6px;">●</span><strong>右侧抽屉与编辑 API</strong>：重构为抽屉式文件管理器，修复画布渲染 blob URL 破图故障，支持远程文件流写入与预览 API。
+    </p>
+  </section>
+
+  <!-- Feature Card 04 -->
+  <section style="margin:0 0 16px 0;padding:18px 16px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#b45309;line-height:1.5;">04 💰 Token 额度控制与用量分析体系</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#f59e0b;font-weight:bold;margin-right:6px;">●</span><strong>多维度策略拦截</strong>：后台可针对具体用户或角色设置 Token 预算策略，拦截超额请求，有效防范 API 被恶性刷量或脚本死循环空转。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#f59e0b;font-weight:bold;margin-right:6px;">●</span><strong>个人消耗详情看板</strong>：个人中心新增消耗统计仪表盘，数值统一转换为 `12.5 K` / `1.2 M` / `2.3 B` 等直观的数据紧凑格式展示。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#f59e0b;font-weight:bold;margin-right:6px;">●</span><strong>`/quota` 快捷命令</strong>：在对话输入框直接发送 `/quota`，主助手将实时返回您本月已分配配额、当前消耗量以及剩余的可用额度。
+    </p>
+  </section>
+
+  <!-- Feature Card 05 -->
+  <section style="margin:0 0 16px 0;padding:18px 16px;background-color:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#4338ca;line-height:1.5;">05 🔔 个人中心消息通知多渠道绑定</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#6366f1;font-weight:bold;margin-right:6px;">●</span><strong>一键多通道连通性测试</strong>：个人配置页支持统一管理并绑定钉钉群机器人、企业微信群机器人、SMTP 邮件服务，支持密码打星脱敏与连通性测试。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#6366f1;font-weight:bold;margin-right:6px;">●</span><strong>智能体通知工具重构</strong>：系统预装的通知发送工具彻底重构为“自动读取当前对话用户的消息配置”逻辑，新增企业微信机器人群发送工具。
+    </p>
+  </section>
+
+  <!-- Feature Card 06 -->
+  <section style="margin:0 0 28px 0;padding:18px 16px;background-color:#eef6ff;border:1px solid #cbd5e1;border-radius:10px;">
+    <p style="margin:0 0 14px 0;font-size:16px;font-weight:bold;color:#1e40af;line-height:1.5;">06 ⚙️ 智能路由与统一请求决策</p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#2563eb;font-weight:bold;margin-right:6px;">●</span><strong>统一请求决策层重构</strong>：抽取 `request_decision.py`，合并判定 `RequestSource` 与 `RequestCapability`；优化 `resolve_turn_classification`，在启发式判定和语义映射阶段复用同一决策，消灭重复运算。
+    </p>
+    <p style="margin:0 0 10px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#2563eb;font-weight:bold;margin-right:6px;">●</span><strong>网页悬浮挂件优化</strong>：系统悬浮助手集成引导页全面升级，支持 Widget 弹窗与 Embedded 嵌入等多模式调用。
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;">
+      <span style="color:#2563eb;font-weight:bold;margin-right:6px;">●</span><strong>跨设备活动会话同步</strong>：使用 Redis 维护无痕或跨设备状态下的活动会话 ID，保证会话一致性。
+    </p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Breaking Changes ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #dc2626;padding-left:12px;line-height:1.4;">⚠️ Breaking Changes</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;width:30%;">项目</th>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">数据库</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">须执行 V88 ~ V93 六个增量脚本。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">Token 限额</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">系统启用 Token 额度拦截机制，需正确配置 quota_policies 表。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">通知密码</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">明文密码弃用，保存时自动加密传输与落库。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">沙箱路径</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">临时 Sandbox 路径变更，严禁在外部工具内硬编码物理路径。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Database Upgrades ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #10b981;padding-left:12px;line-height:1.4;">🗄️ Database Upgrades</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">从 v1.0.5 升级至 v1.0.6，须执行 <strong>6 个</strong>增量 SQL 脚本：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;width:35%;">脚本</th>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;">内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V88</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">创建 quota_policies 策略管理表。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V89</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">添加限额与消耗日志的性能索引。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V90</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">创建个人中心消息通知渠道配置表。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V91</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">注册企业微信机器人通知工具元数据。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V92</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">更新消息工具，支持读取个人级参数配置。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">V93</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">创建知识库运营看板及统计指标度量表。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Upgrade Guide ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #7c3aed;padding-left:12px;line-height:1.4;">📦 Upgrade Guide</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;"># 拉取代码 → 更新依赖 → 执行 V88~V93 → 编译前端 → ./dev.sh</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;">./db-prod/apply-sql-native.sh</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Test Checklist ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #0891b2;padding-left:12px;line-height:1.4;">✅ Test Checklist</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background-color:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>知识库开发</strong>：新建文件夹、元数据 AI 分析、双栏置顶提问推荐、高级检索调参</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>运营看板</strong>：看板大盘趋势、物理页码原档定位滑出高亮预览</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>工作空间 3.0</strong>：回收站软删除、最近打开列表、上传边界及 sandbox 路径安全隔离</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>Token 预算管理</strong>：`/quota` 指令、超额策略拦截、消耗 compact 格式</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>消息通知绑定</strong>：钉钉/企微/邮件多通道绑定及连通性测试</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>回归测试</strong>：pytest 核心测试用例全量通过</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Downloads ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 12px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #d97706;padding-left:12px;line-height:1.4;">💾 Downloads</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">📦 Source Code：nanzi-ai-agent-platform-1.0.6.zip / .tar.gz</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">🐳 Docker：nanzi-ai-agent_1.0.6_linux-amd64_*.tar / arm64_*.tar</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">
+      🔗 <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/releases/tag/1.0.6" style="color:#10b981;text-decoration:none;">GitHub Releases v1.0.6</a>
+    </p>
+  </section>
+
+  <!-- 页脚 -->
+  <section style="margin:32px 0 0 0;padding:16px;text-align:center;background:#f9fafb;border-radius:8px;">
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.7;">感谢所有参与 v1.0.6 版本发布的开发者 🎉</p>
+  </section>
+
+</section>

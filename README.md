@@ -1,5 +1,17 @@
 # DataWareHouse-Agent 智能问数与安全网闸系统 V2.0 🚀
 
+> 本仓库现已纳入 NanZi 数据服务平台、NanZi 智能体平台和听书问数
+> LangGraph Agent 的固定源码快照。原项目能力仍保留在 `backend/` 与
+> `frontend/`，新增能力位于 `apps/`，通过 `platform_gateway/` 和统一能力
+> 中心接入。来源、版本和许可证见 `THIRD_PARTY.yml`。
+
+统一启动入口：运行 `./start.sh`，自动启动本地门户、问数 API、Docker、网关和两个
+NanZi 完整平台及其数据库、Redis。核心问数默认使用持久化 PostgreSQL 数仓，首次迁移
+项目示例数据并明确标注初始来源，保留原有业务库配置；重复启动不会重置数据。
+能力中心的“外部面板”分别打开两个平台的完整界面。
+启动与停止见 [本地启动说明](docs/local-start.md)，登录及数据源配置见
+[NanZi 集成说明](integrations/nanzi/README.md)。
+
 DataWareHouse-Agent 是一款专为企业级数仓和金融级分析场景设计的**高可靠、高可信智能问数 (NL-to-SQL) 系统**。
 
 在传统的 NL-to-SQL 架构中，直接依赖大模型生成 SQL 存在**口径二义性、SQL 语法易崩溃、多对多 JOIN 笛卡尔积指标成倍放大、以及数据越权查询**等痛点，导致系统无法在生产环境中落地。本系统通过引入**语义分层治理、Qdrant 向量意图 Grounding、基于 AST 语法树的双重物理安全网闸、自学习纠错记忆对以及智能模型路由**，打通了 NL-to-DSL-to-SQL 的闭环高可靠数据链路，实现了在 11 项核心边界场景中 **100.00% 的黄金回归评估测试套件完美通过**。
@@ -36,9 +48,9 @@ flowchart TD
     end
 
     subgraph "高可用与展示 (HA & Visualization)"
-        L -->|物理库断开/网络超时| M[HA Fallback 本地 SQLite 仿真数据源]
+        L -->|物理库查询失败| M[返回查询错误，检查数据源与表结构]
         L -->|成功返回| N[Pandas 载入数据集]
-        M -->|成功返回| N
+        S[未启用物理连接时的 SQLite 演示模式] --> N
         N --> O[自然语言解释与动态图表推荐]
         O --> P[前端 React 数据看板渲染]
     end
@@ -103,9 +115,11 @@ flowchart TD
 * **Fast 档路由**：对于相对简单的多轮改写、意图结构化 DSL 解析等日常查询，路由至高并发、低延迟的 `Fast` 模型（如 DeepSeek-V3），节省 70% 的计算算力与响应耗时。
 * **Complex 档路由**：当检测到需要执行复杂的多表 JOIN 路由、自纠错修复、高难网闸纠偏时，系统自动切换并分配至推理、归纳和排错能力极强的 `Complex` 高阶模型节点。
 
-### 6. 高可用数据源检测与 SQLite 降级沙箱 (HA Fallback)
+### 6. PostgreSQL 数仓与可选 SQLite 测试模式
 * 系统整合 SQLAlchemy 活性检测连接池（配置 `pool_pre_ping=True` 与 2 秒连接超时熔断），支持 **PostgreSQL、MySQL、Doris、StarRocks、ClickHouse** 等多种物理数据库。
-* 当物理数据库由于网络闪断、维护或超时离线时，系统自动切换并安全降级到本地 SQLite 内存仿真数据源，保障服务 100% 的稳健可用性。
+* 配置物理连接后，元数据发现与查询执行使用同一数据源。缺表、权限、语法或连接错误不会触发演示数据替代；归因分析会返回明确错误，提示检查已接入的指标及表结构。
+* `start.sh` 默认自动启动 PostgreSQL 16、执行一次性示例数据迁移并验证连接。SQL 查询和周期归因在 PostgreSQL 执行，日期、金额分别使用原生日期及精确数值类型；初始示例来源单独标识。数据保存在持久卷中，重启不会重建或覆盖。
+* 测试时可通过 `CORE_DB_TYPE=sqlite ./start.sh` 显式启用内存 SQLite 模式；使用已有业务库则设置 `CORE_DB_TYPE` 与可选 `CORE_DB_URL`，不会自动向该库导入示例数据。
 
 ---
 
@@ -203,9 +217,16 @@ cd backend
 PYTHONPATH=. ./venv/bin/python -u tests/test_evaluation_runner.py
 ```
 
+数据源路由与归因回归使用独立进程运行，避免黄金套件重建表结构时影响共享元数据：
+```bash
+cd backend
+PYTHONPATH=. ./venv/bin/python -m unittest discover -s tests -p 'test_data_source_routing.py'
+PYTHONPATH=. ./venv/bin/python -m unittest discover -s tests -p 'test_attribution_skill.py'
+```
+
 ---
 
 > [!IMPORTANT]
 > **金融级高可用与强隔离安全说明**
-> - **SQLite 仿真沙箱隔离**：当真实的物理数据库遭遇连接闪断、超时（默认 `2s` 阈值）或凭证失效时，`db_service` 会优雅地将查询路由至本地内存中的高仿真 SQLite，防止服务彻底瘫痪。
+> - **SQLite 演示数据隔离**：已配置的物理数据库查询失败时，`db_service` 会传递错误，不会返回 SQLite 演示数值。演示模式仅用于未启用物理连接的本地体验和测试。
 > - **静态/动态拦截红线**：一旦发生越权（行级、列级越限）或多对多 Cartesian 扇出风险，系统会直接抛出 `GuardrailException` 予以拦截并直接返回错误，安全熔断流程绝不触及物理分析数据库。

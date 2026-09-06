@@ -1,0 +1,6 @@
+channel_code,channel_name,channel_type,sort_no,yn,source
+LR_WEB,官网 Web,web,1,1,lrts
+LR_APP,移动 App,app,2,1,generated
+LR_MINI_PROGRAM,小程序,mini_program,3,1,generated
+LR_VEHICLE,车载端,vehicle,4,1,generated
+LR_PARTNER,合作渠道,partner,5,1,generated

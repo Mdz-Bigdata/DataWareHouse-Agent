@@ -1,0 +1,1 @@
+ALTER TABLE meta_datasets ADD COLUMN status TINYINT DEFAULT 1 COMMENT '1:启用, 0:禁用';

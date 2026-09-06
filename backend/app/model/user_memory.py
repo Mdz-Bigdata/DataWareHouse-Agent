@@ -193,22 +193,31 @@ class UserMemory:
         L3 - 主动建议
         根据用户偏好画像和相似模式生成推荐问题
         """
+        from app.service.semantic_layer import semantic_layer
+
         profile = self.get_preference_profile(user)
-        
-        # 根据偏好生成推荐列表
-        recommendations = []
-        top_metric = profile["common_metrics"][0]["metric"] if profile["common_metrics"] else "gmv"
-        top_dim = profile["common_dimensions"][0]["dimension"] if profile["common_dimensions"] else "region_name"
-
-        metric_zh = "销售额 (GMV)" if top_metric == "gmv" else ("退款额" if top_metric == "refund_amount" else "订单量")
-        dim_zh = "区域" if top_dim == "region_name" else "品类"
-
-        # 主动推送可能感兴趣的查询
-        recommendations.append(f"对比去年同期的 {metric_zh} 趋势")
-        recommendations.append(f"各{dim_zh}的{metric_zh}排名分布")
-        recommendations.append(f"过去30天各{dim_zh}退款率异常监控")
-
-        return recommendations
+        preferred = [entry["metric"] for entry in profile.get("common_metrics", [])]
+        metric = next((found for name in preferred if (found := semantic_layer.resolve_metric(name))), None)
+        if metric is None:
+            metric = next((found for name in ("total_gmv", "total_play_count", "articles_count")
+                           if (found := semantic_layer.resolve_metric(name))), None)
+        if metric is None:
+            return []
+        available = semantic_layer.suggested_dimensions(metric)
+        preferred_dimensions = [entry["dimension"] for entry in profile.get("common_dimensions", [])]
+        choices = [name for name in preferred_dimensions if name in available]
+        choices += [name for name in ("category_name", "source_platform", "region_name", "plan_name")
+                    if name in available and name not in choices]
+        choices += [name for name in available if name not in choices]
+        # Canonical metric/table/field names keep suggestions unambiguous even
+        # when multiple domains share human aliases such as “文章数量”.
+        query = f"{metric.source_table}表的{metric.name}"
+        if not choices:
+            return [f"查询{query}"]
+        dimension = choices[0]
+        return [f"查询{query}按{dimension}分组统计",
+                f"{query}按{dimension}排名前5",
+                f"过去30天{query}按{dimension}变化归因"]
 
     def add_error_correction(self, question: str, error_message: str, wrong_sql: str, corrected_sql: str):
         """
@@ -230,5 +239,26 @@ class UserMemory:
         获取所有被成功记录的纠错历史
         """
         return self.error_corrections
+
+    def delete_error_correction(self, question: str) -> bool:
+        """
+        根据用户提问，删除特定的纠错记忆记录
+        """
+        original_len = len(self.error_corrections)
+        self.error_corrections = [
+            ec for ec in self.error_corrections 
+            if ec.get("question", "").strip().lower() != question.strip().lower()
+        ]
+        if len(self.error_corrections) < original_len:
+            self._save()
+            return True
+        return False
+
+    def clear_error_corrections(self):
+        """
+        清空全部已保存的纠错记录
+        """
+        self.error_corrections = []
+        self._save()
 
 user_memory = UserMemory()

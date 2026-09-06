@@ -1,0 +1,233 @@
+<!--
+  微信公众号排版 HTML — 南孜 AI 智能体平台 v1.0.3
+  使用说明：
+  1. 复制下方 <section> 内全部内容，粘贴到微信公众平台编辑器「HTML」模式（或 135/秀米 等工具）
+  2. 封面图 image.png 需在编辑器中重新上传并替换下方占位图 src（或与发布包同目录引用）
+  3. 外链在发布前预览确认；部分链接需绑定公众号域名白名单
+  4. 不支持 <style>、<script>、class/id 选择器，全部采用内联 style；避免 flex/grid，使用 section + p 块级卡片布局
+-->
+
+<section style="box-sizing:border-box;font-size:16px;color:#3f3f3f;line-height:1.8;letter-spacing:0.5px;text-align:justify;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Arial,sans-serif;">
+
+  <!-- 标题区 -->
+  <section style="margin:0 0 24px 0;padding:20px 16px;background:linear-gradient(135deg,#070b14 0%,#0f172a 48%,#0c4a6e 100%);border-radius:10px;text-align:center;box-shadow:0 4px 20px rgba(6,182,212,0.12);">
+    <p style="margin:0 0 8px 0;font-size:22px;font-weight:bold;color:#f8fafc;line-height:1.5;letter-spacing:1px;">🚀 南孜 AI 智能体平台 · v1.0.3 重磅发布</p>
+    <p style="margin:0;font-size:16px;font-weight:normal;color:#67e8f9;line-height:1.6;letter-spacing:0.5px;">数据门户体验升级 · 查数可靠性全面强化</p>
+  </section>
+
+  <!-- 仓库链接 -->
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#1e40af;line-height:1.7;">
+      <strong style="color:#1e3a8a;">GitHub Repository：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform" style="color:#2563eb;text-decoration:none;word-break:break-all;">RandyChen1985/nanzi-ai-agent-platform</a>
+    </p>
+  </section>
+
+  <!-- 导语 -->
+  <section style="margin:0 0 24px 0;">
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;line-height:1.9;">
+      v1.0.3 版本是一次<strong style="color:#1d4ed8;">数据门户体验与查数可靠性升级</strong>。在本次更新中，平台全新推出「我的数据门户」个性化导航与场景推荐能力，并上线 <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">/dataset_menu</code> 系统级数据能力导航；同时借鉴 OpenClaw 架构引入会话串行、工具循环熔断与上下文压缩等运行时增强，大幅强化 ChatBI 物理表防猜表与数据集归属强一致性校验。
+    </p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.8;">
+      本次变更合并了自 v1.0.2（从 <code style="font-size:13px;background:#f3f4f6;padding:2px 6px;border-radius:3px;color:#374151;">2b6be3b</code> 至今）共
+      <strong>25 个提交</strong>，涉及 64 个文件、约 9,000 行新增代码。
+    </p>
+  </section>
+
+  <!-- 封面图：v1.0.3 发布概览图 image.png -->
+  <section style="margin:0 0 28px 0;text-align:center;">
+    <img src="image.png" alt="南孜 AI 智能体平台 v1.0.3 发布概览" style="display:block;width:100%;max-width:100%;height:auto;margin:0 auto;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.08);" />
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Key Features（卡片底色风格，公众号兼容） ========== -->
+  <section style="margin:0 0 20px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #2563eb;padding-left:12px;line-height:1.4;">🚀 Key Features</p>
+  </section>
+
+  <!-- Feature Card 01 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#eef6ff;border:1px solid #cfe3ff;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#1e40af;line-height:1.5;">01 🏠 数据门户（Data Portal）全面体验升级</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> <strong>「我的数据门户」个性化导航</strong>：记录用户点击偏好，按使用习惯排序展示数据集入口；全面美化 UI/UX，解决气泡复制与刷新按钮重合冲突。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> <strong>场景卡片推荐问题换一批</strong>：支持场景卡片推荐问题实时刷新，并优化兜底条数。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> <strong>快捷提问隐式携带物理表名</strong>：数据门户快捷提问自动附带物理表名上下文，提升首轮查数命中率。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#3b82f6;font-weight:bold;">●</span> <strong>超时降级静默自愈刷新</strong>：数据门户超时后自动静默刷新恢复；刷新成功 Toast 提示，加载态温馨提示轮播。</p>
+  </section>
+
+  <!-- Feature Card 02 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#0369a1;line-height:1.5;">02 🧭 /dataset_menu 系统级数据能力导航</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#0ea5e9;font-weight:bold;">●</span> <strong>系统指令入口</strong>：新增 <code style="font-size:13px;background:#ffffff;padding:1px 5px;border-radius:3px;border:1px solid #e5e7eb;">/dataset_menu</code>，由 LLM 按数据集生成中文导航与 quick 追问按钮。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#0ea5e9;font-weight:bold;">●</span> <strong>引用块 + 表格样式</strong>：以「表名 / 业务范围 / 示例问题」三列表格展示，示例问题内嵌可点击 quick 按钮；明确展示「系统 · 数据导航」身份。</p>
+  </section>
+
+  <!-- Feature Card 03 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#047857;line-height:1.5;">03 🛡️ ChatBI 查数安全与准确性强化</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#10b981;font-weight:bold;">●</span> <strong>物理表防猜表与强一致性校验</strong>：防止模型将业务术语、指标块或中文表名误当作物理表名执行 SQL。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#10b981;font-weight:bold;">●</span> <strong>Schema 检索输出格式统一</strong>：对齐向量检索、MySQL 兜底、RAGFlow 与 HTTP API；工具日志显示命中条数与 token 估算。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#10b981;font-weight:bold;">●</span> <strong>业务友好拦截文案</strong>：将技术术语改为业务友好提示；约束 quick 追问区块必须位于图表之后。</p>
+  </section>
+
+  <!-- Feature Card 04 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#f1f5f9;border:1px solid #cbd5e1;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#334155;line-height:1.5;">04 ⚙️ OpenClaw 借鉴：会话运行时增强</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> <strong>会话串行（Session Lane）</strong>：防止同一会话并发请求互相干扰，避免状态污染。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> <strong>工具循环熔断</strong>：新增 ping-pong / 全局熔断检测，防止工具调用陷入死循环。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#64748b;font-weight:bold;">●</span> <strong>上下文压缩与 followup 队列</strong>：超长历史注入确定性摘录；受控重试与内容撤回改善连续追问体验。</p>
+  </section>
+
+  <!-- Feature Card 05 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#15803d;line-height:1.5;">05 🎯 意图识别与路由优化</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#22c55e;font-weight:bold;">●</span> <strong>问候场景短路路由</strong>：纯寒暄直接走通用助手并跳过分类 LLM，显著降低响应延迟。</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#22c55e;font-weight:bold;">●</span> <strong>联网搜索与知识库区分</strong>：实时信息走通用助手，防止未绑定知识库时误走知识库路径失败。</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#22c55e;font-weight:bold;">●</span> <strong>问候误拦截修复</strong>：反幻觉门控按意图触发，避免「你好」被误杀；Schema 弱命中友好兜底。</p>
+  </section>
+
+  <!-- Feature Card 06 -->
+  <section style="margin:0 0 16px 0;padding:16px 14px;background-color:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#7e22ce;line-height:1.5;">06 🎨 管理界面与前端体验优化</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#a855f7;font-weight:bold;">●</span> 优化 Agent 管理、元数据管理、系统参数配置等界面交互与提示；修复记忆管理中心 <code style="font-size:13px;background:#ffffff;padding:1px 5px;border-radius:3px;border:1px solid #e5e7eb;">FT.INFO</code> NaN 序列化报错。</p>
+  </section>
+
+  <!-- Feature Card 07 -->
+  <section style="margin:0 0 28px 0;padding:16px 14px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#b45309;line-height:1.5;">07 📄 开源许可</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.85;text-align:justify;"><span style="color:#f59e0b;font-weight:bold;">●</span> 项目正式添加 <strong>MIT License</strong> 开源许可证。</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Breaking Changes ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #dc2626;padding-left:12px;line-height:1.4;">⚠️ Breaking Changes &amp; Migration Notes</p>
+  </section>
+  <section style="margin:0 0 12px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:0 6px 6px 0;">
+    <p style="margin:0;font-size:15px;color:#991b1b;line-height:1.7;">从 v1.0.2 升级至 v1.0.3 时，请特别注意以下变更：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;width:30%;">项目</th>
+          <th style="padding:10px 8px;background:#fef2f2;color:#991b1b;font-weight:bold;border:1px solid #fecaca;text-align:left;">说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">数据库变更</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">须执行 <code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">V78-chatbi_quick_suggestions_placement.sql</code>，同步 ChatBI quick 按钮排版约束。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">元数据重新同步</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;"><code style="font-size:13px;background:#f3f4f6;padding:1px 5px;border-radius:3px;">_metrics.txt</code> 新增注释声明；建议对受影响数据集重新同步元数据。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">会话串行行为</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">同一会话并发请求将串行执行，高频并发场景下响应可能略有排队。</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;background:#f9fafb;">查数拦截更严格</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;background:#f9fafb;">使用业务术语或中文表名直接写 SQL 将被拦截并引导回 Schema 检索，属预期行为。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Database Upgrades ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #10b981;padding-left:12px;line-height:1.4;">🗄️ Database Incremental Upgrades</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">从 v1.0.2 升级至 v1.0.3 期间，平台数据库共引入了 <strong>1 个</strong>增量 SQL 升级脚本：</p>
+  </section>
+  <section style="margin:0 0 28px 0;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <thead>
+        <tr>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;width:35%;">脚本文件</th>
+          <th style="padding:10px 8px;background:#f0fdf4;color:#047857;font-weight:bold;border:1px solid #a7f3d0;text-align:left;">核心变更内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;font-weight:bold;">V78-chatbi_quick_suggestions_placement.sql</td>
+          <td style="padding:10px 8px;border:1px solid #e5e7eb;color:#374151;">更新 ChatBI V8 提示词，约束 quick 追问区块必须位于全文最末尾（图表之后），并补充自检清单项。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Upgrade Guide ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #7c3aed;padding-left:12px;line-height:1.4;">📦 Upgrade Guide</p>
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;color:#374151;">从 v1.0.2 升级</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background:#1e1e2e;border-radius:8px;">
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 1. 拉取最新代码</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">git fetch origin &amp;&amp; git checkout dev &amp;&amp; git pull origin dev</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 2. 更新依赖</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">source venv/bin/activate</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">pip install -r requirements.txt</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 3. 执行数据库迁移</p>
+    <p style="margin:0 0 10px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./db-prod/apply-sql-native.sh</p>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#a5b4fc;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;"># 4. 重新编译前端并启动</p>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">cd frontend &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; cd ..</p>
+    <p style="margin:0;font-size:13px;color:#e2e8f0;line-height:1.8;font-family:Menlo,Monaco,Consolas,monospace;word-break:break-all;">./dev.sh</p>
+  </section>
+  <p style="margin:0 0 28px 0;font-size:14px;color:#6b7280;line-height:1.8;">
+    完整部署说明请参考
+    <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/blob/main/HOW_TO_INSTALL.md" style="color:#2563eb;text-decoration:none;">HOW_TO_INSTALL.md</a>。
+  </p>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Test Checklist ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #0891b2;padding-left:12px;line-height:1.4;">✅ Test Checklist</p>
+    <p style="margin:0 0 12px 0;font-size:15px;color:#374151;">升级后建议验证以下核心场景：</p>
+  </section>
+  <section style="margin:0 0 28px 0;padding:14px 16px;background-color:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>数据门户导航</strong>：点击偏好排序、场景卡片换一批、快捷提问携带物理表名</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>/dataset_menu 导航</strong>：引用块 + 表格样式、quick 按钮可点击、加载态防重复</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>物理表防猜表</strong>：中文表名 / 业务术语写 SQL 被拦截并引导回 Schema</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>问候短路路由</strong>：纯寒暄快速响应，复合业务句正常路由</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>联网搜索 vs 知识库</strong>：实时信息走通用助手，知识库问答路径正确</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>工具循环熔断</strong>：连续追问 ping-pong 时熔断生效</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">☐ <strong>回归测试</strong>：全量 pytest 自动化用例通过</p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Downloads ========== -->
+  <section style="margin:0 0 8px 0;">
+    <p style="margin:0 0 12px 0;font-size:20px;font-weight:bold;color:#111827;border-left:5px solid #d97706;padding-left:12px;line-height:1.4;">💾 Downloads / Assets</p>
+    <p style="margin:0 0 16px 0;font-size:15px;color:#374151;line-height:1.8;">本项目 v1.0.3 发布版本关联的源码、Docker 镜像资产归档包及配置文件如下：</p>
+  </section>
+  <section style="margin:0 0 16px 0;padding:14px 16px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">📦 <strong>Source Code (zip)</strong>：nanzi-ai-agent-platform-1.0.3.zip</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">📦 <strong>Source Code (tar.gz)</strong>：nanzi-ai-agent-platform-1.0.3.tar.gz</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">🐳 <strong>Docker Image for Linux amd64 (x86_64)</strong>：nanzi-ai-agent_1.0.3_linux-amd64_*.tar</p>
+    <p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.8;">🐳 <strong>Docker Image for Linux arm64 (aarch64)</strong>：nanzi-ai-agent_1.0.3_linux-arm64_*.tar</p>
+    <p style="margin:0;font-size:14px;color:#374151;line-height:1.8;">⚙️ <strong>Docker Compose YAML file</strong>：docker-compose.yml</p>
+  </section>
+  <section style="margin:0 0 20px 0;padding:12px 16px;background:#fffbeb;border-radius:8px;text-align:center;">
+    <p style="margin:0;font-size:15px;color:#92400e;line-height:1.7;">
+      🔗 <strong>下载地址：</strong>
+      <a href="https://github.com/RandyChen1985/nanzi-ai-agent-platform/releases/tag/1.0.3" style="color:#d97706;text-decoration:none;font-weight:bold;">GitHub Releases v1.0.3</a>
+    </p>
+  </section>
+
+  <section style="margin:28px 0;height:1px;background:#e5e7eb;"></section>
+
+  <!-- ========== Contributors ========== -->
+  <section style="margin:0 0 0 0;padding:20px 16px;background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);border-radius:10px;text-align:center;">
+    <p style="margin:0;font-size:16px;font-weight:bold;color:#374151;line-height:1.7;">🤝 Contributors</p>
+    <p style="margin:10px 0 0 0;font-size:15px;color:#6b7280;line-height:1.8;">感谢所有参与 v1.0.3 版本发布的开发者！</p>
+  </section>
+
+</section>

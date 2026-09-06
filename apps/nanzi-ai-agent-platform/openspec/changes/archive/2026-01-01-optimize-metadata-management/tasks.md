@@ -1,0 +1,21 @@
+# Tasks
+
+- [ ] 实现指标管理 (Implement Metrics Management) <!-- id: 10 -->
+    - [ ] 在 `app/schemas/metadata.py` 中创建 `MetricSchema` <!-- id: 11 -->
+    - [ ] 在 `MetadataService` 中实现指标 CRUD 方法 <!-- id: 12 -->
+    - [ ] 在 `app/api/portal/endpoints/metadata.py` 中添加指标 API 端点 <!-- id: 13 -->
+    - [ ] 更新前端 `api/metadata.ts` 增加指标相关方法 <!-- id: 14 -->
+    - [ ] 在前端实现 `MetricList` 和 `MetricForm` 组件 <!-- id: 15 -->
+- [ ] 升级智能导入 (Upgrade Smart Import) <!-- id: 25 -->
+    - [ ] 更新 `metadata_generator.py` Prompt 支持提取指标/关系 <!-- id: 26 -->
+    - [ ] 更新后端 `analyze_ddl` 接口返回完整语义元数据 <!-- id: 27 -->
+    - [ ] 升级前端导入弹窗，支持预览和保存指标/关系 <!-- id: 28 -->
+- [ ] 实现关系管理 (Implement Relationships Management) <!-- id: 16 -->
+    - [ ] 在 `app/schemas/metadata.py` 中创建 `RelationshipSchema` <!-- id: 17 -->
+    - [ ] 在 `MetadataService` 中实现关系 CRUD 方法 <!-- id: 18 -->
+    - [ ] 添加关系 API 端点 <!-- id: 19 -->
+    - [ ] 更新前端 `api/metadata.ts` 增加关系相关方法 <!-- id: 20 -->
+    - [ ] 实现 `RelationshipList` 和 `RelationshipForm` 组件 <!-- id: 21 -->
+- [ ] 增强上下文导出 (Enhance Context Export) <!-- id: 22 -->
+    - [ ] 更新 `MetadataService.export_dataset_yaml` 以包含指标和关系数据 <!-- id: 23 -->
+    - [ ] 通过“Schema 检索模拟器”验证输出结果 <!-- id: 24 -->

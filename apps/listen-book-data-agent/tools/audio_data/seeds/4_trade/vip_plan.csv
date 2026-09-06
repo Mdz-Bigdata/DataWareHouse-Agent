@@ -1,0 +1,7 @@
+plan_code,plan_name,plan_type,billing_cycle,duration_months,currency_code,price_amount,yn,source
+LR_VIP_MONTHLY,VIP 月度会员,vip,month,1,CNY,19.00,1,generated
+LR_VIP_QUARTERLY,VIP 季度会员,vip,quarter,3,CNY,49.00,1,generated
+LR_VIP_YEARLY,VIP 年度会员,vip,year,12,CNY,159.00,1,generated
+LR_SVIP_MONTHLY,SVIP 月度会员,svip,month,1,CNY,29.00,1,generated
+LR_SVIP_QUARTERLY,SVIP 季度会员,svip,quarter,3,CNY,79.00,1,generated
+LR_SVIP_YEARLY,SVIP 年度会员,svip,year,12,CNY,229.00,1,generated

@@ -1,0 +1,20 @@
+---
+description: 创建或更新 GitHub PR 时必须按仓库 PULL_REQUEST_TEMPLATE.md 填写
+alwaysApply: true
+---
+
+# Pull Request 规范
+
+用户要求创建 / 更新 PR（含「创建 pr」「提 PR」「改 PR 描述」）时：
+
+1. **先读取** 仓库根目录 `PULL_REQUEST_TEMPLATE.md`，按其章节结构写 PR 标题与正文。
+2. **禁止**只用 Cursor 默认的 `## Summary` / `## Test plan` 两段式交差。
+3. 正文须包含模板中的区块（可按实际变更勾选，无内容的小节可写「无」或省略空 checkbox，但标题层级保持一致）：
+   - `# Pull Request: …` 标题行
+   - `## 概要 (Overview)`
+   - `## 核心变更 (Key Changes)`（功能新增 / UI·UX / 缺陷修复）
+   - `## 变更清单 (Commit Log)`（短 hash + 提交说明表）
+   - `## 测试覆盖 (Testing)`
+   - `## 其他备注 (Notes)`
+4. 按模板 `[!IMPORTANT]`：**提交前更新** `tests/CHECKLIST.md` 中与本次变更对应的自动化测试清单，并在 PR 中注明已更新。
+5. 中文撰写；勾选已完成项用 `[x]`，待验证项保留 `[ ]`。

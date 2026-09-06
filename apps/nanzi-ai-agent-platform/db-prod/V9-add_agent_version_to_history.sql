@@ -1,0 +1,2 @@
+-- Add agent_version column to ai_agent_execution_history table with comment (MySQL syntax)
+ALTER TABLE ai_agent_execution_history ADD COLUMN agent_version VARCHAR(32) DEFAULT NULL COMMENT '生成该回复的 Agent 版本号';

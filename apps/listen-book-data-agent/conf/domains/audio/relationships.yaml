@@ -1,0 +1,147 @@
+domain: audio
+
+polymorphic_relationships:
+  - id: user_follow.target
+    source_table: user_follow
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      narrator: content_narrator
+      author: content_author
+      organization: content_organization
+  - id: user_message.target
+    source_table: user_message
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      comment: content_comment
+      content_order: content_order
+      recharge_order: recharge_order
+      upload_task: content_upload_task
+      support_ticket: support_ticket
+  - id: content_audit_record.target
+    source_table: content_audit_record
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      audio_file: track_audio_file
+      upload_task: content_upload_task
+      comment: content_comment
+      creator_profile: creator_profile
+  - id: content_comment.target
+    source_table: content_comment
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+  - id: user_reaction.target
+    source_table: user_reaction
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      comment: content_comment
+      narrator: content_narrator
+  - id: content_report.target
+    source_table: content_report
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      comment: content_comment
+      narrator: content_narrator
+  - id: user_activity_feed.target
+    source_table: user_activity_feed
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      narrator: content_narrator
+      organization: content_organization
+      topic: content_topic
+  - id: support_ticket.related
+    source_table: support_ticket
+    source_column: related_id
+    discriminator_column: related_type
+    targets:
+      album: audio_album
+      track: audio_track
+      content_order: content_order
+      recharge_order: recharge_order
+      payment: payment_record
+      refund: refund_record
+      upload_task: content_upload_task
+      report: content_report
+  - id: payment_record.subject
+    source_table: payment_record
+    source_column: pay_subject_id
+    discriminator_column: pay_subject_type
+    targets:
+      content_order: content_order
+      recharge_order: recharge_order
+  - id: refund_record.subject
+    source_table: refund_record
+    source_column: refund_subject_id
+    discriminator_column: refund_subject_type
+    targets:
+      content_order: content_order
+      recharge_order: recharge_order
+  - id: entitlement_record.target
+    source_table: entitlement_record
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      vip: vip_plan
+      album: audio_album
+      track: audio_track
+  - id: wallet_ledger.related
+    source_table: wallet_ledger
+    source_column: related_id
+    discriminator_column: related_type
+    targets:
+      recharge_order: recharge_order
+      content_order: content_order
+      payment: payment_record
+      refund: refund_record
+  - id: ranking_item.target
+    source_table: ranking_item
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      narrator: content_narrator
+  - id: recommend_item.target
+    source_table: recommend_item
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      narrator: content_narrator
+      topic: content_topic
+      ranking: ranking_list
+  - id: content_topic_item.target
+    source_table: content_topic_item
+    source_column: target_id
+    discriminator_column: target_type
+    targets:
+      album: audio_album
+      narrator: content_narrator
+      ranking: ranking_list
+  - id: search_query_log.clicked_target
+    source_table: search_query_log
+    source_column: clicked_target_id
+    discriminator_column: clicked_target_type
+    targets:
+      album: audio_album
+      track: audio_track
+      narrator: content_narrator
+      organization: content_organization
+      topic: content_topic

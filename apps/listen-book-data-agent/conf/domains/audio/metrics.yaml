@@ -1,0 +1,434 @@
+domain: audio
+
+metrics:
+  - name: album_count
+    description: 平台专辑总数，按专辑主键去重；用于当前存量，不用于历史趋势。
+    alias: [专辑数, 有声书数量, 节目数量]
+    formula: COUNT(DISTINCT audio_album.id)
+    relevant_columns: [audio_album.id]
+    unit: count
+    snapshot: true
+    dimensions: [audio_album.album_type, audio_album.category_id, audio_album.language_id]
+  - name: published_album_count
+    description: 当前已发布专辑数。
+    alias: [上架专辑数, 已发布有声书数]
+    formula: COUNT(DISTINCT audio_album.id)
+    filters: ["audio_album.album_status = 'published'"]
+    relevant_columns: [audio_album.id, audio_album.album_status]
+    unit: count
+    snapshot: true
+    dimensions: [audio_album.album_type, audio_album.category_id, audio_album.language_id]
+  - name: track_count
+    description: 平台音频章节总数，按章节主键去重。
+    alias: [章节数, 声音数, 音频数]
+    formula: COUNT(DISTINCT audio_track.id)
+    relevant_columns: [audio_track.id]
+    unit: count
+    snapshot: true
+    dimensions: [audio_track.album_id, audio_track.track_type, audio_track.free_flag]
+  - name: published_track_count
+    description: 当前已发布音频章节数。
+    alias: [已发布章节数, 上架声音数]
+    formula: COUNT(DISTINCT audio_track.id)
+    filters: ["audio_track.track_status = 'published'"]
+    relevant_columns: [audio_track.id, audio_track.track_status]
+    unit: count
+    snapshot: true
+    dimensions: [audio_track.album_id, audio_track.track_type]
+  - name: new_album_count
+    description: 按专辑创建时间统计的新增专辑数。
+    alias: [新增专辑数, 新增有声书数]
+    formula: COUNT(DISTINCT audio_album.id)
+    relevant_columns: [audio_album.id, audio_album.created_at]
+    time_column: audio_album.created_at
+    unit: count
+    dimensions: [audio_album.album_type, audio_album.category_id, audio_album.language_id]
+  - name: new_track_count
+    description: 按章节创建时间统计的新增音频章节数。
+    alias: [新增章节数, 新增声音数]
+    formula: COUNT(DISTINCT audio_track.id)
+    relevant_columns: [audio_track.id, audio_track.created_at]
+    time_column: audio_track.created_at
+    unit: count
+    dimensions: [audio_track.album_id, audio_track.track_type]
+  - name: author_count
+    description: 当前作者主数据数量。
+    alias: [作者数, 作家数量]
+    formula: COUNT(DISTINCT content_author.id)
+    filters: ["content_author.yn = 1"]
+    relevant_columns: [content_author.id, content_author.yn]
+    unit: count
+    snapshot: true
+    dimensions: [content_author.author_type]
+  - name: narrator_count
+    description: 当前启用主播数量。
+    alias: [主播数, 演播人数]
+    formula: COUNT(DISTINCT content_narrator.id)
+    filters: ["content_narrator.yn = 1"]
+    relevant_columns: [content_narrator.id, content_narrator.yn]
+    unit: count
+    snapshot: true
+    dimensions: [content_narrator.organization_id, content_narrator.contract_type]
+  - name: paid_album_count
+    description: 当前生效且价格类型非免费的付费专辑数。
+    alias: [付费专辑数, 收费有声书数]
+    formula: COUNT(DISTINCT album_price_rule.album_id)
+    filters:
+      - "album_price_rule.yn = 1"
+      - "album_price_rule.price_type <> 'free'"
+      - "album_price_rule.effective_from <= CURRENT_TIMESTAMP"
+      - "(album_price_rule.effective_to IS NULL OR album_price_rule.effective_to > CURRENT_TIMESTAMP)"
+    relevant_columns:
+      - album_price_rule.album_id
+      - album_price_rule.price_type
+      - album_price_rule.yn
+      - album_price_rule.effective_from
+      - album_price_rule.effective_to
+    unit: count
+    snapshot: true
+    dimensions: [album_price_rule.price_type, album_price_rule.currency_code]
+  - name: content_update_count
+    description: 按内容更新事件时间统计的专辑和章节更新次数。
+    alias: [内容更新次数, 专辑更新数]
+    formula: COUNT(DISTINCT album_update_record.id)
+    relevant_columns: [album_update_record.id, album_update_record.updated_at_event]
+    time_column: album_update_record.updated_at_event
+    unit: count
+    dimensions: [album_update_record.update_type, album_update_record.album_id]
+
+  - name: play_count
+    description: 播放会话次数，以 play_session 每行一场会话为口径。
+    alias: [播放次数, 播放总次数, 总播放次数, 播放量, 收听次数]
+    formula: COUNT(play_session.id)
+    relevant_columns: [play_session.id, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: count
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id, play_session.play_status]
+  - name: unique_listener_count
+    description: 播放会话中的去重收听用户数。
+    alias: [收听人数, 播放用户数, UV]
+    formula: COUNT(DISTINCT play_session.user_id)
+    relevant_columns: [play_session.user_id, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: count
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id]
+  - name: played_seconds
+    description: 播放会话实际播放秒数之和。
+    alias: [播放时长, 收听时长, 总收听秒数]
+    formula: COALESCE(SUM(play_session.played_seconds), 0)
+    relevant_columns: [play_session.played_seconds, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: seconds
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id]
+  - name: average_played_seconds
+    description: 播放会话的平均实际播放秒数，用于不同分类或人群之间的平均播放时长比较。
+    alias: [平均播放时长, 平均收听时长, 播放平均时长]
+    formula: AVG(play_session.played_seconds)
+    relevant_columns: [play_session.played_seconds, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: seconds
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id]
+  - name: completed_play_count
+    description: 播放状态为 completed 的会话次数。
+    alias: [完播次数, 听完次数]
+    formula: COUNT(play_session.id)
+    filters: ["play_session.play_status = 'completed'"]
+    relevant_columns: [play_session.id, play_session.play_status, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: count
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id]
+  - name: play_completion_rate
+    description: 完播会话数除以全部播放会话数；无播放时返回 0。
+    alias: [完播率, 播放完成率]
+    formula: >-
+      COALESCE(SUM(CASE WHEN play_session.play_status = 'completed' THEN 1 ELSE 0 END)
+      / NULLIF(COUNT(play_session.id), 0), 0)
+    relevant_columns: [play_session.id, play_session.play_status, play_session.play_start_at]
+    time_column: play_session.play_start_at
+    unit: ratio
+    dimensions: [play_session.album_id, play_session.track_id, play_session.channel_id]
+  - name: finished_listener_count
+    description: 最新收听进度中已听完的去重用户数。
+    alias: [听完人数, 完播用户数]
+    formula: COUNT(DISTINCT listening_progress.user_id)
+    filters: ["listening_progress.finished_flag = 1"]
+    relevant_columns: [listening_progress.user_id, listening_progress.finished_flag, listening_progress.last_played_at]
+    time_column: listening_progress.last_played_at
+    unit: count
+    dimensions: [listening_progress.album_id, listening_progress.track_id]
+  - name: favorite_count
+    description: 当前书架状态为 active 的专辑收藏记录数。
+    alias: [收藏数, 书架收藏数]
+    formula: COUNT(user_bookshelf.id)
+    filters: ["user_bookshelf.shelf_status = 'active'"]
+    relevant_columns: [user_bookshelf.id, user_bookshelf.shelf_status, user_bookshelf.created_at]
+    time_column: user_bookshelf.created_at
+    unit: count
+    dimensions: [user_bookshelf.album_id]
+  - name: follow_count
+    description: 关注状态为 following 的关注记录数。
+    alias: [关注数, 粉丝关注数]
+    formula: COUNT(user_follow.id)
+    filters: ["user_follow.follow_status = 'following'"]
+    relevant_columns: [user_follow.id, user_follow.follow_status, user_follow.followed_at]
+    time_column: user_follow.followed_at
+    unit: count
+    dimensions: [user_follow.target_type]
+  - name: approved_comment_count
+    description: 审核通过的专辑或章节评论数量。
+    alias: [评论数, 有效评论数]
+    formula: COUNT(content_comment.id)
+    filters: ["content_comment.audit_status = 'approved'"]
+    relevant_columns: [content_comment.id, content_comment.audit_status, content_comment.created_at]
+    time_column: content_comment.created_at
+    unit: count
+    dimensions: [content_comment.target_type]
+  - name: average_rating
+    description: 用户专辑评分的算术平均值。
+    alias: [平均评分, 内容评分]
+    formula: AVG(content_rating.rating_score)
+    relevant_columns: [content_rating.rating_score, content_rating.created_at]
+    time_column: content_rating.created_at
+    unit: score
+    dimensions: [content_rating.album_id]
+  - name: reaction_count
+    description: 状态为 active 的点赞、点踩、分享和转发行为数。
+    alias: [互动数, 点赞分享数]
+    formula: COUNT(user_reaction.id)
+    filters: ["user_reaction.reaction_status = 'active'"]
+    relevant_columns: [user_reaction.id, user_reaction.reaction_status, user_reaction.created_at]
+    time_column: user_reaction.created_at
+    unit: count
+    dimensions: [user_reaction.reaction_type, user_reaction.target_type]
+  - name: report_count
+    description: 用户内容举报记录数。
+    alias: [举报数, 内容举报量]
+    formula: COUNT(content_report.id)
+    relevant_columns: [content_report.id, content_report.created_at]
+    time_column: content_report.created_at
+    unit: count
+    dimensions: [content_report.target_type, content_report.report_reason, content_report.handle_status]
+
+  - name: active_member_count
+    description: 当前状态为 active 且有效期覆盖当前时间的会员用户数。
+    alias: [有效会员数, 活跃会员数, VIP用户数]
+    formula: COUNT(DISTINCT member_account.user_id)
+    filters:
+      - "member_account.member_status = 'active'"
+      - "member_account.valid_from <= CURRENT_TIMESTAMP"
+      - "member_account.valid_to >= CURRENT_TIMESTAMP"
+    relevant_columns: [member_account.user_id, member_account.member_status, member_account.valid_from, member_account.valid_to]
+    unit: count
+    snapshot: true
+    dimensions: [member_account.member_level]
+  - name: vip_plan_count
+    description: 当前启用的 VIP 套餐数量。
+    alias: [VIP套餐数, 会员套餐数]
+    formula: COUNT(vip_plan.id)
+    filters: ["vip_plan.yn = 1"]
+    relevant_columns: [vip_plan.id, vip_plan.yn]
+    unit: count
+    snapshot: true
+    dimensions: [vip_plan.member_level, vip_plan.duration_days, vip_plan.currency_code]
+  - name: paid_content_order_count
+    description: 订单状态为 paid 的内容订单数量。
+    alias: [支付订单数, 成交订单数, 付费订单数]
+    formula: COUNT(content_order.id)
+    filters: ["content_order.order_status = 'paid'"]
+    relevant_columns: [content_order.id, content_order.order_status, content_order.paid_at]
+    time_column: content_order.paid_at
+    unit: count
+    dimensions: [content_order.order_type, content_order.channel_id, content_order.currency_code]
+  - name: paid_content_order_amount
+    description: paid 内容订单应付金额之和，结果必须按币种过滤或分组。
+    alias: [订单金额, 成交金额, 内容销售额]
+    formula: COALESCE(SUM(content_order.payable_amount), 0)
+    filters: ["content_order.order_status = 'paid'"]
+    relevant_columns: [content_order.payable_amount, content_order.order_status, content_order.paid_at]
+    time_column: content_order.paid_at
+    unit: currency
+    currency_column: content_order.currency_code
+    dimensions: [content_order.order_type, content_order.channel_id, content_order.currency_code]
+  - name: successful_payment_count
+    description: 支付状态为 success 的支付流水数量。
+    alias: [成功支付笔数, 支付笔数]
+    formula: COUNT(payment_record.id)
+    filters: ["payment_record.payment_status = 'success'"]
+    relevant_columns: [payment_record.id, payment_record.payment_status, payment_record.paid_at]
+    time_column: payment_record.paid_at
+    unit: count
+    dimensions: [payment_record.pay_subject_type, payment_record.payment_channel, payment_record.currency_code]
+  - name: successful_payment_amount
+    description: 成功支付流水金额之和，结果必须按币种过滤或分组。
+    alias: [支付金额, 实收金额, 成功支付额]
+    formula: COALESCE(SUM(payment_record.payment_amount), 0)
+    filters: ["payment_record.payment_status = 'success'"]
+    relevant_columns: [payment_record.payment_amount, payment_record.payment_status, payment_record.paid_at]
+    time_column: payment_record.paid_at
+    unit: currency
+    currency_column: payment_record.currency_code
+    dimensions: [payment_record.pay_subject_type, payment_record.payment_channel, payment_record.currency_code]
+  - name: successful_refund_count
+    description: 退款状态为 success 的退款单数量。
+    alias: [成功退款笔数, 退款笔数]
+    formula: COUNT(refund_record.id)
+    filters: ["refund_record.refund_status = 'success'"]
+    relevant_columns: [refund_record.id, refund_record.refund_status, refund_record.refunded_at]
+    time_column: refund_record.refunded_at
+    unit: count
+    dimensions: [refund_record.refund_subject_type]
+  - name: successful_refund_amount
+    description: 成功退款金额之和；币种沿关联支付流水确定。
+    alias: [退款金额, 成功退款额]
+    formula: COALESCE(SUM(refund_record.refund_amount), 0)
+    filters: ["refund_record.refund_status = 'success'"]
+    relevant_columns: [refund_record.refund_amount, refund_record.refund_status, refund_record.refunded_at, refund_record.payment_id]
+    time_column: refund_record.refunded_at
+    unit: currency
+    currency_column: payment_record.currency_code
+    dimensions: [refund_record.refund_subject_type, payment_record.currency_code]
+  - name: credited_recharge_amount
+    description: 已支付或已入账且未退款的充值本金之和。
+    alias: [充值金额, 到账充值额]
+    formula: COALESCE(SUM(recharge_order.recharge_amount), 0)
+    filters: ["recharge_order.recharge_status IN ('paid', 'credited')"]
+    relevant_columns: [recharge_order.recharge_amount, recharge_order.recharge_status, recharge_order.paid_at]
+    time_column: recharge_order.paid_at
+    unit: currency
+    currency_column: recharge_order.currency_code
+    dimensions: [recharge_order.channel_id, recharge_order.currency_code]
+  - name: vip_plan_sales_count
+    description: paid 内容订单中 VIP 套餐商品的销售件数。
+    alias: [VIP销量, 会员套餐销量]
+    formula: COALESCE(SUM(content_order_item.quantity), 0)
+    filters:
+      - "content_order.order_status = 'paid'"
+      - "content_order_item.item_type = 'vip_plan'"
+    relevant_columns:
+      - content_order_item.quantity
+      - content_order_item.item_type
+      - content_order_item.order_id
+      - content_order_item.vip_plan_id
+      - content_order.order_status
+      - content_order.paid_at
+    time_column: content_order.paid_at
+    unit: count
+    dimensions: [content_order_item.vip_plan_id, content_order.channel_id, content_order.currency_code]
+  - name: active_entitlement_count
+    description: 当前状态有效且有效期覆盖当前时间的权益记录数。
+    alias: [有效权益数, 开通权益数]
+    formula: COUNT(entitlement_record.id)
+    filters:
+      - "entitlement_record.entitlement_status = 'active'"
+      - "entitlement_record.valid_from <= CURRENT_TIMESTAMP"
+      - "(entitlement_record.valid_to IS NULL OR entitlement_record.valid_to >= CURRENT_TIMESTAMP)"
+    relevant_columns: [entitlement_record.id, entitlement_record.entitlement_status, entitlement_record.valid_from, entitlement_record.valid_to]
+    unit: count
+    snapshot: true
+    dimensions: [entitlement_record.target_type, entitlement_record.source_type]
+  - name: wallet_flow_amount
+    description: 钱包流水金额变动之和，正数为增加、负数为减少，必须按币种过滤或分组。
+    alias: [钱包流水金额, 余额变动金额]
+    formula: COALESCE(SUM(wallet_ledger.amount_delta), 0)
+    relevant_columns: [wallet_ledger.amount_delta, wallet_ledger.created_at]
+    time_column: wallet_ledger.created_at
+    unit: currency
+    currency_column: wallet_ledger.currency_code
+    dimensions: [wallet_ledger.ledger_type, wallet_ledger.related_type, wallet_ledger.currency_code]
+
+  - name: ranking_item_count
+    description: 指定榜单和统计日期的上榜项目数量。
+    alias: [上榜内容数, 榜单项目数]
+    formula: COUNT(ranking_item.id)
+    relevant_columns: [ranking_item.id, ranking_item.stat_date]
+    time_column: ranking_item.stat_date
+    unit: count
+    dimensions: [ranking_item.ranking_id, ranking_item.target_type, ranking_item.rank_no]
+  - name: ranking_score
+    description: 榜单项目评分值，可用于排序或平均值分析。
+    alias: [榜单分数, 排行分数]
+    formula: AVG(ranking_item.score_value)
+    relevant_columns: [ranking_item.score_value, ranking_item.stat_date]
+    time_column: ranking_item.stat_date
+    unit: score
+    dimensions: [ranking_item.ranking_id, ranking_item.target_type, ranking_item.target_id]
+  - name: ranking_play_count
+    description: 榜单快照中的播放次数之和。
+    alias: [榜单播放量]
+    formula: COALESCE(SUM(ranking_item.play_count), 0)
+    relevant_columns: [ranking_item.play_count, ranking_item.stat_date]
+    time_column: ranking_item.stat_date
+    unit: count
+    dimensions: [ranking_item.ranking_id, ranking_item.target_type, ranking_item.target_id]
+  - name: ranking_favorite_count
+    description: 榜单快照中的收藏次数之和。
+    alias: [榜单收藏量]
+    formula: COALESCE(SUM(ranking_item.favorite_count), 0)
+    relevant_columns: [ranking_item.favorite_count, ranking_item.stat_date]
+    time_column: ranking_item.stat_date
+    unit: count
+    dimensions: [ranking_item.ranking_id, ranking_item.target_type, ranking_item.target_id]
+  - name: ranking_order_count
+    description: 榜单快照中的订单次数之和。
+    alias: [榜单订单量, 畅销榜订单数]
+    formula: COALESCE(SUM(ranking_item.order_count), 0)
+    relevant_columns: [ranking_item.order_count, ranking_item.stat_date]
+    time_column: ranking_item.stat_date
+    unit: count
+    dimensions: [ranking_item.ranking_id, ranking_item.target_type, ranking_item.target_id]
+  - name: active_recommend_item_count
+    description: 当前启用且在投放有效期内的推荐内容数量。
+    alias: [有效推荐内容数, 推荐位内容数]
+    formula: COUNT(recommend_item.id)
+    filters:
+      - "recommend_item.yn = 1"
+      - "recommend_item.effective_from <= CURRENT_TIMESTAMP"
+      - "(recommend_item.effective_to IS NULL OR recommend_item.effective_to > CURRENT_TIMESTAMP)"
+    relevant_columns: [recommend_item.id, recommend_item.yn, recommend_item.effective_from, recommend_item.effective_to]
+    unit: count
+    snapshot: true
+    dimensions: [recommend_item.slot_id, recommend_item.target_type]
+  - name: published_topic_count
+    description: 当前状态为 published 的运营专题数量。
+    alias: [已发布专题数, 专题数量]
+    formula: COUNT(content_topic.id)
+    filters: ["content_topic.topic_status = 'published'"]
+    relevant_columns: [content_topic.id, content_topic.topic_status]
+    unit: count
+    snapshot: true
+    dimensions: [content_topic.topic_type]
+  - name: search_count
+    description: 原始搜索日志中的搜索请求次数。
+    alias: [搜索次数, 搜索量]
+    formula: COUNT(search_query_log.id)
+    relevant_columns: [search_query_log.id, search_query_log.created_at]
+    time_column: search_query_log.created_at
+    unit: count
+    dimensions: [search_query_log.keyword, search_query_log.search_type, search_query_log.channel_id]
+  - name: search_click_count
+    description: 搜索后发生结果点击的搜索请求次数。
+    alias: [搜索点击次数, 搜索结果点击量]
+    formula: COUNT(search_query_log.id)
+    filters: ["search_query_log.clicked_flag = 1"]
+    relevant_columns: [search_query_log.id, search_query_log.clicked_flag, search_query_log.created_at]
+    time_column: search_query_log.created_at
+    unit: count
+    dimensions: [search_query_log.keyword, search_query_log.clicked_target_type, search_query_log.channel_id]
+  - name: search_click_rate
+    description: 有结果点击的搜索请求数除以全部搜索请求数。
+    alias: [搜索点击率, 搜索转化率]
+    formula: >-
+      COALESCE(SUM(CASE WHEN search_query_log.clicked_flag = 1 THEN 1 ELSE 0 END)
+      / NULLIF(COUNT(search_query_log.id), 0), 0)
+    relevant_columns: [search_query_log.id, search_query_log.clicked_flag, search_query_log.created_at]
+    time_column: search_query_log.created_at
+    unit: ratio
+    dimensions: [search_query_log.keyword, search_query_log.search_type, search_query_log.channel_id]
+  - name: keyword_search_count
+    description: 搜索关键词日汇总表中的搜索次数之和，用于热搜词排名。
+    alias: [热搜次数, 关键词搜索量]
+    formula: COALESCE(SUM(search_keyword_stat.search_count), 0)
+    relevant_columns: [search_keyword_stat.search_count, search_keyword_stat.stat_date]
+    time_column: search_keyword_stat.stat_date
+    unit: count
+    dimensions: [search_keyword_stat.keyword, search_keyword_stat.channel_id]

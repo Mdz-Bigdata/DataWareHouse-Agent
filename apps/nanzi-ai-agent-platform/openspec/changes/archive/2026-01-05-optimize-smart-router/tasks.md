@@ -1,0 +1,4 @@
+- [x] **接口更新**: 修改 `app/services/ai/router_service.py` 的 `route` 方法，增加 `history: List[dict]` 参数。 <!-- type: backend -->
+- [x] **Prompt 更新**: 更新 `architech/prompts/orchestration_router.md`，增加历史记录的占位符和处理逻辑。 <!-- type: prompt -->
+- [x] **服务集成**: 在 `app/services/ai/chat_service.py` 中，获取历史记录并传递给 `RouterService`。 <!-- type: backend -->
+- [x] **测试**: 编写针对带上下文路由的测试用例 (Test Case: "上一轮问了天气，这轮问'那里'具体指哪里")。 <!-- type: test -->

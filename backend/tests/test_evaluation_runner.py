@@ -77,12 +77,22 @@ CREATE TABLE user_memory (
 )
 """)
 
-# 插入几条支撑回归断言的仿真样例数据
+# 动态生成基于当前日期的测试数据，确保 yesterday、last_30_days、last_month 均能精准命中物理记录
+from datetime import datetime, timedelta
+today = datetime.now().date()
+yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+recent_day = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+last_month_day = (today.replace(day=1) - timedelta(days=10)).strftime("%Y-%m-%d")
+baseline_day = (today - timedelta(days=45)).strftime("%Y-%m-%d")
+
 cursor.execute("INSERT INTO dim_region VALUES ('1', '华东'), ('2', '华北')")
-cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES ('2026-07-12', '1', '101', '服饰', 1000.0, 100.0, 5)")
-cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES ('2026-07-12', '2', '102', '食品', 500.0, 0.0, 2)")
-cursor.execute("INSERT INTO articles (id, title, content, source_platform, created_at, status) VALUES (1, '测试文章', '内容', '微信', '2026-07-12', 'published')")
-cursor.execute("INSERT INTO article_history (id, title, content, category_name, version_num, created_at) VALUES (1, '文章历史', '内容', '技术', 1, '2026-07-12')")
+cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES (?, '1', '101', '服饰', 1000.0, 100.0, 5)", (yesterday,))
+cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES (?, '2', '102', '食品', 500.0, 0.0, 2)", (recent_day,))
+cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES (?, '1', '103', '数码', 2000.0, 200.0, 8)", (yesterday,))
+cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES (?, '1', '101', '服饰', 800.0, 80.0, 4)", (last_month_day,))
+cursor.execute("INSERT INTO dws_trade_order_daily (dt, region_id, goods_id, category_name, gmv, refund_amount, order_count) VALUES (?, '1', '101', '服饰', 600.0, 60.0, 3)", (baseline_day,))
+cursor.execute("INSERT INTO articles (id, title, content, source_platform, created_at, status) VALUES (1, '测试文章', '内容', '微信', ?, 'published')", (yesterday,))
+cursor.execute("INSERT INTO article_history (id, title, content, category_name, version_num, created_at) VALUES (1, '文章历史', '内容', '技术', 1, ?)", (yesterday,))
 conn.commit()
 
 # 执行实际依赖导入以触发语义层自动发现与注册
@@ -188,6 +198,33 @@ GOLD_TEST_SUITE = [
         "role": "admin",
         # 验证是否拦截且错误文本指向关联条件
         "verify": lambda res: res["success"] is False and "安全审计拦截" in res["error"]
+    },
+    {
+        "id": "CASE-12",
+        "description": "Skill-Hub 异动归因下钻诊断技能 (为什么华东区退款额上升)",
+        "question": "为什么华东区退款额上升",
+        "user": "admin",
+        "role": "admin",
+        # 验证是否成功调度归因技能，并产出归因分析数据与瀑布流结构
+        "verify": lambda res: res["success"] is True and res.get("skill_type") == "attribution" and res.get("attribution_data") is not None
+    },
+    {
+        "id": "CASE-13",
+        "description": "Skill-Hub 湖图双引擎数据血缘溯源技能 (GMV指标的数据血缘)",
+        "question": "GMV指标的数据血缘是怎样的",
+        "user": "admin",
+        "role": "admin",
+        # 验证是否成功调度血缘技能，并产出湖图双引擎拓扑结构
+        "verify": lambda res: res["success"] is True and res.get("skill_type") == "lineage" and res.get("lineage_data") is not None
+    },
+    {
+        "id": "CASE-14",
+        "description": "多级语义缓存极速命中加速验证 (重复问询)",
+        "question": "华东区昨天的退款额是多少",
+        "user": "admin",
+        "role": "admin",
+        # 验证第二次执行相同问题时，是否直接命中 L1/L2 缓存
+        "verify": lambda res: res["success"] is True and res.get("cache_hit") is True
     }
 ]
 
@@ -195,6 +232,10 @@ def run_evaluation_suite():
     print("=" * 80)
     print(" 🚀 智能问数黄金回归评估测试套件 (NL2SQL Regression Suite V2.0) 正在执行中...")
     print("=" * 80)
+
+    # 清空语义缓存池，确保全新独立评测
+    from app.service.semantic_cache import semantic_cache
+    semantic_cache.invalidate_all()
     
     passed_count = 0
     total_count = len(GOLD_TEST_SUITE)

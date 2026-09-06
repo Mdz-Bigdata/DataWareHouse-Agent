@@ -1,0 +1,23 @@
+# 构建上下文排除项
+.git
+.venv
+.pytest_cache
+__pycache__
+**/__pycache__
+logs
+docs
+specs
+tests
+# 生产运行时只需要音频域 DDL；其余数据工具仍不进入镜像。
+tools/*
+!tools/audio_data
+tools/audio_data/*
+!tools/audio_data/sql
+tools/audio_data/sql/*
+!tools/audio_data/sql/audio.sql
+.env
+.env.*
+# 本地敏感配置绝不进镜像（容器内配置由 compose 环境变量注入）
+conf/app_config.local.yaml
+infra/.env
+*.md

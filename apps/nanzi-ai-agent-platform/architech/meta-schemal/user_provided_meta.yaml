@@ -1,0 +1,218 @@
+dataset: NanZi_Resources
+description: 南孜资产与动环监控基础资源元数据 (Generated from CLICKHOUSE_TABLES.md)
+domain: 南孜资源 # Added domain field as script uses it for display_name
+entities:
+  - name: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase
+    term: 设备点位表
+    description: 存储设备具体的监控点位信息，如电压、电流、开关状态的具体测点。
+    synonyms:
+      - Device Point
+      - 测点
+      - 监控点
+    columns:
+      - name: rowkey
+        term: 点位主键
+        description: 设备点位的一标识
+        type: String
+      - name: dwmc
+        term: 点位名称
+        description: 点位的中文描述，例如 '进线A相电压'
+        type: String
+      - name: jf
+        term: 所属机房ID
+        description: 关联机房表
+        type: String
+      - name: jjbm
+        term: 所属机柜ID
+        description: 关联机架表
+        type: String
+      - name: dwlx
+        term: 点位类型
+        description: 区分是模拟量还是开关量
+        type: String
+      - name: metric_value
+        term: 当前指标值
+        description: 该点位最新的采集值
+        type: String
+      - name: xgsb
+        term: 相关设备
+        description: 该点位所属的设备名称
+        type: String
+  - name: yovole_dm_clickhouse_prod.ck_fact_nanzi_resjj_hbase
+    term: 机柜表
+    description: 数据中心内的物理机柜，管理空间租赁和电力分配。
+    synonyms:
+      - 机架
+      - Rack
+      - Cabinet
+      - 机位
+    columns:
+      - name: rowkey
+        term: 机柜主键ID
+        description: 机柜唯一标识
+        type: String
+      - name: jjbm
+        term: 机柜编码
+        description: 业务使用的机柜编号
+        type: String
+      - name: jfmc
+        term: 所属机房ID
+        description: 关联机房表
+        type: String
+      - name: jjzt
+        term: 机柜状态
+        description: 机柜的使用/分配状态
+        type: String
+        enums:
+          - value: "0"
+            description: 空闲
+          - value: "2"
+            description: 已分配/已使用
+      - name: bzdl
+        term: 标准电力
+        description: 额定电力规格
+        type: String
+      - name: khmc
+        term: 客户名称
+        description: 租用该机柜的客户
+        type: String
+      - name: ywzx
+        term: 业务中心
+        description: 所属业务单元
+        type: String
+  - name: yovole_dm_clickhouse_prod.ck_fact_nanzi_resroom_hbase
+    term: 机房表
+    description: 机房物理空间信息。
+    synonyms:
+      - IDC机房
+      - Room
+      - DataCenter
+    columns:
+      - name: rowkey
+        term: 机房主键ID
+        description: 机房唯一标识
+        type: String
+      - name: jfmc
+        term: 机房名称
+        description: 机房全称
+        type: String
+      - name: jfbm
+        term: 机房编码
+        description: 机房简码
+        type: String
+      - name: jfzdl
+        term: 机房总电力
+        description: 设计总容量
+        type: float
+      - name: jgzs
+        term: 机柜总数
+        description: 机房内机柜总容量
+        type: int
+      - name: sykss
+        term: 已用资源数
+        description: 当前占用情况
+        type: int
+  - name: yovole_dm_clickhouse_prod.ck_fact_donghuan_real_metric_hbase
+    term: 动环实时指标
+    description: 海量时序数据，存储设备秒级/分钟级的实时监控值。
+    synonyms:
+      - 实时监控
+      - Realtime Metrics
+      - 电力读数
+    columns:
+      - name: resource_id
+        term: 设备资源ID
+        description: 关联设备点位或机柜
+        type: String
+      - name: metric_name
+        term: 指标名称
+        description: 监控物理量名称
+        type: String
+      - name: metric_value
+        term: 数值
+        description: 指标读数
+        type: float
+      - name: metric_unit
+        term: 单位
+        description: 计量单位
+        type: String
+      - name: metric_time
+        term: 采集时间
+        description: 数据产生时间戳
+        type: datetime
+  - name: yovole_dm_clickhouse_prod.ck_fact_donghuan_event_detail_hbase
+    term: 动环告警事件
+    description: 存储设备产生的告警、故障及恢复记录。
+    synonyms:
+      - 告警
+      - Event
+      - Alarm
+      - 故障记录
+    columns:
+      - name: event_id
+        term: 事件ID
+        description: 事件唯一标识
+        type: String
+      - name: event_message
+        term: 告警内容
+        description: 详细的告警描述文本
+        type: String
+      - name: event_level
+        term: 告警等级
+        description: 事件的严重程度
+        type: String
+        enums:
+          - value: "1"
+            description: 提示
+          - value: "2"
+            description: 一般
+          - value: "3"
+            description: 严重
+          - value: "4"
+            description: 紧急
+      - name: event_status
+        term: 事件状态
+        description: 当前处理状态
+        type: String
+        enums:
+          - value: "0"
+            description: 未处理
+          - value: "1"
+            description: 已确认
+          - value: "2"
+            description: 已恢复
+      - name: event_time
+        term: 发生时间
+        description: ""
+        type: datetime
+      - name: resource_name
+        term: 告警资源名称
+        description: 产生告警的设备名称
+        type: String
+      - name: event_location_name
+        term: 告警位置
+        description: 告警发生的物理位置路径
+        type: String
+relationships:
+  - source: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase
+    target: yovole_dm_clickhouse_prod.ck_fact_nanzi_resroom_hbase
+    type: LEFT
+    condition: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase.jf = yovole_dm_clickhouse_prod.ck_fact_nanzi_resroom_hbase.rowkey
+    description: 点位位于某机房
+  - source: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase
+    target: yovole_dm_clickhouse_prod.ck_fact_nanzi_resjj_hbase
+    type: LEFT
+    condition: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase.jjbm = yovole_dm_clickhouse_prod.ck_fact_nanzi_resjj_hbase.rowkey
+    description: 点位位于某机柜（如PDU点位）
+  - source: yovole_dm_clickhouse_prod.ck_fact_nanzi_resjj_hbase
+    target: yovole_dm_clickhouse_prod.ck_fact_nanzi_resroom_hbase
+    type: LEFT
+    condition: yovole_dm_clickhouse_prod.ck_fact_nanzi_resjj_hbase.jfmc = yovole_dm_clickhouse_prod.ck_fact_nanzi_resroom_hbase.rowkey
+    description: 机柜归属于机房
+  - source: yovole_dm_clickhouse_prod.ck_fact_donghuan_event_detail_hbase
+    target: yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase
+    type: LEFT
+    condition:
+      yovole_dm_clickhouse_prod.ck_fact_donghuan_event_detail_hbase.resource_id
+      = yovole_dm_clickhouse_prod.ck_fact_nanzi_devicepoint_hbase.dwid
+    description: 告警事件关联到具体设备点位
