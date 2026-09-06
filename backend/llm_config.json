@@ -1,5 +1,5 @@
 {
-  "active_vendor": "deepseek",
+  "active_vendor": "qwen",
   "vendors": {
     "openai": {
       "api_key": "",
@@ -17,7 +17,7 @@
       "active_multimodal_model": "gpt-5.5"
     },
     "deepseek": {
-      "api_key": "sk-f950619f3aaf4c78a38f41cbe99e96d2",
+      "api_key": "",
       "base_url": "https://api.deepseek.com/v1",
       "text_models": [
         "deepseek-chat",
@@ -32,16 +32,26 @@
       "api_key": "",
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "text_models": [
-        "qwen-plus",
-        "qwen-max",
-        "qwen-turbo"
+        "qwen3.8-max-0902",
+        "qwen3.7-text-embedding-flash",
+        "qwen3.7-text-rerank",
+        "ZHIPU/GLM-5.3-Flash",
+        "stepfun/step-3.7-flash",
+        "vanchin/deepseek-v4-pro",
+        "unisound/unisound-u2",
+        "vanchin/deepseek-v4-pro-0813",
+        "qwen3.8-flash",
+        "kimi-k3"
       ],
       "multimodal_models": [
-        "qwen-vl-plus",
-        "qwen-vl-max"
+        "qwen3-vl-flash-2026-01-22",
+        "qwen3-vl-plus-2025-12-19",
+        "qwen-vl-ocr-2025-11-20",
+        "qwen3-vl-flash",
+        "qwen3-vl-flash-2025-10-15"
       ],
-      "active_text_model": "qwen-plus",
-      "active_multimodal_model": "qwen-vl-plus"
+      "active_text_model": "qwen3.8-max-0902",
+      "active_multimodal_model": "qwen3-vl-flash-2026-01-22"
     },
     "volcengine": {
       "api_key": "",
@@ -93,21 +103,6 @@
       "multimodal_models": [],
       "active_text_model": "",
       "active_multimodal_model": ""
-    }
-  },
-  "database": {
-    "active_db": "mysql",
-    "connections": {
-      "mysql": {
-        "url": "mysql+pymysql://root:password123@localhost:3306/dw_store?charset=utf8mb4",
-        "pool_size": 10,
-        "max_overflow": 20
-      },
-      "postgresql": {
-        "url": "postgresql+psycopg2://postgres:password123@localhost:5432/dw_store",
-        "pool_size": 10,
-        "max_overflow": 20
-      }
     }
   }
 }
