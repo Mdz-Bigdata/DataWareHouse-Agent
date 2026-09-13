@@ -1,0 +1,402 @@
+"""数据资产域（dataset_）：数据集/数据集版本/场景标签/资产目录。
+
+闭环里「数据变成资产」的一环：采集与挖掘产出的 clip 在这里被组织成
+可版本化、可引用、可盘点的数据集与场景库。
+
+三条主线：
+  · 数据集主线  ods_dataset_info → ods_dataset_version → dwd_dataset_version_detail
+                → dws_dataset_statistics → ads_data_asset_catalog
+  · 成员主线    ods_dataset_data_list → dwd_dataset_data_relation（data_id 级）
+  · 场景主线    ods_scene_tag → dwd_scene_tag_relation → dws_scene_distribution
+                → ads_scene_library_summary
+
+结构与注释风格对齐参考实现 tables/_collect.py。
+"""
+
+from __future__ import annotations
+
+from ...domains import DataDomain, Layer
+from ..spec import Column as C
+from ..spec import TableSpec
+
+D = DataDomain.DATASET
+
+TABLES: list[TableSpec] = [
+    # ---------------------------------------------------------------- ODS (4)
+    TableSpec(
+        name="ods_dataset_info",
+        layer=Layer.ODS,
+        domain=D,
+        comment="数据集基础信息",
+        source_system="数据管理平台MySQL",
+        bucket=4,
+        primary_key=("dataset_id",),
+        columns=[
+            C("dataset_id", "STRING", "数据集 ID，跨域公共键", nullable=False),
+            C("dataset_name", "STRING", "数据集名称"),
+            C("dataset_type", "STRING", "数据集类型：train/eval/test/regression"),
+            C("project_code", "STRING", "所属项目编码"),
+            C("business_domain", "STRING", "业务域：城区NOA/高速NOA/AVP"),
+            C("task_type", "STRING", "任务类型：detection/segmentation/prediction"),
+            C("owner", "STRING", "负责人"),
+            C("owner_dept", "STRING", "负责部门"),
+            C("description", "STRING", "数据集描述与用途"),
+            C("latest_version", "STRING", "当前最新版本号"),
+            C("total_data_count", "BIGINT", "累计数据量（clip 数）"),
+            C("quality_score", "DOUBLE", "质量评分（0-5，资产目录直接引用）"),
+            C("dataset_status", "STRING", "状态：draft/published/archived"),
+            C("is_core_asset", "BOOLEAN", "是否核心资产"),
+            C("create_time", "TIMESTAMP(3)", "创建时间"),
+            C("publish_time", "TIMESTAMP(3)", "首次发布时间"),
+        ],
+    ),
+    TableSpec(
+        name="ods_dataset_version",
+        layer=Layer.ODS,
+        domain=D,
+        comment="数据集版本",
+        source_system="数据管理平台MySQL",
+        bucket=4,
+        primary_key=("dataset_id", "dataset_version"),
+        notes="复合主键表达完整粒度：同一数据集可以有多个版本（原文点名的示例）",
+        columns=[
+            C("dataset_id", "STRING", "数据集 ID", nullable=False),
+            C("dataset_version", "STRING", "数据集版本号，跨域公共键", nullable=False),
+            C("version_name", "STRING", "版本别名，如「城区NOA主数据集 v12」"),
+            C("parent_version", "STRING", "父版本号（增量版本溯源）"),
+            C("version_status", "STRING", "版本状态：draft/released/deprecated"),
+            C("change_type", "STRING", "变更方式：full/incremental"),
+            C("change_note", "STRING", "变更说明"),
+            C("data_count", "BIGINT", "数据量（clip 数）"),
+            C("image_count", "BIGINT", "图片数量"),
+            C("annotation_count", "BIGINT", "标注框数量"),
+            C("scene_tag_count", "INT", "覆盖场景标签数"),
+            C("storage_path", "STRING", "对象存储路径前缀"),
+            C("storage_size_bytes", "BIGINT", "版本占用存储"),
+            C("creator", "STRING", "创建人"),
+            C("create_time", "TIMESTAMP(3)", "创建时间"),
+            C("release_time", "TIMESTAMP(3)", "发布时间"),
+        ],
+    ),
+    TableSpec(
+        name="ods_dataset_data_list",
+        layer=Layer.ODS,
+        domain=D,
+        comment="数据集数据清单（数据集包含哪些 clip）",
+        source_system="数据管理平台MySQL",
+        bucket=4,
+        primary_key=("dataset_id", "dataset_version", "data_id"),
+        notes="复合主键表达完整粒度：一条记录 = 某数据集某版本收录了某个 clip",
+        columns=[
+            C("dataset_id", "STRING", "数据集 ID", nullable=False),
+            C("dataset_version", "STRING", "数据集版本号", nullable=False),
+            C("data_id", "STRING", "一级 ID：clip 级终身锚点", nullable=False),
+            C("artifact_id", "STRING", "二级 ID：入集所用的处理产物（标注/质检产物）"),
+            C("split_type", "STRING", "数据划分：train/val/test"),
+            C("add_type", "STRING", "加入方式：manual/rule/mining"),
+            C("add_reason", "STRING", "加入原因（定向补采单号/挖掘任务号等）"),
+            C("source_channel", "STRING", "来源渠道：collect/trigger/mining/simulation"),
+            C("scene_tag_id", "STRING", "主场景标签 ID"),
+            C("sample_weight", "DOUBLE", "采样权重"),
+            C("is_valid", "BOOLEAN", "是否有效（false=已移出）"),
+            C("operator", "STRING", "操作人"),
+            C("add_time", "TIMESTAMP(3)", "加入时间"),
+            C("remove_time", "TIMESTAMP(3)", "移出时间"),
+        ],
+    ),
+    TableSpec(
+        name="ods_scene_tag",
+        layer=Layer.ODS,
+        name_omits_domain=True,
+        domain=D,
+        comment="场景标签字典（场景库的标签定义）",
+        source_system="场景标签系统",
+        bucket=4,
+        primary_key=("scene_tag_id",),
+        columns=[
+            C("scene_tag_id", "STRING", "场景标签 ID", nullable=False),
+            C("tag_code", "STRING", "标签编码，如 CONSTRUCTION_ZONE"),
+            C("tag_name", "STRING", "标签名称，如「施工区域」"),
+            C("scene_type", "STRING", "场景类型：道路/天气/光照/交通参与者/驾驶行为"),
+            C("parent_tag_id", "STRING", "父标签 ID（标签树）"),
+            C("tag_level", "INT", "标签层级（1=一级分类）"),
+            C("tag_source", "STRING", "标签来源三分类：collect/rule/model"),
+            C("tag_definition", "STRING", "标签判定口径与定义"),
+            C("target_count", "BIGINT", "达标线（该场景目标数据量）"),
+            C("priority", "STRING", "补采优先级：P0/P1/P2"),
+            C("is_hard_case_related", "BOOLEAN", "是否难例相关场景"),
+            C("tag_status", "STRING", "标签状态：enabled/disabled"),
+            C("owner", "STRING", "标签负责人"),
+            C("create_time", "TIMESTAMP(3)", "创建时间"),
+            C("effective_from", "TIMESTAMP(3)", "生效时间"),
+        ],
+    ),
+    # ---------------------------------------------------------------- DWD (3)
+    TableSpec(
+        name="dwd_dataset_version_detail",
+        layer=Layer.DWD,
+        domain=D,
+        comment="数据集版本明细",
+        bucket=4,
+        primary_key=("dataset_id", "version"),
+        notes=(
+            "主键原则二的原文点名示例：PK=(dataset_id, version)，同一数据集可有多个版本。"
+            "dataset_version 是跨域公共键的同名冗余列，取值恒等于 version——"
+            "原文 PK 用 version，而训练/评测域统一用 dataset_version 关联，"
+            "冗余一列避免下游记两套列名（与 parent_artifact_id 冗余落表同理）。"
+            "dataset_version_id 是血缘图库 DatasetVersion 节点的单列 ID（形如 DS_0001_V2），"
+            "artifact_refs 是 REFERENCES 边的对账源"
+        ),
+        columns=[
+            C("dataset_id", "STRING", "数据集 ID", nullable=False),
+            C("version", "STRING", "版本号（原文点名的复合主键第二段）", nullable=False),
+            C("dataset_version", "STRING", "跨域公共键冗余列，恒等于 version"),
+            C(
+                "dataset_version_id",
+                "STRING",
+                "版本单列 ID（{dataset_id}_{version}，如 DS_0001_V2），血缘图库 DatasetVersion 节点 ID",
+            ),
+            C(
+                "artifact_refs",
+                "STRING",
+                "锁定引用的产物 ID 列表（冗余落表，图库 REFERENCES 边的对账源，保证可复现）",
+            ),
+            C("dataset_name", "STRING", "数据集名称"),
+            C("dataset_type", "STRING", "数据集类型：train/eval/test/regression"),
+            C("project_code", "STRING", "所属项目编码"),
+            C("task_type", "STRING", "任务类型：detection/segmentation/prediction"),
+            C("parent_version", "STRING", "父版本号（增量版本溯源）"),
+            C("version_status", "STRING", "版本状态：draft/released/deprecated"),
+            C("data_count", "BIGINT", "数据量（clip 数）"),
+            C("image_count", "BIGINT", "图片数量"),
+            C("annotation_count", "BIGINT", "标注框数量"),
+            C("scene_tag_count", "INT", "覆盖场景标签数"),
+            C("badcase_data_count", "BIGINT", "其中来自 Badcase 回流的数据量"),
+            C("mining_data_count", "BIGINT", "其中来自挖掘平台的数据量"),
+            C("storage_path", "STRING", "对象存储路径前缀"),
+            C("storage_size_bytes", "BIGINT", "版本占用存储"),
+            C("model_version", "STRING", "首个消费该版本的模型版本"),
+            C("quality_score", "DOUBLE", "质量评分（0-5）"),
+            C("release_time", "TIMESTAMP(3)", "发布时间"),
+        ],
+    ),
+    TableSpec(
+        name="dwd_dataset_data_relation",
+        layer=Layer.DWD,
+        domain=D,
+        comment="数据集-数据关联（data_id 级成员关系）",
+        bucket=8,
+        primary_key=("dataset_id", "dataset_version", "data_id"),
+        notes=(
+            "大体量明细：数据集版本 × clip 多对多展开。"
+            "挂 data_id + artifact_id，让「某模型训练用过哪些原始 clip」成为主键查询"
+        ),
+        columns=[
+            C("dataset_id", "STRING", "数据集 ID", nullable=False),
+            C("dataset_version", "STRING", "数据集版本号", nullable=False),
+            C("data_id", "STRING", "一级 ID：clip 级终身锚点", nullable=False),
+            C("artifact_id", "STRING", "二级 ID：入集所用的处理产物"),
+            C("parent_artifact_id", "STRING", "血缘父产物（冗余落表，图库对账兜底）"),
+            C("artifact_status", "STRING", "产物状态：active/superseded/invalid"),
+            C("run_id", "STRING", "三级 ID：产出该产物的处理运行"),
+            C("project_code", "STRING", "所属项目编码"),
+            C("vehicle_code", "STRING", "采集车辆编码"),
+            C("split_type", "STRING", "数据划分：train/val/test"),
+            C("source_channel", "STRING", "来源渠道：collect/trigger/mining/simulation"),
+            C("add_type", "STRING", "加入方式：manual/rule/mining"),
+            C("primary_scene_tag_id", "STRING", "主场景标签 ID"),
+            C("scene_tag_count", "INT", "该 clip 命中的场景标签数"),
+            C("is_hard_case", "BOOLEAN", "是否难例（难例库回流）"),
+            C("sample_weight", "DOUBLE", "采样权重"),
+            C("relation_status", "STRING", "成员状态：active/removed"),
+            C("add_time", "TIMESTAMP(3)", "加入时间"),
+            C("remove_time", "TIMESTAMP(3)", "移出时间"),
+        ],
+    ),
+    TableSpec(
+        name="dwd_scene_tag_relation",
+        layer=Layer.DWD,
+        name_omits_domain=True,
+        domain=D,
+        comment="数据-场景标签关联（clip 级打标结果）",
+        bucket=8,
+        primary_key=("data_id", "scene_tag_id"),
+        notes=(
+            "复合主键表达完整粒度：一个 clip 命中多个场景标签。"
+            "三来源（collect/rule/model）在此合流，模型打标的结果带 artifact_id 与 run_id 可追溯"
+        ),
+        columns=[
+            C("data_id", "STRING", "一级 ID：clip 级终身锚点", nullable=False),
+            C("scene_tag_id", "STRING", "场景标签 ID", nullable=False),
+            C("tag_code", "STRING", "标签编码"),
+            C("tag_name", "STRING", "标签名称"),
+            C("scene_type", "STRING", "场景类型：道路/天气/光照/交通参与者/驾驶行为"),
+            C("tag_source", "STRING", "标签来源三分类：collect/rule/model"),
+            C("confidence", "DOUBLE", "打标置信度（model 来源有效）"),
+            C("artifact_id", "STRING", "二级 ID：打标产物（模型推理产物）"),
+            C("parent_artifact_id", "STRING", "血缘父产物（冗余落表，图库对账兜底）"),
+            C("artifact_status", "STRING", "产物状态：active/superseded/invalid"),
+            C("run_id", "STRING", "三级 ID：打标运行 ID"),
+            C("model_version", "STRING", "打标模型版本（tag_source=model）"),
+            C("project_code", "STRING", "所属项目编码"),
+            C("vehicle_code", "STRING", "采集车辆编码"),
+            C("is_primary", "BOOLEAN", "是否该 clip 的主场景标签"),
+            C("verify_status", "STRING", "人工校验状态：unverified/confirmed/rejected"),
+            C("verifier", "STRING", "校验人"),
+            C("tag_time", "TIMESTAMP(3)", "打标时间"),
+        ],
+    ),
+    # ---------------------------------------------------------------- DWS (2)
+    TableSpec(
+        name="dws_dataset_statistics",
+        layer=Layer.DWS,
+        domain=D,
+        comment="数据集统计指标",
+        bucket=2,
+        primary_key=("stat_date", "project_code", "dataset_id", "dataset_version"),
+        notes="按「日期 × 项目 × 数据集版本」预聚合，口径在此层固化，ADS 资产目录直接取数",
+        columns=[
+            C("stat_date", "DATE", "统计日期（T+1）", nullable=False),
+            C("project_code", "STRING", "所属项目编码", nullable=False),
+            C("dataset_id", "STRING", "数据集 ID", nullable=False),
+            C("dataset_version", "STRING", "数据集版本号", nullable=False),
+            C("dataset_type", "STRING", "数据集类型：train/eval/test/regression"),
+            C("business_domain", "STRING", "业务域：城区NOA/高速NOA/AVP"),
+            C("data_count", "BIGINT", "数据量（clip 数）"),
+            C("image_count", "BIGINT", "图片数量"),
+            C("annotation_count", "BIGINT", "标注框数量"),
+            C("new_data_count", "BIGINT", "当日新增数据量"),
+            C("removed_data_count", "BIGINT", "当日移出数据量"),
+            C("scene_tag_count", "INT", "覆盖场景标签数"),
+            C("scene_coverage_rate", "DOUBLE", "场景覆盖度 = 覆盖标签数 / 标签库总数"),
+            C("hard_case_count", "BIGINT", "难例数量"),
+            C("hard_case_rate", "DOUBLE", "难例占比"),
+            C("badcase_related_count", "BIGINT", "关联 Badcase 的数据量"),
+            C("train_task_ref_count", "INT", "被训练任务引用次数"),
+            C("eval_task_ref_count", "INT", "被评测任务引用次数"),
+            C("storage_size_bytes", "BIGINT", "占用存储"),
+            C("quality_score", "DOUBLE", "质量评分（0-5）"),
+        ],
+    ),
+    TableSpec(
+        name="dws_scene_distribution",
+        layer=Layer.DWS,
+        name_omits_suffix=True,  # 源文给定表名，不带标准粒度后缀
+        name_omits_domain=True,
+        domain=D,
+        comment="场景分布统计",
+        bucket=2,
+        primary_key=("stat_date", "project_code", "scene_type", "scene_tag_id"),
+        notes=(
+            "按「日期 × 项目 × 场景类型 × 场景标签」预聚合，场景缺口在此层算出，"
+            "下游 ads_scene_library_summary 与挖掘域 dwd_scene_gap_detail 共用同一口径"
+        ),
+        columns=[
+            C("stat_date", "DATE", "统计日期（T+1）", nullable=False),
+            C("project_code", "STRING", "所属项目编码", nullable=False),
+            C(
+                "scene_type",
+                "STRING",
+                "场景类型：道路/天气/光照/交通参与者/驾驶行为",
+                nullable=False,
+            ),
+            C("scene_tag_id", "STRING", "场景标签 ID", nullable=False),
+            C("tag_code", "STRING", "标签编码"),
+            C("tag_name", "STRING", "标签名称"),
+            C("tag_source", "STRING", "主要标签来源：collect/rule/model"),
+            C("total_data_count", "BIGINT", "该场景累计数据量（clip 数）"),
+            C("high_quality_count", "BIGINT", "其中高质量数据量（质检通过且标注合格）"),
+            C("new_data_count", "BIGINT", "当日新增数据量"),
+            C("dataset_ref_count", "INT", "被数据集引用次数"),
+            C("badcase_count", "BIGINT", "关联 Badcase 数量"),
+            C("badcase_rate", "DOUBLE", "Badcase 占比"),
+            C("target_count", "BIGINT", "达标线（目标数据量）"),
+            C("coverage_rate", "DOUBLE", "覆盖度 = total_data_count / target_count"),
+            C("gap_count", "BIGINT", "缺口量 = max(target_count - total_data_count, 0)"),
+            C("coverage_status", "STRING", "覆盖状态：GAP/FILLING/COVERED"),
+            C("mom_growth_rate", "DOUBLE", "环比增长率"),
+            C("avg_confidence", "DOUBLE", "模型打标平均置信度"),
+        ],
+    ),
+    # ---------------------------------------------------------------- ADS (2)
+    TableSpec(
+        name="ads_data_asset_catalog",
+        layer=Layer.ADS,
+        name_omits_domain=True,
+        domain=D,
+        comment="数据资产目录（服务数据管理平台）",
+        bucket=2,
+        primary_key=("stat_date", "asset_type", "asset_id"),
+        notes=(
+            "零 JOIN：按「资产类型 × 负责人」登记数据集/场景库/难例库/评测集的"
+            "注册数、使用次数与质量评分；低分且长期无人使用的资产给出归档建议"
+        ),
+        columns=[
+            C("stat_date", "DATE", "统计日期（T+1 快照）", nullable=False),
+            C(
+                "asset_type",
+                "STRING",
+                "资产类型：dataset/scene_library/hard_case_library/eval_set",
+                nullable=False,
+            ),
+            C("asset_id", "STRING", "资产 ID", nullable=False),
+            C("asset_name", "STRING", "资产名称，如「城区NOA主数据集 v12」"),
+            C("dataset_id", "STRING", "关联数据集 ID（asset_type=dataset 时）"),
+            C("dataset_version", "STRING", "关联数据集版本号"),
+            C("project_code", "STRING", "所属项目编码"),
+            C("business_domain", "STRING", "业务域：城区NOA/高速NOA/AVP"),
+            C("owner", "STRING", "负责人"),
+            C("owner_dept", "STRING", "负责部门"),
+            C("data_count", "BIGINT", "资产数据量（clip 数）"),
+            C("storage_size_bytes", "BIGINT", "占用存储"),
+            C("storage_tier", "STRING", "存储分层：hot/warm/cold"),
+            C("ref_count", "INT", "累计被引用次数（训练/评测任务）"),
+            C("ref_count_90d", "INT", "近 90 天被引用次数（本季度热度）"),
+            C("last_used_time", "TIMESTAMP(3)", "最近一次被引用时间"),
+            C("quality_score", "DOUBLE", "质量评分（0-5）"),
+            C("asset_status", "STRING", "资产状态：active/idle/archived"),
+            C("archive_suggestion", "STRING", "治理建议：keep/archive/delete"),
+            C("register_time", "TIMESTAMP(3)", "资产注册时间"),
+        ],
+    ),
+    TableSpec(
+        name="ads_scene_library_summary",
+        layer=Layer.ADS,
+        name_omits_domain=True,
+        domain=D,
+        comment="场景库汇总（服务数据挖掘平台与数据管理平台）",
+        bucket=2,
+        primary_key=("stat_date", "scene_type", "scene_tag_id"),
+        notes=(
+            "零 JOIN：按「场景类型 × 场景标签」统计总量、高质量量、关联 Badcase 与覆盖度；"
+            "覆盖状态流转 GAP → FILLING → COVERED 驱动定向补采"
+        ),
+        columns=[
+            C("stat_date", "DATE", "统计日期（T+1）", nullable=False),
+            C(
+                "scene_type",
+                "STRING",
+                "场景类型：道路/天气/光照/交通参与者/驾驶行为",
+                nullable=False,
+            ),
+            C("scene_tag_id", "STRING", "场景标签 ID", nullable=False),
+            C("tag_code", "STRING", "标签编码，如 CONSTRUCTION_ZONE"),
+            C("tag_name", "STRING", "标签名称，如「施工区域」"),
+            C("priority", "STRING", "补采优先级：P0/P1/P2"),
+            C("covered_project_count", "INT", "覆盖项目数"),
+            C("total_data_count", "BIGINT", "场景总数据量（clip 数）"),
+            C("high_quality_count", "BIGINT", "高质量数据量"),
+            C("high_quality_rate", "DOUBLE", "高质量占比"),
+            C("related_badcase_count", "BIGINT", "关联 Badcase 数量"),
+            C("badcase_mom_rate", "DOUBLE", "Badcase 环比变化率"),
+            C("target_count", "BIGINT", "达标线（目标数据量）"),
+            C("coverage_rate", "DOUBLE", "覆盖度 = total_data_count / target_count"),
+            C("gap_count", "BIGINT", "缺口量"),
+            C("coverage_status", "STRING", "覆盖状态：GAP/FILLING/COVERED"),
+            C("dataset_ref_count", "INT", "被数据集引用次数"),
+            C("mining_task_count", "INT", "针对该场景下发的定向补采/挖掘任务数"),
+            C("trend_7d", "STRING", "近 7 日趋势：rising/flat/falling"),
+            C("last_supplement_time", "TIMESTAMP(3)", "最近一次补采入库时间"),
+        ],
+    ),
+]

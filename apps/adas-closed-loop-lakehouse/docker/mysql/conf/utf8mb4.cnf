@@ -1,0 +1,18 @@
+# =============================================================================
+# 客户端默认字符集。
+#
+# 服务端字符集已经在 compose 的 command 里设过（--character-set-server=utf8mb4），
+# 但 `docker exec adas-mysql mysql -e "..."` 这种临时客户端连接**不继承**服务端设置，
+# 默认还是 latin1 —— 于是塞中文测试数据（场景名、任务名）会写成乱码，
+# 而且 CDC 会把乱码原样同步进湖，排查起来很费时间。
+#
+# 这个文件让容器内所有 mysql / mysqldump 客户端默认走 utf8mb4，堵掉这个坑。
+# =============================================================================
+[client]
+default-character-set = utf8mb4
+
+[mysql]
+default-character-set = utf8mb4
+
+[mysqldump]
+default-character-set = utf8mb4

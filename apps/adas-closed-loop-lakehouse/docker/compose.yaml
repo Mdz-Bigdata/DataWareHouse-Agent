@@ -1,0 +1,548 @@
+# =============================================================================
+# ADAS 闭环湖仓 · 全栈本地编排
+#
+#   MinIO(Paimon warehouse) + Flink(JM/TM/SQL Gateway) + StarRocks
+#   + Neo4j(血缘) + Kafka(实时通道) + MySQL(模拟源系统供 CDC)
+#
+# 启动（在应用根目录 apps/adas-closed-loop-lakehouse/ 执行）：
+#     cp .env.example .env
+#     docker compose --env-file .env -f docker/compose.yaml up -d
+#
+# 所有默认值逐字对齐 src/adas_lakehouse/config.py：不写 .env 也能起，
+# 起来之后宿主机上直接 `python -m adas_lakehouse.cli ...` 即可连通。
+#
+# -----------------------------------------------------------------------------
+# ⚠️ 宿主机端口号段：186xx（读之前先看这一段）
+#
+#   本项目独占 186xx 宿主机端口号段，用来避开同仓平台
+#   （DataWareHouse-Agent 的 compose.yaml 已发布 8080/8000/3000/8020/8030/
+#   8040/6379/6333/9200）。平台是既有的，不动它；本项目让路。
+#
+#   规则只有一条：**只改宿主机发布端口（ports 映射的左半边），容器端口一律不动。**
+#   各组件在容器里仍然监听自己的原生默认端口（9000/9001/3306/9030/8030/8040/
+#   7474/7687/6379/8081/8083/9092），compose 网络内服务间互访一律用
+#   「服务名 + 容器端口」（minio:9000 / kafka:29092 / mysql:3306 / starrocks:9030
+#   / neo4j:7687），跟宿主机端口没有任何关系。
+#
+#   宿主机 → 容器 对照：
+#       18600→9000  MinIO S3      18601→9001  MinIO Console
+#       18606→3306  MySQL(CDC 源)
+#       18630→9030  StarRocks 查询  18631→8030  StarRocks FE HTTP
+#       18640→8040  StarRocks BE HTTP
+#       18674→7474  Neo4j Browser   18687→7687  Neo4j Bolt
+#       18679→6379  Redis(控制面)
+#       18681→8081  Flink Web UI    18683→8083  Flink SQL Gateway
+#       18692→9092  Kafka
+#
+#   容器内部的 localhost 是容器自己。Flink / StarRocks 容器要访问 MinIO、
+#   Kafka、MySQL，必须用 compose 网络里的服务名（minio / kafka / mysql）。
+#   Docker 不允许把 localhost 重定向到别的容器（容器 /etc/hosts 里
+#   `127.0.0.1 localhost` 恒定优先），所以这里的做法是：
+#     · 每个容器的 environment 里用服务名覆盖掉 localhost 默认值；
+#     · flink 服务额外挂载 ../flink/sql 与 ../ddl，方便在容器里跑 SQL。
+#
+#   ⚠️ ddl/*.sql 与 flink/sql/*.sql 里渲染进去的是**宿主机口径**
+#   （'http://localhost:18600'、'localhost:18692'、CDC 的 'port' = '18606'），
+#   在宿主机侧执行时直接可用，不用再改。要在**容器网络内**执行，
+#   用容器口径重新导出一份：
+#       MINIO_ENDPOINT=http://minio:9000 \
+#       KAFKA_BOOTSTRAP_SERVERS=kafka:29092 \
+#       CDC_MYSQL_HOSTNAME=mysql \
+#       python3 scripts/export_ddl.py
+#   详见 docker/README.md。
+#   （starrocks-init 已经用容器口径 http://minio:9000 建好了 External Catalog，
+#     所以 StarRocks 这一路不需要你手工改。）
+# =============================================================================
+
+name: adas-lakehouse
+
+networks:
+  adas-net:
+    driver: bridge
+
+volumes:
+  minio-data:
+  mysql-data:
+  neo4j-data:
+  neo4j-logs:
+  starrocks-data:
+  flink-checkpoints:
+  redis-data:
+
+# -----------------------------------------------------------------------------
+# Flink 三个服务（jobmanager / taskmanager / sql-gateway）共用同一镜像与同一套
+# 连接参数，用 YAML 锚点收敛，避免三处漂移。
+# -----------------------------------------------------------------------------
+x-flink-image: &flink-image
+  build:
+    context: ./flink
+    dockerfile: Dockerfile
+  image: adas-lakehouse/flink:1.20.1-paimon-1.0.1
+
+x-flink-env: &flink-env
+  # —— 容器口径覆盖（config.py 默认的 localhost 在容器内不成立）——
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-adas}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-adas-secret}
+  PAIMON_WAREHOUSE_BUCKET: ${PAIMON_WAREHOUSE_BUCKET:-adas-lakehouse}
+  RAW_BUCKET: ${RAW_BUCKET:-adas-raw}
+  PAIMON_CATALOG: ${PAIMON_CATALOG:-paimon}
+  PAIMON_DATABASE: ${PAIMON_DATABASE:-adas_lakehouse}
+  PAIMON_METASTORE: ${PAIMON_METASTORE:-filesystem}
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-adas-lakehouse}
+  KAFKA_TRIGGER_TOPIC: ${KAFKA_TRIGGER_TOPIC:-vehicle.trigger.event}
+  KAFKA_PRODUCTION_TOPIC: ${KAFKA_PRODUCTION_TOPIC:-production.event}
+  KAFKA_FILE_META_TOPIC: ${KAFKA_FILE_META_TOPIC:-collect.file.meta}
+  CDC_MYSQL_HOSTNAME: mysql
+  CDC_MYSQL_PORT: "3306"
+  CDC_MYSQL_USERNAME: ${CDC_MYSQL_USERNAME:-adas}
+  CDC_MYSQL_PASSWORD: ${CDC_MYSQL_PASSWORD:-adas-secret}
+  CDC_MYSQL_SERVER_ID: ${CDC_MYSQL_SERVER_ID:-5400-5404}
+
+services:
+
+  # ===========================================================================
+  # MinIO —— Paimon warehouse（s3://adas-lakehouse/warehouse）与原始文件桶
+  # config.MinioConfig: endpoint=http://localhost:18600 access=adas secret=adas-secret
+  # 宿主机口径已是发布端口 18600，无需 .env 覆盖；容器内 MinIO 仍监听 9000。
+  # ===========================================================================
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: adas-minio
+    # --console-address 是**容器内**的监听端口，保持 9001 不动
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # MinIO 的 root 账号即 config.MinioConfig 的 access_key / secret_key
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-adas}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-adas-secret}
+      # 宿主机口径：浏览器访问 S3 API 端口时，MinIO 会 302 到 Console。
+      # 不设这一项它会按容器内端口 9001 跳转，而宿主机上 Console 发布在 18601，
+      # 跳过去就是死链。这里显式告诉它「宿主机上的 Console 在哪」。
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:18601
+    ports:
+      - "18600:9000"   # S3 API：宿主机 18600 → 容器 9000（容器内仍是 9000）
+      - "18601:9001"   # Web Console：宿主机 18601 → 容器 9001（config.py 不读，纯人用）
+    volumes:
+      - minio-data:/data
+    networks: [adas-net]
+    healthcheck:
+      # 新旧 MinIO 镜像里 curl / mc 的有无不一致，两条都试一遍
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # init 容器：建桶。桶名取自 config.MinioConfig.warehouse_bucket / raw_bucket。
+  # 跑完即退出，下游用 condition: service_completed_successfully 等它。
+  # ---------------------------------------------------------------------------
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: adas-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-adas}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-adas-secret}
+      PAIMON_WAREHOUSE_BUCKET: ${PAIMON_WAREHOUSE_BUCKET:-adas-lakehouse}
+      RAW_BUCKET: ${RAW_BUCKET:-adas-raw}
+    entrypoint: ["/bin/sh", "/init/init-buckets.sh"]
+    volumes:
+      - ./minio:/init:ro
+    networks: [adas-net]
+    restart: "no"
+
+  # ===========================================================================
+  # MySQL —— 模拟源系统，供通道一 Flink CDC 读 binlog
+  #   collect_platform.collect_task   → ods_collect_task
+  #   vehicle_platform.vehicle_info   → ods_vehicle_info
+  #   config_platform.sensor_config   → ods_sensor_config
+  # 同一实例还放控制面本地库 adas_mining_platform（controlplane/store.py）。
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0.40
+    container_name: adas-mysql
+    command:
+      # CDC 三阶段的前提：ROW 格式 binlog + 全镜像 + GTID
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --binlog-expire-logs-seconds=604800
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-adas-root}
+      # 业务账号 = CDC_MYSQL_USERNAME / CDC_MYSQL_PASSWORD（ingest/channels.py 默认 adas）
+      MYSQL_USER: ${CDC_MYSQL_USERNAME:-adas}
+      MYSQL_PASSWORD: ${CDC_MYSQL_PASSWORD:-adas-secret}
+    ports:
+      # 宿主机 18606 → 容器 3306。宿主机侧 CDC_MYSQL_PORT /
+      # CONTROL_PLANE_MYSQL_PORT 因此要写 18606；容器内（x-flink-env 的
+      # CDC_MYSQL_HOSTNAME=mysql + CDC_MYSQL_PORT=3306）保持 3306 不动。
+      - "18606:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      # 客户端默认 utf8mb4：不加的话 `docker exec ... mysql -e` 塞中文会变乱码，
+      # 而且 CDC 会把乱码原样同步进湖。详见该文件注释。
+      - ./mysql/conf/utf8mb4.cnf:/etc/mysql/conf.d/utf8mb4.cnf:ro
+    networks: [adas-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"${MYSQL_ROOT_PASSWORD:-adas-root}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Kafka —— 通道二（车端触发事件 / 产线事件）与通道三的文件元信息
+  # KRaft 单节点。双 listener：
+  #   kafka:29092         → 容器网络内（Flink 用这个），不受端口迁移影响
+  #   localhost:18692     → 宿主机（容器内仍监听 9092，只是发布到 18692）
+  # 注：本地栈刻意不给 Kafka 挂数据卷 —— apache/kafka 镜像以非 root 运行，
+  #     新建命名卷是 root 属主会导致启动失败；topic 由 kafka-init 幂等重建，
+  #     开发栈丢消息无所谓。要持久化请自行 `user: root` + 指定 KAFKA_LOG_DIRS。
+  # ===========================================================================
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: adas-kafka
+    environment:
+      CLUSTER_ID: adas-lakehouse-kraft-01
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      # 监听地址必须写成 `://:port`（空 host）而不是 0.0.0.0 —— combined 模式下
+      # CONTROLLER 不在 advertised.listeners 里，Kafka 会拿 listeners 的 host 去兜底，
+      # 写 0.0.0.0 会直接被 KafkaConfig 拒绝：advertised.listeners 不许用不可路由地址。
+      # listeners = 容器内真实监听端口，端口迁移一律不动（PLAINTEXT_HOST 仍是 9092）
+      KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:29093,PLAINTEXT_HOST://:9092
+      # advertised = 客户端拿到元数据后真正去连的地址，要分两种口径判断：
+      #   PLAINTEXT://kafka:29092        容器内客户端（Flink）走服务名 → 不动
+      #   PLAINTEXT_HOST://localhost:186xx  宿主机客户端会照着这个地址重连，
+      #     必须写**宿主机发布端口** 18692，写 9092 的话宿主机上根本没人监听。
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:18692
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      # 单节点 combined 模式，controller 连的是自己：用 localhost 不依赖 DNS
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: "3"
+    ports:
+      # 宿主机 18692 → 容器 9092；宿主机侧 KAFKA_BOOTSTRAP_SERVERS 写 localhost:18692
+      - "18692:9092"
+    networks: [adas-net]
+    healthcheck:
+      # ⚠️ 必须走容器内部 listener kafka:29092，不能再用 localhost:9092：
+      # 这个脚本是先 bootstrap 拿元数据、再按 **advertised** 地址逐个重连的。
+      # 从 PLAINTEXT_HOST 进来拿到的 advertised 现在是 localhost:18692，
+      # 那是宿主机端口，容器内没人监听 → 健康检查会永远失败、整栈起不来。
+      # PLAINTEXT 这一路 advertised 是 kafka:29092，容器内可解析，稳。
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # init 容器：建 4 个 topic（名字取自 config.KafkaConfig + channels.py）
+  #   vehicle.trigger.event / production.event / collect.file.meta
+  #   lineage.change.event（flink/sql/lineage_realtime_sync.sql）
+  # ---------------------------------------------------------------------------
+  kafka-init:
+    image: apache/kafka:3.9.0
+    container_name: adas-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TRIGGER_TOPIC: ${KAFKA_TRIGGER_TOPIC:-vehicle.trigger.event}
+      KAFKA_PRODUCTION_TOPIC: ${KAFKA_PRODUCTION_TOPIC:-production.event}
+      KAFKA_FILE_META_TOPIC: ${KAFKA_FILE_META_TOPIC:-collect.file.meta}
+      KAFKA_LINEAGE_TOPIC: ${KAFKA_LINEAGE_TOPIC:-lineage.change.event}
+    entrypoint: ["/bin/bash", "/init/init-topics.sh"]
+    volumes:
+      - ./kafka:/init:ro
+    networks: [adas-net]
+    restart: "no"
+
+  # ===========================================================================
+  # Flink JobManager
+  # config.FlinkConfig.jobmanager_url 默认 http://localhost:18681（已是发布端口，无需覆盖）
+  # 容器内 rest.port 仍是 8081。
+  # ===========================================================================
+  jobmanager:
+    <<: *flink-image
+    container_name: adas-flink-jobmanager
+    command: ["jobmanager"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+    environment:
+      <<: *flink-env
+      # 官方 entrypoint 会把 FLINK_PROPERTIES 追加进 conf/config.yaml
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        parallelism.default: ${FLINK_PARALLELISM:-2}
+        execution.checkpointing.interval: ${FLINK_CHECKPOINT_INTERVAL_MS:-60000} ms
+        s3.endpoint: http://minio:9000
+        s3.access-key: ${MINIO_ACCESS_KEY:-adas}
+        s3.secret-key: ${MINIO_SECRET_KEY:-adas-secret}
+        s3.path.style.access: true
+    ports:
+      # 宿主机 18681 → 容器 8081。容器内 rest.port 仍是 8081（sql-gateway 的
+      # rest.address: jobmanager + rest.port: 8081 走的是容器口径，不动）。
+      - "18681:8081"   # Flink Web UI / REST
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - ../flink/sql:/opt/adas/flink-sql:ro
+      - ../ddl:/opt/adas/ddl:ro
+    networks: [adas-net]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Flink TaskManager
+  # ===========================================================================
+  taskmanager:
+    <<: *flink-image
+    container_name: adas-flink-taskmanager
+    command: ["taskmanager"]
+    depends_on:
+      jobmanager:
+        condition: service_healthy
+    environment:
+      <<: *flink-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: ${FLINK_TASK_SLOTS:-4}
+        s3.endpoint: http://minio:9000
+        s3.access-key: ${MINIO_ACCESS_KEY:-adas}
+        s3.secret-key: ${MINIO_SECRET_KEY:-adas-secret}
+        s3.path.style.access: true
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - ../flink/sql:/opt/adas/flink-sql:ro
+      - ../ddl:/opt/adas/ddl:ro
+    networks: [adas-net]
+    healthcheck:
+      # TaskManager 没有 HTTP 端点，只能看进程
+      test: ["CMD-SHELL", "pgrep -f TaskManagerRunner >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Flink SQL Gateway
+  # config.FlinkConfig.sql_gateway_url 默认 http://localhost:18683（已是发布端口，无需覆盖）
+  # 容器内 sql-gateway.endpoint.rest.port 仍是 8083。
+  # 官方 entrypoint 只对 jobmanager/taskmanager 处理 FLINK_PROPERTIES，
+  # 所以这里走自带的 sql-gateway-entrypoint.sh（同样吃 FLINK_PROPERTIES）。
+  # ===========================================================================
+  sql-gateway:
+    <<: *flink-image
+    container_name: adas-flink-sql-gateway
+    entrypoint: ["/opt/adas/bin/sql-gateway-entrypoint.sh"]
+    depends_on:
+      jobmanager:
+        condition: service_healthy
+      taskmanager:
+        condition: service_healthy
+    environment:
+      <<: *flink-env
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        rest.address: jobmanager
+        rest.port: 8081
+        parallelism.default: ${FLINK_PARALLELISM:-2}
+        execution.checkpointing.interval: ${FLINK_CHECKPOINT_INTERVAL_MS:-60000} ms
+        s3.endpoint: http://minio:9000
+        s3.access-key: ${MINIO_ACCESS_KEY:-adas}
+        s3.secret-key: ${MINIO_SECRET_KEY:-adas-secret}
+        s3.path.style.access: true
+    ports:
+      # 宿主机 18683 → 容器 8083（sql-gateway.endpoint.rest.port 仍是 8083）
+      - "18683:8083"
+    volumes:
+      - ../flink/sql:/opt/adas/flink-sql:ro
+      - ../ddl:/opt/adas/ddl:ro
+    networks: [adas-net]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/v1/info >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ===========================================================================
+  # StarRocks（allin1：FE + BE 同容器，本地栈够用）
+  # config.StarRocksConfig: host=localhost query=18630 http=18631 user=root password=""
+  # 宿主机口径已是发布端口，无需覆盖；容器内 FE 仍监听 9030/8030，BE 仍监听 8040。
+  # 3.4 起 HNSW 向量索引可用 —— vector/params.py 的 HNSW 参数要落在这上面，
+  # 所以这里不能降到 3.3。
+  # ===========================================================================
+  starrocks:
+    image: starrocks/allin1-ubuntu:3.4.2
+    container_name: adas-starrocks
+    ports:
+      # 容器内 FE/BE 仍监听 9030/8030/8040（StarRocks 自己的配置文件写死这些口径，
+      # 也是 starrocks-init 用 starrocks:9030 连进去的口径），只改宿主机发布端口。
+      - "18630:9030"   # MySQL 协议查询端口 —— 宿主机侧 STARROCKS_QUERY_PORT=18630
+      - "18631:8030"   # FE HTTP —— 宿主机侧 STARROCKS_HTTP_PORT=18631（18630 已被查询口占用，故用 31）
+      - "18640:8040"   # BE HTTP（Stream Load 用，config.py 不读）
+    volumes:
+      - starrocks-data:/data/deploy
+    networks: [adas-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -u root -h 127.0.0.1 -P 9030 -e 'SHOW BACKENDS' 2>/dev/null | grep -q true"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # init 容器：建 External Catalog（直查 Paimon）与内表库 adas_ads。
+  # 这里用的是**容器口径** http://minio:9000，所以 StarRocks 这一路开箱可读湖。
+  # 名字取自 config.StarRocksConfig.external_catalog / internal_database。
+  # ---------------------------------------------------------------------------
+  starrocks-init:
+    image: mysql:8.0.40
+    container_name: adas-starrocks-init
+    depends_on:
+      starrocks:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      STARROCKS_FE_HOST: starrocks
+      STARROCKS_QUERY_PORT: "9030"
+      STARROCKS_USER: ${STARROCKS_USER:-root}
+      STARROCKS_PASSWORD: ${STARROCKS_PASSWORD:-}
+      STARROCKS_EXTERNAL_CATALOG: ${STARROCKS_EXTERNAL_CATALOG:-paimon_catalog}
+      STARROCKS_DATABASE: ${STARROCKS_DATABASE:-adas_ads}
+      PAIMON_WAREHOUSE_BUCKET: ${PAIMON_WAREHOUSE_BUCKET:-adas-lakehouse}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-adas}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-adas-secret}
+    entrypoint: ["/bin/bash", "/init/init-catalog.sh"]
+    volumes:
+      - ./starrocks:/init:ro
+    networks: [adas-net]
+    restart: "no"
+
+  # ===========================================================================
+  # Neo4j —— 血缘图库。口诀：图库找关系、湖仓取明细。
+  # config.Neo4jConfig: uri=bolt://localhost:18687 user=neo4j password=adas-lineage
+  # 宿主机口径已是发布端口，无需覆盖；容器内 Neo4j 仍监听 7687 / 7474。
+  # ===========================================================================
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: adas-neo4j
+    environment:
+      # NEO4J_AUTH 的口令必须与 config.Neo4jConfig.password 一致
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-adas-lineage}
+      # listen = 容器内监听口，不动
+      NEO4J_server_bolt_listen__address: "0.0.0.0:7687"
+      # advertised = 告诉客户端「你该连哪」。Neo4j Browser 跑在宿主机浏览器里，
+      # 它按这个地址发起 Bolt 连接，所以必须写宿主机发布端口 18687。
+      # （容器内的 neo4j-init 用 bolt://neo4j:7687 直连，bolt:// 不走路由表，不受影响。）
+      NEO4J_server_bolt_advertised__address: "localhost:18687"
+      NEO4J_server_http_listen__address: "0.0.0.0:7474"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "18687:7687"   # Bolt —— 宿主机侧 NEO4J_URI=bolt://localhost:18687
+      - "18674:7474"   # Neo4j Browser —— 宿主机 http://localhost:18674
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    networks: [adas-net]
+    healthcheck:
+      # -a 必须显式给容器口径：cypher-shell 默认地址是 neo4j://localhost:7687，
+      # neo4j:// 是**路由** scheme，会先查路由表；而路由表返回的是
+      # server.bolt.advertised_address = localhost:18687（宿主机发布端口），
+      # 容器内没人监听 18687。bolt:// 是直连、不查路由表，走容器端口 7687 才稳。
+      test: ["CMD-SHELL", "cypher-shell -a bolt://localhost:7687 -u ${NEO4J_USER:-neo4j} -p '${NEO4J_PASSWORD:-adas-lineage}' 'RETURN 1' >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # init 容器：建五类节点的 id 唯一约束。
+  # 语句来自 lineage/graph.py 的 CONSTRAINT_STATEMENTS——MERGE 幂等的前提。
+  # ---------------------------------------------------------------------------
+  neo4j-init:
+    image: neo4j:5.26.0
+    container_name: adas-neo4j-init
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    entrypoint:
+      - /bin/bash
+      - -c
+      - >
+        cypher-shell -a bolt://neo4j:7687
+        -u "${NEO4J_USER:-neo4j}" -p "${NEO4J_PASSWORD:-adas-lineage}"
+        -d "${NEO4J_DATABASE:-neo4j}"
+        -f /init/init-constraints.cypher
+        && echo "[neo4j-init] done"
+    volumes:
+      - ./neo4j:/init:ro
+    networks: [adas-net]
+    restart: "no"
+
+  # ===========================================================================
+  # Redis —— 控制面热缓存（controlplane/store.py 默认 localhost:18679/db0）
+  # 宿主机口径已是发布端口，无需覆盖；容器内 Redis 仍监听 6379。
+  # 不在任务书点名的六大组件里，但仓库里确有代码读它，缺了控制面就是半条腿。
+  # ===========================================================================
+  redis:
+    image: redis:7.4.1-alpine
+    container_name: adas-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # 宿主机 18679 → 容器 6379；宿主机侧 CONTROL_PLANE_REDIS_PORT=18679。
+      # 旧的 6379 正被同仓平台占用，这是本次迁移的冲突点之一。
+      - "18679:6379"
+    volumes:
+      - redis-data:/data
+    networks: [adas-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped

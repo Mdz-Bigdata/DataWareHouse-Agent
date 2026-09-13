@@ -22,3 +22,13 @@ Imported from `https://gitee.com/laixiaogang/listen-book-data-agent` at commit
 to copy, modify, and redistribute this source as part of this project on
 2026-07-22.
 
+## data-agent-engine
+
+Copyright (c) 2026 data-agent-engine contributors.
+Licensed under the MIT License. The original license is retained at
+`apps/data-agent-engine/LICENSE`.
+
+The integration also implements the architecture and capability requirements
+described by the linked WeChat design article. The article text is not
+redistributed; `docs/source-integrations/data-agent-engine.md` records a
+source-attributed capability map and implementation status.

@@ -55,6 +55,121 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* 独立的密钥文本区与显示按钮，长内容及文本选区不会覆盖按钮。 */
+.api-key-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--theme-border, #334155);
+  border-radius: 8px;
+  background: var(--theme-surface, #0f172a);
+}
+
+.api-key-field:focus-within {
+  border-color: var(--theme-accent, #a855f7);
+  box-shadow: 0 0 0 3px rgba(var(--theme-accent-rgb, 168, 85, 247), 0.12);
+}
+
+.api-key-field > .api-key-field__input,
+:root[data-theme] .api-key-field > .api-key-field__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--theme-ink, #e5e7eb);
+}
+
+.api-key-field > .api-key-field__toggle,
+:root[data-theme] .api-key-field > .api-key-field__toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  align-self: stretch;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--theme-muted, #9ca3af);
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.api-key-field > .api-key-field__toggle:hover,
+:root[data-theme] .api-key-field > .api-key-field__toggle:hover {
+  color: var(--theme-accent, #d8b4fe);
+}
+
+.api-key-field > .api-key-field__toggle:focus-visible,
+:root[data-theme] .api-key-field > .api-key-field__toggle:focus-visible {
+  outline: 2px solid var(--theme-accent, #a855f7);
+  outline-offset: -3px;
+}
+
+/* 数据源选择器：搜索和筛选保持可见，长引擎列表在视口内独立滚动。 */
+.data-source-picker__popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0.75rem;
+  overflow: hidden;
+  background: rgba(2, 6, 23, 0.98);
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.data-source-picker__popover[data-placement="above"] {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+}
+
+.data-source-picker__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.375rem;
+  padding-right: 0.25rem;
+  padding-bottom: 0.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 0.25rem;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-source-picker__option {
+  flex: 0 0 auto;
+}
+
+.data-source-picker__list:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.7);
+  outline-offset: -2px;
+}
+
 /* 玻璃拟态卡片 */
 .glass-card {
   background: rgba(17, 24, 39, 0.7);

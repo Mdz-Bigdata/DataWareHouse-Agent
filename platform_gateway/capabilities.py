@@ -24,10 +24,13 @@ class Subsystem:
     health_path: str = "/health"
     description: str = ""
     ui_port: int = 0
+    service_token: str = ""
+    ui_query: str = ""
 
     def public_dict(self) -> dict[str, object]:
         value = asdict(self)
         value.pop("upstream_url")
+        value.pop("service_token")
         return value
 
 
@@ -94,6 +97,18 @@ class CapabilityRegistry:
                     health_path="/ready",
                     description="LangGraph audio-domain analytics, governance, and insights",
                     ui_port=8040,
+                ),
+                Subsystem(
+                    "data-engine",
+                    "Deterministic Data Agent Engine",
+                    "/platform/data-engine",
+                    os.getenv("PLATFORM_DATA_ENGINE_URL", "http://127.0.0.1:8050"),
+                    os.getenv("PLATFORM_DATA_ENGINE_UI_URL", ""),
+                    _enabled("PLATFORM_DATA_ENGINE_ENABLED"),
+                    description="DSH/OAG, MQL, deterministic SQL, ontology, exploration, modeling, and triple-token safety",
+                    ui_port=3000,
+                    service_token=os.getenv("PLATFORM_DATA_ENGINE_SERVICE_TOKEN", ""),
+                    ui_query="panel=data-engine",
                 ),
             ]
         )

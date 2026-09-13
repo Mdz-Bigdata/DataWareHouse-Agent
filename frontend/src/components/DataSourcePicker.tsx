@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DataSourceCatalog, DataSourceInfo, DataSourceOption } from "../types";
 
 interface DataSourcePickerProps {
@@ -9,6 +9,7 @@ interface DataSourcePickerProps {
 }
 
 type Availability = "all" | "available" | "unconfigured";
+type PopoverLayout = { placement: "above" | "below"; maxHeight: number };
 
 const FILTERS: Array<{ key: Availability; label: string }> = [
   { key: "all", label: "全部" },
@@ -26,6 +27,12 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const [error, setError] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listboxId = useId();
+  const [popoverLayout, setPopoverLayout] = useState<PopoverLayout>({
+    placement: "below",
+    maxHeight: 480,
+  });
 
   const loadCatalog = async () => {
     try {
@@ -40,6 +47,41 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
 
   useEffect(() => {
     if (open) loadCatalog();
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePopoverLayout = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const gap = 8;
+      const viewportGutter = 12;
+      const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap - viewportGutter);
+      const spaceAbove = Math.max(0, rect.top - gap - viewportGutter);
+      const placement = spaceBelow >= 320 || spaceBelow >= spaceAbove ? "below" : "above";
+      const maxHeight = Math.floor(placement === "below" ? spaceBelow : spaceAbove);
+
+      setPopoverLayout(current => (
+        current.placement === placement && current.maxHeight === maxHeight
+          ? current
+          : { placement, maxHeight }
+      ));
+    };
+
+    updatePopoverLayout();
+    window.addEventListener("resize", updatePopoverLayout);
+    window.addEventListener("scroll", updatePopoverLayout, true);
+    window.visualViewport?.addEventListener("resize", updatePopoverLayout);
+    window.visualViewport?.addEventListener("scroll", updatePopoverLayout);
+    return () => {
+      window.removeEventListener("resize", updatePopoverLayout);
+      window.removeEventListener("scroll", updatePopoverLayout, true);
+      window.visualViewport?.removeEventListener("resize", updatePopoverLayout);
+      window.visualViewport?.removeEventListener("scroll", updatePopoverLayout);
+    };
   }, [open]);
 
   // Clicking elsewhere or pressing Escape closes the picker without switching.
@@ -58,6 +100,28 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  const scrollListWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      event.currentTarget.scrollTo({
+        top: event.key === "Home" ? 0 : event.currentTarget.scrollHeight,
+      });
+      return;
+    }
+
+    const direction = event.key === "ArrowDown" || event.key === "PageDown"
+      ? 1
+      : event.key === "ArrowUp" || event.key === "PageUp"
+        ? -1
+        : 0;
+    if (!direction) return;
+    event.preventDefault();
+    const distance = event.key.startsWith("Page")
+      ? event.currentTarget.clientHeight * 0.8
+      : 72;
+    event.currentTarget.scrollBy({ top: direction * distance });
+  };
 
   const visible = useMemo(() => {
     const term = keyword.trim().toLowerCase();
@@ -98,10 +162,12 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
   return (
     <div className="relative" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(value => !value)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold transition-colors ${
           isDemo
             ? "border-amber-500/40 bg-amber-950/30 text-amber-200 hover:border-amber-400/70"
@@ -113,7 +179,11 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-2 w-[26rem] max-w-[90vw] rounded-xl border border-slate-700 bg-slate-950/98 shadow-2xl shadow-black/60 p-3 backdrop-blur">
+        <div
+          className="data-source-picker__popover"
+          data-placement={popoverLayout.placement}
+          style={{ maxHeight: popoverLayout.maxHeight }}
+        >
           <input
             type="search"
             value={keyword}
@@ -141,7 +211,14 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
 
           {error && <p className="text-[11px] text-red-300 px-1 pb-2">{error}</p>}
 
-          <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1">
+          <div
+            id={listboxId}
+            role="listbox"
+            tabIndex={0}
+            aria-label="可用数据源"
+            onKeyDown={scrollListWithKeyboard}
+            className="data-source-picker__list"
+          >
             {visible.length === 0 && (
               <p className="text-[11px] text-gray-500 text-center py-4">没有匹配的数据源</p>
             )}
@@ -149,11 +226,14 @@ export const DataSourcePicker: React.FC<DataSourcePickerProps> = ({
               <button
                 key={source.id}
                 type="button"
+                role="option"
+                aria-selected={source.active}
+                aria-disabled={!source.available}
                 data-source-option={source.engine}
                 disabled={!source.available || switchingTo !== null}
                 onClick={() => select(source)}
                 title={source.unavailable_reason || source.destination}
-                className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                className={`data-source-picker__option text-left rounded-lg border px-3 py-2 transition-colors ${
                   source.active
                     ? "border-purple-500/60 bg-purple-950/30"
                     : source.available

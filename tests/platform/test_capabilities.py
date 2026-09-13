@@ -6,16 +6,25 @@ from platform_gateway.capabilities import CapabilityRegistry, Subsystem
 
 
 class CapabilityRegistryTest(unittest.TestCase):
-    def test_default_registry_exposes_all_four_applications(self) -> None:
+    def test_default_registry_exposes_all_five_applications(self) -> None:
         registry = CapabilityRegistry.from_environment()
 
         self.assertEqual(
             {item.slug for item in registry.all()},
-            {"core", "data-api", "agents", "audio"},
+            {"core", "data-api", "agents", "audio", "data-engine"},
         )
         self.assertEqual(registry.get("data-api").ui_url, "")
         self.assertEqual(registry.get("data-api").ui_port, 8020)
         self.assertEqual(registry.get("agents").ui_port, 8030)
+        self.assertEqual(registry.get("data-engine").ui_port, 3000)
+        self.assertEqual(registry.get("data-engine").ui_query, "panel=data-engine")
+
+    def test_service_token_is_never_returned_to_the_browser(self) -> None:
+        with patch.dict(os.environ, {"PLATFORM_DATA_ENGINE_SERVICE_TOKEN": "secret"}, clear=False):
+            registry = CapabilityRegistry.from_environment()
+
+        self.assertEqual(registry.get("data-engine").service_token, "secret")
+        self.assertNotIn("service_token", registry.get("data-engine").public_dict())
 
     def test_environment_can_disable_optional_subsystem(self) -> None:
         with patch.dict(os.environ, {"PLATFORM_AUDIO_ENABLED": "false"}, clear=False):

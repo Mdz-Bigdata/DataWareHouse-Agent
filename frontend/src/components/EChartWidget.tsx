@@ -11,21 +11,8 @@ export const EChartWidget: React.FC<EChartWidgetProps> = ({ type, title, config 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
 
-  // 如果是数字卡片，在 React 里用高亮文本渲染，比用 ECharts 效果好很多
-  if (type === "card") {
-    return (
-      <div className="glass-card p-6 flex flex-col items-center justify-center text-center h-48 border border-purple-500/20 bg-gradient-to-br from-purple-950/20 to-blue-950/20">
-        <h4 className="text-gray-400 text-sm font-medium mb-2">{title}</h4>
-        <div className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
-          {config.value}
-        </div>
-        <p className="text-gray-500 text-xs mt-3">指标名称: {config.label}</p>
-      </div>
-    );
-  }
-
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (type === "card" || !containerRef.current) return;
 
     // 如果已存在实例，先销毁
     if (chartInstanceRef.current) {
@@ -173,8 +160,21 @@ export const EChartWidget: React.FC<EChartWidgetProps> = ({ type, title, config 
     };
   }, [type, title, config]);
 
+  // 如果是数字卡片，在 React 里用高亮文本渲染，比用 ECharts 效果好很多
+  if (type === "card") {
+    return (
+      <div className="glass-card p-6 flex flex-col items-center justify-center text-center h-48 border border-purple-500/20 bg-gradient-to-br from-purple-950/20 to-blue-950/20">
+        <h4 className="text-gray-400 text-sm font-medium mb-2">{title}</h4>
+        <div className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
+          {config.value}
+        </div>
+        <p className="text-gray-500 text-xs mt-3">指标名称: {config.label}</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="glass-card p-4 flex flex-col h-72">
+    <div className="glass-card theme-chart p-4 flex flex-col h-72">
       <div ref={containerRef} className="w-full h-full" />
     </div>
   );

@@ -45,6 +45,10 @@ embedding:
   host: ${oc.env:EMBEDDING_HOST,127.0.0.1}
   port: ${oc.decode:${oc.env:EMBEDDING_PORT,8081}}
   model: ${oc.env:EMBEDDING_MODEL,BAAI/bge-large-zh-v1.5}
+  # /ready 三态口径开关：auto（默认，可选依赖，DNS 解析不出来判 not_configured）/
+  # true（显式启用，任何失败都报 error）/ false（显式关闭，不探测）。
+  # 启动 embedding profile 时请同时设 EMBEDDING_ENABLED=true。
+  enabled: ${oc.env:EMBEDDING_ENABLED,auto}
 
 # es的配置
 es:

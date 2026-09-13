@@ -1,0 +1,216 @@
+"""部署域（deployment_）：OTA 部署/车端版本。
+
+闭环的「出口」环节——训练评测通过的模型随软件包 OTA 下发到量产车，
+车端跑出的问题再经回传域回到采集域，闭环才真正闭上。
+
+⚠️ 关于 data_id：本域的最小粒度是「OTA 任务 × 车辆」，不是 clip，
+因此两张 DWD 表都不挂 data_id（挂了也永远为空）。本域到闭环链路的接缝是
+model_version —— 部署域 → 训练域 dwd_training_task_detail → 数据资产域
+dwd_dataset_data_relation → data_id，追溯路径靠 model_version 起跳。
+"""
+
+from __future__ import annotations
+
+from ...domains import DataDomain, Layer
+from ..spec import Column as C
+from ..spec import TableSpec
+
+D = DataDomain.DEPLOYMENT
+
+TABLES: list[TableSpec] = [
+    TableSpec(
+        name="ods_ota_task",
+        layer=Layer.ODS,
+        domain=D,
+        comment="OTA 升级任务",
+        source_system="OTA 平台",
+        bucket=4,
+        primary_key=("ota_task_id",),
+        notes="一次发布一行；车辆级下发结果在 dwd_ota_deployment_detail 展开",
+        columns=[
+            C("ota_task_id", "STRING", "OTA 任务 ID", nullable=False),
+            C("task_name", "STRING", "任务名称"),
+            C("project_code", "STRING", "所属项目"),
+            C("software_package_id", "STRING", "软件包 ID"),
+            C("software_version", "STRING", "目标软件版本号"),
+            C("model_version", "STRING", "随包下发的模型版本，回连训练/评测域"),
+            C("package_size_bytes", "BIGINT", "软件包大小（字节）"),
+            C("release_channel", "STRING", "发布通道：internal/grey/full"),
+            C("rollout_strategy", "STRING", "灰度策略描述（批次/比例）"),
+            C("target_vehicle_count", "INT", "目标车辆数"),
+            C("success_vehicle_count", "INT", "升级成功车辆数"),
+            C("fail_vehicle_count", "INT", "升级失败车辆数"),
+            C("task_status", "STRING", "任务状态：draft/publishing/running/finished/aborted"),
+            C("publish_time", "TIMESTAMP(3)", "发布时间"),
+            C("start_time", "TIMESTAMP(3)", "开始下发时间"),
+            C("end_time", "TIMESTAMP(3)", "结束时间"),
+            C("operator", "STRING", "发布负责人"),
+        ],
+    ),
+    TableSpec(
+        name="ods_vehicle_software_version",
+        layer=Layer.ODS,
+        name_omits_domain=True,
+        domain=D,
+        comment="车辆软件版本台账",
+        source_system="车辆管理平台",
+        bucket=4,
+        primary_key=("vehicle_code", "software_module"),
+        notes="复合主键表达完整粒度：一辆车多个软件模块（域控/MCU/感知/规控）各有版本",
+        columns=[
+            C("vehicle_code", "STRING", "车辆编码", nullable=False),
+            C(
+                "software_module",
+                "STRING",
+                "软件模块：perception/planning/control/soc_os/mcu_fw",
+                nullable=False,
+            ),
+            C("software_version", "STRING", "当前版本号"),
+            C("previous_version", "STRING", "升级前版本号"),
+            C("model_version", "STRING", "该模块内置的模型版本"),
+            C("ota_task_id", "STRING", "最近一次生效的 OTA 任务 ID"),
+            C("ecu_name", "STRING", "所属 ECU 名称"),
+            C("hardware_version", "STRING", "配套硬件版本"),
+            C("install_status", "STRING", "安装状态：installed/installing/failed/rollback"),
+            C("install_time", "TIMESTAMP(3)", "安装完成时间"),
+            C("project_code", "STRING", "所属项目"),
+            C("fleet_name", "STRING", "所属车队"),
+            C("is_latest", "BOOLEAN", "是否该模块全网最新版本"),
+            C("last_report_time", "TIMESTAMP(3)", "车端最近一次版本上报时间"),
+        ],
+    ),
+    TableSpec(
+        name="dwd_ota_deployment_detail",
+        layer=Layer.DWD,
+        domain=D,
+        comment="OTA 部署明细（任务 × 车辆）",
+        bucket=4,
+        primary_key=("ota_task_id", "vehicle_code"),
+        notes=(
+            "复合主键表达完整粒度：一个 OTA 任务下发到多台车，每台车一行结果。"
+            "本表不挂 data_id——部署粒度是车辆不是 clip；跨域追溯经 model_version 起跳"
+        ),
+        columns=[
+            C("ota_task_id", "STRING", "OTA 任务 ID", nullable=False),
+            C("vehicle_code", "STRING", "目标车辆编码", nullable=False),
+            C("project_code", "STRING", "所属项目"),
+            C("model_version", "STRING", "下发的模型版本，回连训练域/评测域的公共键"),
+            C("software_version", "STRING", "目标软件版本"),
+            C("source_software_version", "STRING", "升级前软件版本"),
+            C("release_channel", "STRING", "发布通道：internal/grey/full"),
+            C("deploy_batch", "STRING", "灰度批次标识"),
+            C("vehicle_model", "STRING", "车型"),
+            C("push_time", "TIMESTAMP(3)", "推送到车时间"),
+            C("download_start_time", "TIMESTAMP(3)", "开始下载时间"),
+            C("download_end_time", "TIMESTAMP(3)", "下载完成时间"),
+            C("download_duration_sec", "DOUBLE", "下载耗时（秒）"),
+            C("install_time", "TIMESTAMP(3)", "安装完成时间"),
+            C("install_duration_sec", "DOUBLE", "安装耗时（秒）"),
+            C(
+                "deploy_status",
+                "STRING",
+                "部署状态：pending/downloading/installing/success/failed/rollback",
+            ),
+            C("fail_reason", "STRING", "失败原因"),
+            C("retry_count", "INT", "重试次数"),
+            C("rollback_flag", "BOOLEAN", "是否发生回滚"),
+        ],
+    ),
+    TableSpec(
+        name="dwd_vehicle_software_distribution_detail",
+        layer=Layer.DWD,
+        name_omits_domain=True,
+        domain=D,
+        comment="车端软件版本分布（车辆 × 模块当前生效版本）",
+        bucket=4,
+        primary_key=("vehicle_code", "software_module"),
+        notes=(
+            "当前态快照，主键 Upsert 覆盖更新（分区规则三：无明确分区维度 → 不分区）；"
+            "版本变更历史由 dwd_ota_deployment_detail 承载，本表只回答「现在全网跑的是哪个版本」"
+        ),
+        columns=[
+            C("vehicle_code", "STRING", "车辆编码", nullable=False),
+            C(
+                "software_module",
+                "STRING",
+                "软件模块：perception/planning/control/soc_os/mcu_fw",
+                nullable=False,
+            ),
+            C("software_version", "STRING", "当前生效版本号"),
+            C("previous_software_version", "STRING", "上一生效版本号"),
+            C("model_version", "STRING", "该版本内置的模型版本，回连训练域/评测域"),
+            C("ota_task_id", "STRING", "使该版本生效的 OTA 任务 ID"),
+            C("project_code", "STRING", "所属项目"),
+            C("vehicle_model", "STRING", "车型"),
+            C("fleet_name", "STRING", "所属车队"),
+            C("autonomy_level", "STRING", "智驾等级"),
+            C("release_channel", "STRING", "该车所在发布通道：internal/grey/full"),
+            C("version_effective_time", "TIMESTAMP(3)", "版本生效时间"),
+            C("version_age_days", "INT", "版本在役天数"),
+            C("is_latest_version", "BOOLEAN", "是否该模块全网最新版本"),
+            C("version_lag_count", "INT", "落后最新版本的版本数"),
+            C("online_status", "STRING", "车辆在线状态：online/offline/maintenance"),
+            C("last_report_time", "TIMESTAMP(3)", "车端最近一次版本上报时间"),
+            C("stat_date", "DATE", "快照日期"),
+        ],
+    ),
+    TableSpec(
+        name="dws_deployment_statistics",
+        layer=Layer.DWS,
+        domain=D,
+        comment="部署统计指标（日期 × 项目 × 版本 × 通道）",
+        bucket=2,
+        primary_key=("stat_date", "project_code", "software_version", "release_channel"),
+        notes="口径固化：部署成功率、覆盖率、端到端耗时全公司只算这一次",
+        columns=[
+            C("stat_date", "DATE", "统计日期", nullable=False),
+            C("project_code", "STRING", "项目编码", nullable=False),
+            C("software_version", "STRING", "软件版本号", nullable=False),
+            C("release_channel", "STRING", "发布通道：internal/grey/full", nullable=False),
+            C("model_version", "STRING", "对应模型版本"),
+            C("ota_task_count", "INT", "当日 OTA 任务数"),
+            C("target_vehicle_count", "INT", "目标车辆数"),
+            C("success_vehicle_count", "INT", "部署成功车辆数"),
+            C("fail_vehicle_count", "INT", "部署失败车辆数"),
+            C("rollback_vehicle_count", "INT", "回滚车辆数"),
+            C("deploy_success_rate", "DOUBLE", "部署成功率"),
+            C("avg_download_duration_sec", "DOUBLE", "平均下载耗时（秒）"),
+            C("avg_install_duration_sec", "DOUBLE", "平均安装耗时（秒）"),
+            C("avg_deploy_duration_sec", "DOUBLE", "平均端到端部署耗时（秒）"),
+            C("p90_deploy_duration_sec", "DOUBLE", "部署耗时 P90（秒）"),
+            C("version_coverage_rate", "DOUBLE", "该版本在目标车队的覆盖率"),
+            C("online_vehicle_count", "INT", "在线车辆数"),
+            C("top_fail_reason", "STRING", "失败原因 TOP1"),
+        ],
+    ),
+    TableSpec(
+        name="ads_ota_deployment_summary",
+        layer=Layer.ADS,
+        domain=D,
+        comment="OTA 部署汇总（面向发布看板，零 JOIN）",
+        bucket=2,
+        primary_key=("ota_task_id",),
+        notes="零 JOIN：项目名、车型分布等展示字段全部冗余在本表，前端直接 SELECT",
+        columns=[
+            C("ota_task_id", "STRING", "OTA 任务 ID", nullable=False),
+            C("task_name", "STRING", "任务名称"),
+            C("project_code", "STRING", "项目编码"),
+            C("project_name", "STRING", "项目名称（冗余，免 JOIN）"),
+            C("software_version", "STRING", "软件版本号"),
+            C("model_version", "STRING", "模型版本"),
+            C("release_channel", "STRING", "发布通道：internal/grey/full"),
+            C("publish_time", "TIMESTAMP(3)", "发布时间"),
+            C("target_vehicle_count", "INT", "目标车辆数"),
+            C("deployed_vehicle_count", "INT", "已部署成功车辆数"),
+            C("fail_vehicle_count", "INT", "失败车辆数"),
+            C("rollback_vehicle_count", "INT", "回滚车辆数"),
+            C("deploy_progress_rate", "DOUBLE", "部署进度（已下发/目标）"),
+            C("deploy_success_rate", "DOUBLE", "部署成功率"),
+            C("avg_deploy_duration_sec", "DOUBLE", "平均端到端部署耗时（秒）"),
+            C("top_fail_reason", "STRING", "失败原因 TOP1"),
+            C("vehicle_model_distribution", "STRING", "车型分布（JSON）"),
+            C("deploy_status", "STRING", "汇总状态：running/finished/aborted"),
+            C("stat_time", "TIMESTAMP(3)", "指标统计时间"),
+        ],
+    ),
+]

@@ -1,0 +1,66 @@
+# =============================================================================
+# ADAS 闭环湖仓 · Flink 基础配置（构建期追加到镜像的 conf/config.yaml 末尾）
+#
+# 只放「跟部署形态无关、换机器也不变」的项；凡是带口令或带主机名的，
+# 一律留给 compose 的 FLINK_PROPERTIES 在启动时注入（口令不落镜像）。
+#
+# 写法说明：这里全部用扁平的点号 key（`a.b.c: v`）。Flink 1.20 的标准 YAML
+# 解析器同时接受扁平点号 key 与嵌套块，官方 docker entrypoint 追加
+# FLINK_PROPERTIES 时用的也是扁平写法，所以追加在文件末尾不会和镜像自带的
+# 嵌套配置冲突（同一逻辑 key 后者覆盖前者）。
+# =============================================================================
+
+# --- 资源 -------------------------------------------------------------------
+jobmanager.memory.process.size: 1600m
+taskmanager.memory.process.size: 2048m
+taskmanager.numberOfTaskSlots: 4
+
+# --- 并行度：config.FlinkConfig.parallelism 默认 2 ---------------------------
+parallelism.default: 2
+
+# --- Checkpoint -------------------------------------------------------------
+# config.FlinkConfig.checkpoint_interval_ms 默认 60000。
+# CDC 断点续传就挂在 checkpoint 上：作业重启从上次 binlog 位点继续，
+# 不重新拉全量快照。调小增加小文件，调大拉长故障恢复的重放窗口。
+execution.checkpointing.interval: "60000 ms"
+execution.checkpointing.mode: EXACTLY_ONCE
+execution.checkpointing.min-pause: "10 s"
+execution.checkpointing.timeout: "10 min"
+execution.checkpointing.max-concurrent-checkpoints: 1
+execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+
+# state.backend.type / state.checkpoints.dir 是 1.20 仍然有效的稳定 key。
+# 本地栈用 hashmap + 本地卷；要落 MinIO 就把两个 dir 改成
+# s3://adas-lakehouse/flink-checkpoints（s3 插件已在镜像里装好）。
+state.backend.type: hashmap
+state.checkpoints.dir: file:///opt/flink/checkpoints
+state.savepoints.dir: file:///opt/flink/savepoints
+state.checkpoints.num-retained: 3
+
+# --- 重启策略：流式作业别一崩就死 -------------------------------------------
+restart-strategy.type: exponential-delay
+restart-strategy.exponential-delay.initial-backoff: "10 s"
+restart-strategy.exponential-delay.max-backoff: "2 min"
+
+# --- Table / SQL ------------------------------------------------------------
+# Paimon 主键表自身保证 upsert 语义，再让 Flink 做一次 upsert 物化纯属浪费状态。
+# 与 flink/sql/00_catalog_init.sql 的会话参数保持一致。
+table.exec.sink.upsert-materialize: NONE
+# 防止低频分区迟迟不推进水位线。
+table.exec.source.idle-timeout: "30 s"
+
+# --- S3 / MinIO -------------------------------------------------------------
+# path.style.access 是 MinIO 必须项：MinIO 不支持 virtual-host 风格寻址。
+# endpoint 与 access/secret key 由 compose 的 FLINK_PROPERTIES 注入，这里不写死。
+s3.path.style.access: true
+
+# --- REST / SQL Gateway -----------------------------------------------------
+# 只设 bind-address（监听哪儿），不设 rest.address（对外宣告哪儿）——
+# 后者留给各服务自己：JobManager 用默认值，SQL Gateway 由 compose 的
+# FLINK_PROPERTIES 设成 jobmanager，指向 JM 的 REST 端口。
+rest.bind-address: 0.0.0.0
+# 容器内监听端口，不随宿主机发布端口变动（宿主机侧是 18683 → 这里的 8083）
+sql-gateway.endpoint.type: rest
+sql-gateway.endpoint.rest.address: 0.0.0.0
+sql-gateway.endpoint.rest.port: 8083
+sql-gateway.session.idle-timeout: "30 min"

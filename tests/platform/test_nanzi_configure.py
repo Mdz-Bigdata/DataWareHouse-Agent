@@ -18,6 +18,7 @@ class ConfigureTests(unittest.TestCase):
             self.assertNotEqual(values["DATA_API_ADMIN_API_KEY"], values["AGENTS_ADMIN_API_KEY"])
             self.assertNotEqual(values["WAREHOUSE_POSTGRES_PASSWORD"], values["PLATFORM_MYSQL_ROOT_PASSWORD"])
             self.assertEqual(values["WAREHOUSE_POSTGRES_DB"], "datawarehouse")
+            self.assertGreaterEqual(len(values["DATA_ENGINE_SERVICE_TOKEN"]), 32)
             for key in ("DATA_API_ENCRYPTION_KEY", "AGENTS_ENCRYPTION_KEY"):
                 self.assertEqual(len(base64.urlsafe_b64decode(values[key])), 32)
 

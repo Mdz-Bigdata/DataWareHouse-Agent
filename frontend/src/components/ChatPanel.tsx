@@ -553,13 +553,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ initialQuestion }) => {
 
         {/* 输入框 */}
         <div className="glass-card p-6 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 mt-auto">
-          <div className="flex justify-between items-center mb-4">
+          <div className="chat-query-header flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse"></span>
               智能查数问数 Agent
             </h2>
             {/* 用户与角色权限配置（防止硬编码） */}
-            <div className="flex gap-4 items-center bg-slate-900/40 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
+            <div className="chat-query-identity flex gap-4 items-center bg-slate-900/40 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
               <div className="flex items-center gap-1.5">
                 <span>用户:</span>
                 <input
@@ -666,7 +666,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ initialQuestion }) => {
             </button>
           </div>
 
-          <div className="flex gap-3">
+          <div className="chat-query-input flex gap-3">
             <select
               value={dialect}
               onChange={(e) => setDialect(e.target.value)}

@@ -6,6 +6,8 @@ x-data-api-environment: &data-api-environment
   MYSQL_DB: ${DATA_API_MYSQL_DB:-nanzi_api_data_platform}
   MYSQL_USER: ${DATA_API_MYSQL_USER:-root}
   MYSQL_PASSWORD: ${DATA_API_MYSQL_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  # Container-side: service name + container port on the Compose network.
+  # Not affected by the PLATFORM_*_PORT host mappings below.
   REDIS_HOST: data-api-redis
   REDIS_PORT: 6379
   REDIS_DB: 0
@@ -23,6 +25,8 @@ x-agents-environment: &agents-environment
   MYSQL_DB: ${AGENTS_MYSQL_DB:-nanzi_ai_agent_platform}
   MYSQL_USER: ${AGENTS_MYSQL_USER:-root}
   MYSQL_PASSWORD: ${AGENTS_MYSQL_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  # Container-side: service name + container port. data-api-redis/agents-redis
+  # publish no host port at all, so nothing here needs parameterizing.
   REDIS_HOST: agents-redis
   REDIS_PORT: 6379
   REDIS_DB: 0
@@ -31,9 +35,56 @@ x-agents-environment: &agents-environment
   PLATFORM_COOKIE_NAME: nanzi_agents_admin_token
   PYTHONPATH: /integration:/app
   SQL_EXECUTION_MODE: remote
-  APP_PUBLIC_URL: ${AGENTS_PUBLIC_URL:-http://localhost:8030}
+  # Host-facing: the agents platform hands this URL to browsers, so it must match
+  # the published host port of the agents service, not its container port 8001.
+  APP_PUBLIC_URL: ${AGENTS_PUBLIC_URL:-http://localhost:${PLATFORM_AGENTS_PORT:-8030}}
   SSO_API_URL: ""
   SSO_ACCESS_TOKEN: ""
+
+# The audio app reads every backing-service address from env (conf/app_config.yaml
+# interpolates ${oc.env:...}), and its own defaults point at 127.0.0.1 with the
+# standalone dev ports (23306/16433/19200/16379). Inside Compose there is no
+# 127.0.0.1 MySQL, so without this block the container crash-loops on
+# "Can't connect to MySQL server on '127.0.0.1'".
+# All values below are container-side: Compose service name + container port, so
+# they are independent of the PLATFORM_*_PORT host mappings.
+x-audio-environment: &audio-environment
+  # Metadata DB: created by infra/mysql/00-create-platform-databases.sql; the app
+  # builds its own tables from Base.metadata.create_all at startup.
+  META_DB_HOST: ${AUDIO_META_DB_HOST:-mysql}
+  META_DB_PORT: ${AUDIO_META_DB_PORT:-3306}
+  META_DB_USER: ${AUDIO_META_DB_USER:-root}
+  META_DB_PASSWORD: ${AUDIO_META_DB_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  META_DB_NAME: ${AUDIO_META_DB_NAME:-listen_book}
+  # Business/warehouse DB queried by the agent. Same server, separate schema.
+  AUDIO_DB_HOST: ${AUDIO_DB_HOST:-mysql}
+  AUDIO_DB_PORT: ${AUDIO_DB_PORT:-3306}
+  AUDIO_DB_USER: ${AUDIO_DB_USER:-root}
+  AUDIO_DB_PASSWORD: ${AUDIO_DB_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  AUDIO_DB_NAME: ${AUDIO_DB_NAME:-audio}
+  AUDIO_QUERY_USER: ${AUDIO_QUERY_USER:-root}
+  AUDIO_QUERY_PASSWORD: ${AUDIO_QUERY_PASSWORD:-${PLATFORM_MYSQL_ROOT_PASSWORD:?Run ./platform.sh init first}}
+  QDRANT_HOST: ${AUDIO_QDRANT_HOST:-qdrant}
+  QDRANT_PORT: ${AUDIO_QDRANT_PORT:-6333}
+  # The audio /ready probe really calls aembed_query(), so a live embedding
+  # backend is required -- it cannot be stubbed. The `embedding` service below
+  # provides it and ships in the "full" profile; container port is TEI's 80.
+  EMBEDDING_HOST: ${AUDIO_EMBEDDING_HOST:-embedding}
+  EMBEDDING_PORT: ${AUDIO_EMBEDDING_PORT:-80}
+  # Must match the embedding model's output dimension, because the Qdrant
+  # collections are created with this size (bge-large-zh-v1.5 -> 1024).
+  EMBEDDING_SIZE: ${AUDIO_EMBEDDING_SIZE:-1024}
+  ES_HOST: ${AUDIO_ES_HOST:-elasticsearch}
+  ES_PORT: ${AUDIO_ES_PORT:-9200}
+  REDIS_HOST: ${AUDIO_REDIS_HOST:-redis}
+  REDIS_PORT: ${AUDIO_REDIS_PORT:-6379}
+  # Served same-origin behind the audio-web nginx, which is what browsers hit.
+  ALLOWED_ORIGINS: ${AUDIO_ALLOWED_ORIGINS:-http://localhost:${PLATFORM_AUDIO_WEB_PORT:-8040}}
+  # APP_ENV=development keeps the app's weak-secret check at warn level. Set
+  # AUDIO_APP_ENV=production only together with a strong AUDIO_AUTH_SECRET_KEY
+  # (>=32 bytes), otherwise the app fail-fasts on purpose.
+  APP_ENV: ${AUDIO_APP_ENV:-development}
+  AUTH_SECRET_KEY: ${AUDIO_AUTH_SECRET_KEY:-dev-only-secret-change-me}
 
 services:
   warehouse-postgres:
@@ -60,8 +111,14 @@ services:
       context: .
       dockerfile: platform_gateway/Dockerfile
     ports:
-      - "8080:8080"
+      # Single entry point for the whole platform; the browser and ./platform.sh
+      # status both use it. Container port 8080 is fixed by the gateway image.
+      - "${PLATFORM_GATEWAY_PORT:-8080}:8080"
     environment:
+      # All PLATFORM_*_URL defaults are container-side (service name + container
+      # port) and stay fixed when the published host ports are remapped. Only the
+      # PLATFORM_*_UI_URL values are browser-facing; leave them empty for the
+      # default host ports, or set full URLs when host ports/proxies change.
       PLATFORM_CORE_URL: ${PLATFORM_CORE_URL:-http://core-backend:8000}
       PLATFORM_CORE_UI_URL: ${PLATFORM_CORE_UI_URL:-}
       PLATFORM_DATA_API_URL: ${PLATFORM_DATA_API_URL:-http://data-api:8000}
@@ -73,6 +130,10 @@ services:
       PLATFORM_AUDIO_URL: ${PLATFORM_AUDIO_URL:-http://audio:8000}
       PLATFORM_AUDIO_UI_URL: ${PLATFORM_AUDIO_UI_URL:-}
       PLATFORM_AUDIO_ENABLED: ${PLATFORM_AUDIO_ENABLED:-false}
+      PLATFORM_DATA_ENGINE_URL: ${PLATFORM_DATA_ENGINE_URL:-http://data-engine:8050}
+      PLATFORM_DATA_ENGINE_UI_URL: ${PLATFORM_DATA_ENGINE_UI_URL:-}
+      PLATFORM_DATA_ENGINE_ENABLED: ${PLATFORM_DATA_ENGINE_ENABLED:-true}
+      PLATFORM_DATA_ENGINE_SERVICE_TOKEN: ${DATA_ENGINE_SERVICE_TOKEN:?Run ./platform.sh init first}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -80,7 +141,9 @@ services:
   core-backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      # Collides with a locally running ./start.sh backend (uvicorn --port 8000).
+      # Override PLATFORM_CORE_BACKEND_PORT to run both at the same time.
+      - "${PLATFORM_CORE_BACKEND_PORT:-8000}:8000"
     environment:
       DB_TYPE: ${CORE_DB_TYPE:-sqlite}
       DB_URL: ${CORE_DB_URL:-}
@@ -89,10 +152,37 @@ services:
   core-web:
     build: ./frontend
     ports:
-      - "3000:80"
+      # Container serves nginx on 80; only the host side is configurable.
+      - "${PLATFORM_CORE_WEB_PORT:-3000}:80"
     depends_on:
       - core-backend
       - platform-gateway
+    restart: unless-stopped
+
+  data-engine:
+    build:
+      context: .
+      dockerfile: integrations/data_engine/Dockerfile
+    expose:
+      - "8050"
+    environment:
+      DATA_ENGINE_SERVICE_TOKEN: ${DATA_ENGINE_SERVICE_TOKEN:?Run ./platform.sh init first}
+      DATA_ENGINE_ALLOW_HTTP_MUTATIONS: ${DATA_ENGINE_ALLOW_HTTP_MUTATIONS:-false}
+      # Container-side: agents:8001 is the container port, not the host mapping.
+      DATA_ENGINE_SCHEDULER_URL: ${DATA_ENGINE_SCHEDULER_URL:-http://agents:8001/api/v1/tasks/}
+      DATA_ENGINE_SCHEDULER_API_KEY: ${AGENTS_ADMIN_API_KEY:?Run ./platform.sh init first}
+      DATA_AGENT_ONTOLOGY_STORE: ${DATA_AGENT_ONTOLOGY_STORE:-yaml}
+      DATA_AGENT_TOKEN_TTL: ${DATA_AGENT_TOKEN_TTL:-300}
+    volumes:
+      - data-engine-ontology:/engine/backend/ontology
+      - data-engine-logs:/engine/backend/logs
+    healthcheck:
+      # Runs inside the container: localhost:8050 is the container port.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8050/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 12
     restart: unless-stopped
 
   data-api:
@@ -101,7 +191,10 @@ services:
       context: ./apps/nanzi-api-data-platform
       dockerfile: docker/Dockerfile
     ports:
-      - "8020:8000"
+      # Host 8020 -> container 8000 (gunicorn). Changing the host side does not
+      # affect PLATFORM_DATA_API_URL, which resolves data-api:8000 on the
+      # Compose network.
+      - "${PLATFORM_DATA_API_PORT:-8020}:8000"
     environment: *data-api-environment
     command: ["gunicorn", "app_entry:app", "-c", "gunicorn.conf.py"]
     volumes:
@@ -113,6 +206,7 @@ services:
       data-api-redis:
         condition: service_healthy
     healthcheck:
+      # Runs inside the container: localhost:8000 is the container port.
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
@@ -140,7 +234,9 @@ services:
       context: ./apps/nanzi-ai-agent-platform
       dockerfile: ../../integrations/nanzi/Dockerfile.agents
     ports:
-      - "8030:8001"
+      # Host 8030 -> container 8001 (uvicorn --port 8001 below). If this host
+      # port changes, AGENTS_PUBLIC_URL must follow it (see x-agents-environment).
+      - "${PLATFORM_AGENTS_PORT:-8030}:8001"
     environment: *agents-environment
     command: ["uvicorn", "app_entry:app", "--host", "0.0.0.0", "--port", "8001"]
     volumes:
@@ -155,6 +251,7 @@ services:
       data-api:
         condition: service_healthy
     healthcheck:
+      # Runs inside the container: localhost:8001 is the container port.
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
       interval: 10s
       timeout: 5s
@@ -209,6 +306,7 @@ services:
     build:
       context: ./apps/listen-book-data-agent
       dockerfile: infra/Dockerfile
+    environment: *audio-environment
     expose:
       - "8000"
     volumes:
@@ -218,19 +316,124 @@ services:
         aliases:
           - app
     depends_on:
-      - mysql
-      - redis
-      - qdrant
-      - elasticsearch
+      # The app connects to the metadata DB during startup (create_all + admin
+      # seed), so a plain "started" dependency races MySQL's first-run init.
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      elasticsearch:
+        condition: service_started
+    # Liveness: the app is up and serving HTTP. Deliberately /health and not
+    # /ready -- /ready additionally calls aembed_query() against the embedding
+    # service, which now starts alongside this one under the "full" profile but
+    # needs minutes on a cold start (emulated amd64 + a 1.3GB weight download)
+    # and is absent altogether under `--profile audio`. Probing /ready here
+    # would therefore mark this container unhealthy through every cold start,
+    # and for as long as the embedding backend is down, while the app itself is
+    # serving fine. /ready remains the stricter probe -- read it from the
+    # platform gateway, which polls it for this subsystem, not from Docker.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   audio-web:
     profiles: ["audio", "full"]
     build: ./apps/listen-book-data-agent/frontend
     ports:
-      - "8040:80"
+      # Container serves nginx on 80; only the host side is configurable.
+      - "${PLATFORM_AUDIO_WEB_PORT:-8040}:80"
     depends_on:
       - audio
+    restart: unless-stopped
+
+  # Text-embeddings-inference backend for the audio subsystem.
+  #
+  # IN THE "full" PROFILE ON PURPOSE. The audio app's /ready calls
+  # aembed_query() and cannot stub it, so without this container the platform
+  # gateway reports /api/platform/ready as degraded with
+  # audio.embedding = ClientConnectorDNSError (no DNS record, because nothing
+  # answers to the name) while audio's five other dependencies are green.
+  #
+  # The service keeps its own "embedding" profile, so both of these still work:
+  #   docker compose --env-file .env.platform --profile embedding up -d embedding
+  #   docker compose --env-file .env.platform --profile audio up -d   # no embedding
+  #
+  # Deliberately NOT in the "audio" profile, and deliberately NOT a depends_on
+  # of `audio`. The audio app tolerates a missing embedding backend -- only
+  # /ready degrades, /health (its liveness probe) stays green -- and it resolves
+  # this host per request, not at import time, so it needs no start ordering.
+  # A depends_on: {embedding: {condition: service_healthy}} would instead hold
+  # audio and audio-web down for the entire first-run model download, and hold
+  # them down indefinitely if that download ever fails. A `service_started`
+  # dependency would be almost as bad in a different way: Compose auto-enables
+  # the profiles of a depended-on service, which would drag this container into
+  # `--profile audio` runs that do not want it.
+  #
+  # First-start cost -- budget for it before calling the container broken:
+  #   1. Upstream publishes linux/amd64 only (verified: no arm64 manifest on any
+  #      cpu-* tag), so on Apple Silicon this runs emulated: slow to boot and
+  #      CPU hungry. `cpus` below caps the damage to the rest of the stack.
+  #   2. It fetches ~1.3GB of weights on first start into the embedding-cache
+  #      volume, which is empty until then; later starts load from that cache.
+  #      BAAI/bge-large-zh-v1.5 ships pytorch_model.bin only (no safetensors).
+  #      If the hub is unreachable the fetch fails and the container crash-loops
+  #      under `restart: unless-stopped`. That degrades audio's /ready and
+  #      nothing else -- no other service depends on it -- but see the
+  #      AUDIO_EMBEDDING_* block in .env.platform.example for the mirror and
+  #      offline-model escape hatches.
+  # Hence a start_period measured in minutes. Overrunning it is not fatal:
+  # nothing gates on this container's health, so a slow boot only delays the
+  # moment audio's /ready flips from 503 to 200.
+  #
+  # Memory: ~1.3GB of fp32 weights resident, plus per-batch activations that
+  # scale with MAX_BATCH_TOKENS, on a 7.7GiB Docker VM already running 16
+  # services at ~3.2GiB steady state. mem_limit is a hard ceiling so one large
+  # batch cannot starve elasticsearch/mysql -- this container gets OOM-killed
+  # instead. Lower AUDIO_EMBEDDING_MAX_BATCH_TOKENS before raising the ceiling.
+  #
+  # No published host port, on purpose: audio reaches it as embedding:80 over
+  # the Compose network, so it needs none, and the host port budget is tight
+  # (3000/6333/6379/8010/8020/8030/8040/8080/9200 belong to this platform and
+  # the neighbouring lakehouse project owns the 186xx range).
+  embedding:
+    profiles: ["embedding", "full"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    platform: ${AUDIO_EMBEDDING_PLATFORM:-linux/amd64}
+    environment:
+      MODEL_ID: ${AUDIO_EMBEDDING_MODEL_ID:-BAAI/bge-large-zh-v1.5}
+      MAX_CONCURRENT_REQUESTS: ${AUDIO_EMBEDDING_MAX_CONCURRENT:-16}
+      MAX_BATCH_TOKENS: ${AUDIO_EMBEDDING_MAX_BATCH_TOKENS:-16384}
+      HF_HOME: /data
+      # Weight download endpoint. Point it at a mirror on a restricted network;
+      # the mirror must serve Content-Range, or TEI's downloader rejects it.
+      HF_ENDPOINT: ${AUDIO_EMBEDDING_HF_ENDPOINT:-https://huggingface.co}
+    expose:
+      - "80"
+    volumes:
+      # Caches the downloaded weights so a restart does not refetch ~1.3GB.
+      - embedding-cache:/data
+    # Ceiling, not a reservation: headroom this container does not use stays
+    # available to the other 16 services. 3g holds the weights plus one
+    # 16384-token batch with slack; raise only after checking `docker stats`.
+    mem_limit: ${AUDIO_EMBEDDING_MEM_LIMIT:-3g}
+    mem_reservation: ${AUDIO_EMBEDDING_MEM_RESERVATION:-512m}
+    # Emulated amd64 saturates every core it is handed while loading the model.
+    cpus: ${AUDIO_EMBEDDING_CPUS:-4}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      # Emulated boot + the first-run 1.3GB download. After start_period the 20
+      # retries still allow another 5 minutes before the "unhealthy" verdict.
+      start_period: ${AUDIO_EMBEDDING_START_PERIOD:-900s}
     restart: unless-stopped
 
   mysql:
@@ -252,7 +455,9 @@ services:
     profiles: ["audio", "full"]
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Published only for host-side inspection; the audio service reaches this
+      # instance as redis:6379 over the Compose network regardless of the mapping.
+      - "${PLATFORM_REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -261,7 +466,8 @@ services:
     profiles: ["audio", "full"]
     image: qdrant/qdrant:v1.16.2
     ports:
-      - "6333:6333"
+      # Host-side inspection only; audio reaches it as qdrant:6333 internally.
+      - "${PLATFORM_QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
@@ -270,7 +476,8 @@ services:
     profiles: ["audio", "full"]
     image: docker.elastic.co/elasticsearch/elasticsearch:8.19.0
     ports:
-      - "9200:9200"
+      # Host-side inspection only; audio reaches it as elasticsearch:9200 internally.
+      - "${PLATFORM_ELASTICSEARCH_PORT:-9200}:9200"
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -280,7 +487,10 @@ services:
     restart: unless-stopped
 
 volumes:
+  embedding-cache:
   warehouse-postgres-data:
+  data-engine-ontology:
+  data-engine-logs:
   data-api-files:
   agents-files:
   agents-skills:

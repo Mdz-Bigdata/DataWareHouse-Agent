@@ -18,6 +18,14 @@ imports:
     imported_path: apps/listen-book-data-agent
     license: authorized-by-project-owner
     authorization_note: User confirmed authorization in the Codex task on 2026-07-22.
+  - id: data-agent-engine
+    repository: https://github.com/zao-sheng/data-agent-engine.git
+    commit: de8157e19562b28f601060568ef5f68a7865b0a6
+    imported_path: apps/data-agent-engine
+    license: MIT
+    license_file: apps/data-agent-engine/LICENSE
+    related_design_source: https://mp.weixin.qq.com/s/3Kx2RCXhG40lN2XdlCKQQw
+    design_source_title: 基于DeepSeek Harness（DSH）的Data Agent 落地方案
 
 excluded_patterns:
   - .git
@@ -30,4 +38,3 @@ excluded_patterns:
   - '*.pyc'
   - '*.log'
   - '.idea'
-

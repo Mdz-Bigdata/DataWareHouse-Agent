@@ -23,6 +23,12 @@ class PlatformLaunchTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 307)
                     self.assertEqual(response.headers["location"], f"http://warehouse.example:{port}/")
 
+    def test_data_engine_opens_the_embedded_workbench(self):
+        response = self.request("/platform/data-engine")
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "http://warehouse.example:3000/?panel=data-engine")
+
     def test_ipv6_host_is_preserved(self):
         response = self.request("/platform/agents", headers={"host": "[::1]:5173"})
         self.assertEqual(response.headers["location"], "http://[::1]:8030/")

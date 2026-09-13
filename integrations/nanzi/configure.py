@@ -18,6 +18,7 @@ def create_config(path: Path) -> bool:
         "AGENTS_ENCRYPTION_KEY": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
         "DATA_API_ADMIN_API_KEY": "sk-" + secrets.token_urlsafe(32),
         "AGENTS_ADMIN_API_KEY": "sk-" + secrets.token_urlsafe(32),
+        "DATA_ENGINE_SERVICE_TOKEN": secrets.token_urlsafe(48),
         "PLATFORM_DATA_API_UI_URL": "",
         "PLATFORM_AGENTS_UI_URL": "",
         "AGENTS_PUBLIC_URL": "http://localhost:8030",

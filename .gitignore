@@ -41,9 +41,16 @@ apps/**/node_modules/
 apps/**/dist/
 apps/**/*.log
 apps/**/__pycache__/
+apps/**/logs/
+apps/**/seed/sample.db
 
 # Local unified launcher state and logs
 .runtime/
 
 # IDE settings
 .idea/
+
+# 运行时写入的本地配置与用户数据——含 API Key 与个人问数历史，不得进仓库
+# 首次使用：cp backend/llm_config.example.json backend/llm_config.json 再填 key
+backend/llm_config.json
+backend/user_memory.json

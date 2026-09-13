@@ -21,7 +21,7 @@ from urllib.parse import quote, unquote, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / ".runtime"
 STATE = RUNTIME / "local-start.json"
-SERVICES = ("platform-gateway", "data-api", "agents")
+SERVICES = ("platform-gateway", "data-engine", "data-api", "agents")
 MANAGED_SERVICES = frozenset((*SERVICES, "mysql", "data-api-redis", "agents-redis",
                               "data-api-init", "agents-init", "warehouse-postgres"))
 BACKEND_IMPORT_PROBE = (
@@ -35,6 +35,7 @@ ENDPOINTS = {
     "平台网关": "http://127.0.0.1:8080/health",
     "NanZi 数据服务": "http://127.0.0.1:8020/health",
     "NanZi 智能体": "http://127.0.0.1:8030/health",
+    "确定性 Data Agent": "http://127.0.0.1:8080/api/platform/data-engine/health",
     "平台连接": "http://127.0.0.1:8080/api/platform/ready",
 }
 
@@ -205,6 +206,8 @@ def compose_environment(parent: dict[str, str]) -> dict[str, str]:
         "PLATFORM_DATA_API_ENABLED": "true",
         "PLATFORM_AGENTS_ENABLED": "true",
         "PLATFORM_AUDIO_ENABLED": "false",
+        "PLATFORM_DATA_ENGINE_ENABLED": "true",
+        "PLATFORM_DATA_ENGINE_UI_URL": "http://localhost:5173/?panel=data-engine",
     }
 
 
@@ -395,7 +398,7 @@ class Launcher:
         if not shutil.which("lsof"):
             raise StartupError("未找到 lsof，无法安全确认端口归属。请先安装 lsof。")
         self.acquire()
-        say("启动完整本地平台：核心问数 + NanZi 数据服务 + NanZi 智能体。")
+        say("启动完整本地平台：核心问数 + 确定性 Data Agent + NanZi 数据服务 + NanZi 智能体。")
         self.ensure_docker()
         self.command([sys.executable, "integrations/nanzi/configure.py", "--output", ".env.platform"], timeout=30)
         parent = dict(os.environ)
@@ -429,13 +432,14 @@ class Launcher:
         problem = backend_health_error(json_url(ENDPOINTS["核心问数 API"]), backend_env)
         if problem:
             raise StartupError(f"核心数仓验证失败：{problem}。")
-        say("正在构建并启动完整 NanZi 应用及 MySQL / Redis，首次运行可能需要数分钟……")
+        say("正在构建并启动确定性引擎、完整 NanZi 应用及 MySQL / Redis，首次运行可能需要数分钟……")
         self.command(self.compose + ["up", "-d", "--build", *SERVICES], env=self.compose_env, timeout=3600)
         self.wait_ready(ENDPOINTS, timeout=300)
         say("\n全部服务已就绪：")
         say("  主平台             http://localhost:5173")
         say("  NanZi 数据服务      http://localhost:8020")
         say("  NanZi 智能体        http://localhost:8030")
+        say("  确定性引擎工作台    http://localhost:5173（顶部“确定性引擎”）")
         say("  API 文档           http://localhost:8000/docs")
         if managed:
             say("核心问数使用本项目自带的 PostgreSQL 持久化数仓；已迁移项目示例数据。")

@@ -1,0 +1,678 @@
+# 质量门禁规则配置（自动生成，勿手工编辑主干；项目级差异请另建文件覆盖）
+#
+# 生成命令: python -m adas_lakehouse.quality.loader dump
+# 结构: 检查类型 → 表 → 字段级规则（原文三、规则引擎实现）
+# 来源: 系列二 · 湖仓实战 第 6 篇《数据质量门禁设计：智驾数据入湖的五步校验链路》
+#
+# 约定:
+#   · severity=ERROR → REJECT 拒绝入湖；WARNING → ALLOW_WITH_FLAG 带标记放行
+#   · issue_level=P0 为合规/安全级，必须 ERROR，且不允许灰度/下线
+#   · 表名 "*" 表示三通道通用规则
+
+abs_max:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: accuracy
+    enabled: true
+    field: time_sync_error_ms
+    issue_level: P2
+    message: 采集车硬件同步误差超 ±10ms，超限标记
+    notes: 判定用「绝对值严格大于」：原文写 ≤ ±10ms，误差恰为 ±10ms 通过、±10.1ms 命中。处置取 WARNING/P2 而非硬拒绝——原文三处说法不一致，按「就近且两处互证」取：4.3
+      该行处置列写「超限告警放行（L1）」，第五章 SLA 表把「时间同步超限」列在 P2 一般；第一章 L1 行的「同步超限硬拒绝」是层级级别的粗描述，不采纳。
+    params:
+      max_abs: 10
+    quality_layer: L1
+    repair_action: B
+    rule_id: QG-OSS-004-time-sync-collect-vehicle
+    scope: record
+    severity: WARNING
+    source: 原文四、4.3 OSS 采集文件（时间同步：采集车硬件同步 ≤ ±10ms → 超限告警放行 L1）
+    when:
+      equals: collect
+      field: vehicle_type
+  - channel: oss_file
+    dimension: accuracy
+    enabled: true
+    field: time_sync_error_ms
+    issue_level: P2
+    message: 量产车软同步误差超 ±50ms，超限标记
+    notes: 量产车是软同步，容差比采集车宽 5 倍（±50ms vs ±10ms），两档不可互换；处置口径与 QG-OSS-004 同源，见该条 notes。
+    params:
+      max_abs: 50
+    quality_layer: L1
+    repair_action: B
+    rule_id: QG-OSS-005-time-sync-production-vehicle
+    scope: record
+    severity: WARNING
+    source: 原文四、4.3 OSS 采集文件（时间同步：量产车软同步 ≤ ±50ms → 超限告警放行 L1）
+    when:
+      equals: production
+      field: vehicle_type
+custom:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: consistency
+    enabled: true
+    field: checksum_md5
+    issue_level: P2
+    message: 元信息与文件本体不一致（大小 / 校验和对不上）
+    notes: 谓词 meta_matches_object 由入湖作业注入（HEAD 对象拿 size/etag 比对）；未注入时该检查自动跳过，不阻塞主链路
+    params:
+      name: meta_matches_object
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-OSS-010-meta-file-consistency
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（一致性：元信息与文件本体一致）
+decodable:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: validity
+    enabled: true
+    field: object_key
+    issue_level: P1
+    message: 文件损坏不可解码（压缩损伤 / 传输截断）
+    params:
+      algorithm: md5
+      flag_field: decodable_flag
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-OSS-006-file-decodable
+    scope: record
+    severity: ERROR
+    source: 原文二、六维质量检查框架（有效性：文件可解码）；原文五、四档异常等级 SLA 表（P1「文件损坏不可解码」）
+disjoint_split:
+  ods_dataset_data_list:
+  - channel: mysql_cdc
+    dimension: consistency
+    enabled: true
+    field: split_type
+    issue_level: P1
+    message: 数据集划分防泄漏：训练/验证/测试集按 clip 级划分，相邻帧不得跨集
+    params:
+      group_field: data_id
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-CDC-004-dataset-split-leakage
+    scope: record
+    severity: ERROR
+    source: 原文四、4.1 MySQL CDC · 业务库数据（数据集划分防泄漏，跨集拒绝 L5）；原文五、四档异常等级 SLA 表（P1「跨集泄漏」）
+enum:
+  '*':
+  - channel: common
+    dimension: validity
+    enabled: true
+    field: artifact_status
+    issue_level: P2
+    message: artifact_status 不在字典 active/superseded/invalid 内
+    params:
+      allow_null: true
+      values:
+      - active
+      - superseded
+      - invalid
+    repair_action: B
+    rule_id: QG-COM-005-artifact-status-enum
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（有效性：枚举值在字典内）
+  ods_annotation_result:
+  - channel: mysql_cdc
+    dimension: validity
+    enabled: true
+    field: qc_conclusion
+    issue_level: P1
+    message: 标注质量准入：质检结论不为通过，未过质检不入湖
+    params:
+      case_insensitive: true
+      values:
+      - passed
+    quality_layer: L3
+    repair_action: B
+    rule_id: QG-CDC-002-annotation-qc-passed
+    scope: record
+    severity: ERROR
+    source: 原文四、4.1 MySQL CDC · 业务库数据（标注质量准入）；原文一、五层质量问题全景（L3 门禁动作「未过质检不入湖」）
+  - channel: mysql_cdc
+    dimension: validity
+    enabled: true
+    field: human_review_status
+    issue_level: P1
+    message: 自动标注准入：预标注（大模型/离线模型）结果未经人工审核，不得入训练数据集
+    notes: ⚠️ 原文未明确，本项目设计：annotation_source 的取值字典由本项目枚举
+    params:
+      case_insensitive: true
+      values:
+      - reviewed
+      - approved
+    quality_layer: L3
+    repair_action: B
+    rule_id: QG-CDC-003-auto-label-human-reviewed
+    scope: record
+    severity: ERROR
+    source: 原文四、4.1 MySQL CDC · 业务库数据（自动标注准入）
+    when:
+      field: annotation_source
+      in:
+      - auto_label
+      - pretrain_model
+      - llm_prelabel
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: validity
+    enabled: true
+    field: file_type
+    issue_level: P1
+    message: file_type 不在字典内（该字段是 ods_data_file_meta 的分区字段）
+    notes: 字典取自共享契约 catalog/tables/_collect.py 的 file_type 注释
+    params:
+      values:
+      - video
+      - pointcloud
+      - radar
+      - imu
+      - gps
+      - can
+    repair_action: B
+    rule_id: QG-OSS-008-file-type-enum
+    scope: record
+    severity: ERROR
+    source: 原文二、六维质量检查框架（有效性：枚举值在字典内）
+  - channel: oss_file
+    dimension: validity
+    enabled: true
+    field: vehicle_type
+    issue_level: P2
+    message: 车型无法判定（vehicle_type 不在字典 collect/production 内或缺失），±10ms / ±50ms 两档同步容差都选不出来，该记录的时间同步检查被跳过
+    notes: ⚠️ 原文未明确，本项目设计：原文只给了两类车各自的容差，没说车型判不出来怎么办。不补这条的话，vehicle_type 缺失或写错的记录会让 QG-OSS-004 与 QG-OSS-005
+      的 when 同时落空，5000ms 的同步误差也会一路 ACCEPTED——正是「规则挂在判据列上却静默失效」那一类问题。这里不替它选一档容差（那等于替原文编阈值），只把「判不出车型」本身标成
+      P2 带标记放行，让下游能筛掉这批同步状态不明的数据。
+    params:
+      values:
+      - collect
+      - production
+    quality_layer: L1
+    repair_action: B
+    rule_id: QG-OSS-013-vehicle-type-decidable
+    scope: record
+    severity: WARNING
+    source: 原文四、4.3 OSS 采集文件（时间同步：分车型两档容差）；原文二、六维质量检查框架（有效性：枚举值在字典内）
+    when:
+      exists: true
+      field: time_sync_error_ms
+  ods_dataset_data_list:
+  - channel: mysql_cdc
+    dimension: validity
+    enabled: true
+    field: split_type
+    issue_level: P1
+    message: 数据集划分取值不在字典 train/val/test 内
+    notes: ⚠️ 原文未明确，本项目设计：划分字典由本项目给定
+    params:
+      values:
+      - train
+      - val
+      - test
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-CDC-005-dataset-split-enum
+    scope: record
+    severity: ERROR
+    source: 原文二、六维质量检查框架（有效性：枚举值在字典内）
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: validity
+    enabled: true
+    field: trigger_type
+    issue_level: P1
+    message: trigger_type 不在字典内（该字段是 ods_vehicle_trigger_event 的分区字段，非法值会产生脏分区）
+    notes: ⚠️ 原文未明确，本项目设计：触发类型字典由本项目枚举
+    params:
+      values:
+      - aeb
+      - takeover
+      - cut_in
+      - hard_brake
+      - shadow_mode
+      - manual_mark
+      - corner_case
+    repair_action: B
+    rule_id: QG-KFK-007-trigger-type-enum
+    scope: record
+    severity: ERROR
+    source: 原文二、六维质量检查框架（有效性：枚举值在字典内）
+freshness:
+  '*':
+  - channel: mysql_cdc
+    dimension: timeliness
+    enabled: true
+    field: update_time
+    issue_level: P3
+    message: CDC 同步延迟超阈值
+    notes: ⚠️ 原文未明确，本项目设计：原文未给 CDC 延迟阈值，复用入湖延迟默认值
+    params:
+      allow_null: true
+      max_delay_seconds: 900.0
+    repair_action: A
+    rule_id: QG-CDC-007-cdc-sync-latency
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（及时性：CDC 同步延迟）
+  - channel: common
+    dimension: timeliness
+    enabled: true
+    field: event_time
+    issue_level: P3
+    message: 入湖延迟超阈值
+    notes: ⚠️ 原文未明确，本项目设计：原文未给入湖延迟阈值，默认值见 thresholds
+    params:
+      allow_null: true
+      max_delay_seconds: 900.0
+    repair_action: A
+    rule_id: QG-COM-009-ingest-latency
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（及时性：监控告警，不拦截）；原文五、四档异常等级 SLA 表（P3 典型场景「入湖延迟」）
+min_value:
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: completeness
+    enabled: true
+    field: pre_trigger_seconds
+    issue_level: P2
+    message: 片段截断：回传片段覆盖触发前不足 N 秒，标记 truncated_flag
+    notes: ⚠️ 原文未明确，本项目设计：原文写「触发前 ≥ N 秒」，N 是占位符，默认值见 thresholds
+    params:
+      min: 5.0
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-KFK-003-clip-truncated-pre
+    scope: record
+    severity: WARNING
+    source: 原文四、4.2 Kafka 消息流 · 事件数据（片段截断 → 告警标记放行）
+  - channel: kafka
+    dimension: completeness
+    enabled: true
+    field: post_trigger_seconds
+    issue_level: P2
+    message: 片段截断：回传片段覆盖触发后不足 M 秒，标记 truncated_flag
+    notes: ⚠️ 原文未明确，本项目设计：原文写「触发后 ≥ M 秒」，M 是占位符，默认值见 thresholds
+    params:
+      min: 5.0
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-KFK-004-clip-truncated-post
+    scope: record
+    severity: WARNING
+    source: 原文四、4.2 Kafka 消息流 · 事件数据（片段截断 → 告警标记放行）
+not_null:
+  '*':
+  - channel: common
+    dimension: completeness
+    enabled: true
+    field: data_id
+    issue_level: P0
+    message: 主键 data_id 为空，无血缘追溯起点
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-COM-001-data-id-not-null
+    scope: record
+    severity: ERROR
+    source: 原文五、四档异常等级 SLA 表（P0 典型场景「主键为空」）
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: completeness
+    enabled: true
+    field: object_key
+    issue_level: P1
+    message: 关键元数据缺失：对象存储 key 为空
+    quality_layer: L2
+    repair_action: B
+    rule_id: QG-OSS-009-metadata-required
+    scope: record
+    severity: ERROR
+    source: 原文一、五层质量问题全景（L2 门禁动作「损坏文件与关键元数据缺失拒绝」）
+  ods_production_kafka_event:
+  - channel: kafka
+    dimension: completeness
+    enabled: true
+    field: event_id
+    issue_level: P0
+    message: 产线事件主键 event_id 为空
+    repair_action: C
+    rule_id: QG-KFK-009-production-event-id-not-null
+    scope: record
+    severity: ERROR
+    source: 原文五、四档异常等级 SLA 表（P0 典型场景「主键为空」）
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: completeness
+    enabled: true
+    field: event_id
+    issue_level: P0
+    message: 事件主键 event_id 为空
+    quality_layer: L2
+    repair_action: C
+    rule_id: QG-KFK-001-event-id-not-null
+    scope: record
+    severity: ERROR
+    source: 原文五、四档异常等级 SLA 表（P0 典型场景「主键为空」）
+range:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: completeness
+    enabled: true
+    field: file_size_bytes
+    issue_level: P1
+    message: 空帧/空文件拒绝入湖
+    params:
+      min: 1
+    quality_layer: L1
+    repair_action: A
+    rule_id: QG-OSS-007-file-not-empty
+    scope: record
+    severity: ERROR
+    source: 原文一、五层质量问题全景（L1 门禁动作「空帧拒绝」）
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: accuracy
+    enabled: true
+    field: gps_jump_meters
+    issue_level: P2
+    message: 定位跳变超限
+    notes: ⚠️ 原文未明确，本项目设计：原文只说「定位无跳变」未给米数，本项目取相邻采样点跳变 100 米为上限
+    params:
+      allow_null: true
+      max: 100
+      min: 0
+    quality_layer: L1
+    repair_action: B
+    rule_id: QG-KFK-008-gps-jump
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（准确性：定位无跳变）；原文五、四档异常等级 SLA 表（P2「定位跳变」）
+ratio_max:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: completeness
+    enabled: true
+    field: continuous_frame_loss_rate
+    issue_level: P2
+    message: 连续丢帧率 > 1%，升级告警
+    notes: 原文写「升级告警」：本项目落地为异常等级由 P3 升一档到 P2，仍属带标记放行
+    params:
+      allow_null: true
+      max_ratio: 0.01
+    quality_layer: L1
+    repair_action: A
+    rule_id: QG-OSS-003-continuous-frame-loss-rate
+    scope: record
+    severity: WARNING
+    source: 原文四、4.3 OSS 采集文件（多模态完整性：连续丢帧率 > 1% 升级告警）
+  - channel: oss_file
+    dimension: timeliness
+    enabled: true
+    field: batch_missing_ratio
+    issue_level: P3
+    message: 批次到达完整性：批次轻微缺片
+    notes: ⚠️ 原文未明确，本项目设计：缺片比例阈值复用连续丢帧率的 1%
+    params:
+      max_ratio: 0.01
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-OSS-012-batch-frame-loss
+    scope: batch
+    severity: WARNING
+    source: 原文二、六维质量检查框架（及时性：批次到达完整性）；原文五、四档异常等级 SLA 表（P3「批次轻微缺片」）
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: uniqueness
+    enabled: true
+    field: duplicate_rate
+    issue_level: P3
+    message: 事件重复率 > 5% 告警
+    params:
+      max_ratio: 0.05
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-KFK-006-duplicate-rate
+    scope: batch
+    severity: WARNING
+    source: 原文四、4.2 Kafka 消息流 · 事件数据（重复率监控：重复率 > 5% 告警）；原文五、四档异常等级 SLA 表（P3「重复率波动」）
+reference_exists:
+  '*':
+  - channel: common
+    dimension: consistency
+    enabled: true
+    field: parent_artifact_id
+    issue_level: P2
+    message: 父产物血缘缺失，图库对账兜底字段 parent_artifact_id 找不到对应产物
+    params:
+      allow_null: true
+      target_field: artifact_id
+      target_table: dwd_collect_clip_detail
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-COM-007-lineage-parent-exists
+    scope: record
+    severity: WARNING
+    source: 原文一、五层质量问题全景（L5 门禁动作「血缘缺失告警」）
+  - channel: common
+    dimension: consistency
+    enabled: true
+    field: data_id
+    issue_level: P2
+    message: 跨源关联缺失：data_id 在 clip 明细表中不存在
+    params:
+      target_field: data_id
+      target_table: dwd_collect_clip_detail
+    repair_action: B
+    rule_id: QG-COM-008-clip-anchor-exists
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（一致性：跨源关联存在性 → 告警标记，允许入湖）
+  ods_annotation_result:
+  - channel: mysql_cdc
+    dimension: consistency
+    enabled: true
+    field: qc_result_id
+    issue_level: P1
+    message: 标注质量准入：标注结果未关联质检结论，质检缺失拒绝入湖
+    params:
+      target_field: qc_result_id
+      target_table: ods_qc_result
+    quality_layer: L3
+    repair_action: B
+    rule_id: QG-CDC-001-annotation-qc-linked
+    scope: record
+    severity: ERROR
+    source: 原文四、4.1 MySQL CDC · 业务库数据（标注质量准入）
+regex:
+  '*':
+  - channel: common
+    dimension: validity
+    enabled: true
+    field: data_id
+    issue_level: P1
+    message: data_id 不符合全局三级 ID 规范（来源前缀_项目码_时间戳_序列号）
+    params:
+      pattern: COLLECT_[A-Z0-9]+_\d{14}_[0-9a-f]{4,}
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-COM-002-data-id-format
+    scope: record
+    severity: ERROR
+    source: 原文三、规则引擎实现（YAML 配置化 + 检查器三分支）；原文五、四档异常等级 SLA 表（P1 典型场景「ID 格式非法」）
+  - channel: common
+    dimension: validity
+    enabled: true
+    field: artifact_id
+    issue_level: P1
+    message: artifact_id 不符合二级 ID 规范（{data_id}_{stage}_{algo_version}_{content_hash}）
+    params:
+      allow_null: true
+      pattern: COLLECT_[A-Z0-9]+_\d{14}_[0-9a-f]{4,}_[a-z][a-z0-9]*_v[0-9][0-9a-z.]*_[0-9a-f]{8,}
+    quality_layer: L5
+    repair_action: B
+    rule_id: QG-COM-003-artifact-id-format
+    scope: record
+    severity: ERROR
+    source: 原文三、规则引擎实现（YAML 配置化 + 检查器三分支）（ID 格式兜底）
+  - channel: common
+    dimension: validity
+    enabled: true
+    field: run_id
+    issue_level: P3
+    message: run_id 不符合三级 ID 规范（run_{stage}_{时间戳}_{序列号}）
+    params:
+      allow_null: true
+      pattern: run_[a-z][a-z0-9]*_\d{14}_[0-9a-f]{4,}
+    quality_layer: L5
+    repair_action: A
+    rule_id: QG-COM-004-run-id-format
+    scope: record
+    severity: WARNING
+    source: 原文三、规则引擎实现（YAML 配置化 + 检查器三分支）（ID 格式兜底）
+required_flags:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: completeness
+    enabled: true
+    issue_level: P0
+    message: 脱敏标记合规：必须携带「车端脱敏 + 合规云脱密」双合规标记，缺失即合规风险
+    params:
+      flags:
+      - vehicle_desensitized_flag
+      - cloud_compliance_decrypted_flag
+    quality_layer: L2
+    repair_action: B
+    rule_id: QG-OSS-001-desensitization-flags
+    scope: record
+    severity: ERROR
+    source: 原文四、4.3 OSS 采集文件（脱敏标记合规 → P0 拒绝入湖）；原文五、四档异常等级 SLA 表（P0「脱敏标记缺失」）
+required_members:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: completeness
+    enabled: true
+    field: frame_group_modalities
+    issue_level: P0
+    message: 多模态完整性：同一帧组内相机/激光雷达/毫米波/IMU/GNSS 文件不齐全，缺帧拒绝
+    notes: 整帧完整性 = 五个模态一个都不能少：缺任意一个模态与整帧缺失（字段为空）同判 P0 硬拒绝，不设 allow_null——「帧组模态清单为空」本身就是原文 P0 典型场景「多模态整帧缺失」。丢帧的**比例**是另一回事，走
+      QG-OSS-003（连续丢帧率 > 1%）与 QG-OSS-012（批次缺片），那两条是带标记放行。
+    params:
+      members:
+      - camera
+      - lidar
+      - radar
+      - imu
+      - gnss
+    quality_layer: L1
+    repair_action: A
+    rule_id: QG-OSS-002-multimodal-completeness
+    scope: record
+    severity: ERROR
+    source: 原文四、4.3 OSS 采集文件（多模态完整性，缺帧拒绝 L1）；原文五、四档异常等级 SLA 表（P0「多模态整帧缺失」）
+schema_parsable:
+  '*':
+  - channel: common
+    dimension: validity
+    enabled: true
+    field: _raw_payload
+    issue_level: P0
+    message: 原始报文 Schema 不可解析
+    notes: allow_null=True：只有携带原始报文的通道（Kafka/OSS 元信息）才做这项检查
+    params:
+      allow_null: true
+    repair_action: C
+    rule_id: QG-COM-006-schema-parsable
+    scope: record
+    severity: ERROR
+    source: 原文五、四档异常等级 SLA 表（P0 典型场景「Schema 不可解析」）
+similarity_max:
+  ods_data_file_meta:
+  - channel: oss_file
+    dimension: uniqueness
+    enabled: true
+    field: near_duplicate_similarity
+    issue_level: P3
+    message: 近重复场景，标记抑制
+    notes: ⚠️ 原文未明确，本项目设计：相似度阈值原文未给，默认见 thresholds
+    params:
+      allow_null: true
+      max_similarity: 0.98
+    quality_layer: L2
+    repair_action: C
+    rule_id: QG-OSS-011-near-duplicate
+    scope: record
+    severity: WARNING
+    source: 原文一、五层质量问题全景（L2「近重复抑制」/ L5「近重复」）；原文二、六维质量检查框架（唯一性：近重复场景标记）
+status_transition:
+  ods_annotation_result:
+  - channel: mysql_cdc
+    dimension: validity
+    enabled: true
+    field: task_status
+    issue_level: P2
+    message: 标注任务状态流转非法
+    notes: ⚠️ 原文未明确，本项目设计：状态机取值与迁移表由本项目给定
+    params:
+      from_field: prev_task_status
+      transitions:
+        annotating:
+        - qc_pending
+        - cancelled
+        cancelled: []
+        created:
+        - annotating
+        - cancelled
+        delivered: []
+        qc_passed:
+        - delivered
+        qc_pending:
+        - qc_passed
+        - qc_rejected
+        qc_rejected:
+        - annotating
+        - cancelled
+    quality_layer: L3
+    repair_action: B
+    rule_id: QG-CDC-006-annotation-status-transition
+    scope: record
+    severity: WARNING
+    source: 原文二、六维质量检查框架（有效性：状态流转合法）；原文五、四档异常等级 SLA 表（P2「状态流转异常」）
+timestamp_window:
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: accuracy
+    enabled: true
+    field: trigger_time
+    issue_level: P2
+    message: 时间戳不合理：早于车辆出厂时间或晚于服务器时间 + 容忍窗口（车端时钟漂移）
+    notes: ⚠️ 原文未明确，本项目设计：容忍窗口大小原文未给，默认见 thresholds
+    params:
+      future_tolerance_seconds: 300.0
+      not_before_field: vehicle_manufacture_time
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-KFK-002-event-time-window
+    scope: record
+    severity: WARNING
+    source: 原文四、4.2 Kafka 消息流 · 事件数据（时间戳合理性 → 告警标记放行）
+unique_key:
+  ods_vehicle_trigger_event:
+  - channel: kafka
+    dimension: uniqueness
+    enabled: true
+    field: event_id
+    issue_level: P3
+    message: 事件 ID 重复（物理去重由 Paimon 主键 Upsert 幂等保证，此处只做观测）
+    params:
+      allow_null: true
+    quality_layer: L2
+    repair_action: A
+    rule_id: QG-KFK-005-event-id-dedup
+    scope: record
+    severity: WARNING
+    source: 原文四、4.2 Kafka 消息流 · 事件数据（重复率监控 → 自动去重 + 超限告警）

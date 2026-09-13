@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useId } from "react";
 import type { LLMConfig, TestConnectionResponse } from "../types";
 
 const API_BASE = "http://localhost:8000/api";
@@ -9,6 +9,7 @@ export const LlmSettings: React.FC = () => {
   
   // 密码显示状态
   const [showApiKey, setShowApiKey] = useState(false);
+  const apiKeyInputId = useId();
   
   // 连接测试与保存提示状态
   const [loading, setLoading] = useState(false);
@@ -190,22 +191,31 @@ export const LlmSettings: React.FC = () => {
             />
           </div>
 
-          <div className="flex flex-col gap-2 relative">
-            <label className="text-gray-400">供应商 API Key / Token</label>
-            <div className="relative flex items-center">
+          <div className="flex flex-col gap-2">
+            <label htmlFor={apiKeyInputId} className="text-gray-400">供应商 API Key / Token</label>
+            <div className="api-key-field">
               <input
+                id={apiKeyInputId}
                 type={showApiKey ? "text" : "password"}
                 value={currentVendorInfo.api_key}
                 onChange={(e) => handleInputChange("api_key", e.target.value)}
                 placeholder="请输入您的推理 API 授权 Key"
-                className="w-full bg-slate-900 border border-slate-700 text-gray-200 rounded-lg pl-3 pr-10 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors font-mono"
+                className="api-key-field__input text-sm font-mono"
               />
               <button
                 type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-3 text-gray-500 hover:text-gray-300 text-xs focus:outline-none"
+                onClick={() => setShowApiKey(value => !value)}
+                className="api-key-field__toggle"
+                aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                aria-controls={apiKeyInputId}
+                aria-pressed={showApiKey}
               >
-                {showApiKey ? "🙈 隐藏" : "👁️ 显示"}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                  <circle cx="12" cy="12" r="3" />
+                  {showApiKey && <path d="m3 3 18 18" />}
+                </svg>
+                <span>{showApiKey ? "隐藏" : "显示"}</span>
               </button>
             </div>
             <p className="text-[10px] text-gray-600 mt-1">

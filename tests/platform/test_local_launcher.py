@@ -98,8 +98,10 @@ class LauncherConfigurationTests(ConfiguredLauncherTest):
         self.assertEqual(result["PLATFORM_DATA_API_ENABLED"], "true")
         self.assertEqual(result["PLATFORM_AGENTS_ENABLED"], "true")
         self.assertEqual(result["PLATFORM_AUDIO_ENABLED"], "false")
+        self.assertEqual(result["PLATFORM_DATA_ENGINE_ENABLED"], "true")
+        self.assertEqual(result["PLATFORM_DATA_ENGINE_UI_URL"], "http://localhost:5173/?panel=data-engine")
         self.assertEqual(result["UNRELATED"], "retained")
-        self.assertEqual(launcher.SERVICES, ("platform-gateway", "data-api", "agents"))
+        self.assertEqual(launcher.SERVICES, ("platform-gateway", "data-engine", "data-api", "agents"))
 
     def test_only_the_selected_desktop_engine_is_started(self):
         available = {"Docker", "OrbStack"}
@@ -232,7 +234,7 @@ class LifecycleTests(ConfiguredLauncherTest):
         with self.assertRaises(KeyboardInterrupt):
             instance.start()
         command = instance.command.call_args.args[0]
-        self.assertEqual(command[-3:], ["platform-gateway", "data-api", "agents"])
+        self.assertEqual(command[-4:], ["platform-gateway", "data-engine", "data-api", "agents"])
         self.assertIn("--build", command)
         self.assertNotIn("core-backend", command)
         self.assertNotIn("core-web", command)

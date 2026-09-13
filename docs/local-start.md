@@ -2,13 +2,14 @@
 
 在项目根目录运行 `./start.sh`，也可以从其他目录通过脚本的绝对路径运行。
 
-启动器会自动启动当前 Docker 上下文对应的 Docker Desktop 或 OrbStack，准备私有配置，启动持久化 PostgreSQL 数仓、核心后端、前端、网关、两套完整 NanZi 应用及其 MySQL / Redis 依赖。首次运行会安装缺少的本地依赖、构建容器镜像并初始化空数据库；全部健康检查通过后才显示启动成功。首次使用需已安装 Python、Node.js 和 Docker Desktop 或 OrbStack，并允许首次镜像下载。
+启动器会自动启动当前 Docker 上下文对应的 Docker Desktop 或 OrbStack，准备私有配置，启动持久化 PostgreSQL 数仓、核心后端、前端、网关、确定性 Data Agent Engine、两套完整 NanZi 应用及其 MySQL / Redis 依赖。首次运行会安装缺少的本地依赖、构建容器镜像并初始化空数据库；全部健康检查通过后才显示启动成功。首次使用需已安装 Python、Node.js 和 Docker Desktop 或 OrbStack，并允许首次镜像下载。
 
 | 页面 | 本地地址 |
 | --- | --- |
 | 主平台 | http://localhost:5173 |
 | NanZi 数据服务完整页面 | http://localhost:8020 |
 | NanZi 智能体完整页面 | http://localhost:8030 |
+| 确定性 Data Agent 工作台 | http://localhost:5173（顶部“确定性引擎”） |
 | 核心 API 文档 | http://localhost:8000/docs |
 
 主平台的“外部面板”分别进入数据服务和智能体完整应用。NanZi 管理员账号为 `admin`。登录页选择“本地账号”可使用已设置的管理员密码；密码以哈希形式保存在各自数据库中，停止或重新启动服务不会重置密码。初次初始化尚未设置密码时，可先选择“API Key”登录，再设置本地账号密码。两个应用的登录密钥分别是根目录 `.env.platform` 中的 `DATA_API_ADMIN_API_KEY` 和 `AGENTS_ADMIN_API_KEY`。该私有文件首次生成后保留，不会在启动日志中打印密钥。平台初始化和业务模型配置见 [NanZi 集成说明](../integrations/nanzi/README.md)。
@@ -21,4 +22,4 @@ PostgreSQL 默认连接地址为 `127.0.0.1:55432`，数据库名 `datawarehouse
 
 `./start.sh --check` 只检查所有服务是否健康。`./start.sh --stop` 或启动终端的 `Ctrl+C` 会优雅停止本次启动的服务。已运行且属于本项目的健康前后端会被复用；启动器不会终止其他程序占用的端口。此前已运行的 Docker 服务和持久化数据库卷保留。
 
-前后端日志位于 `.runtime/backend.log` 和 `.runtime/frontend.log`。NanZi 日志可通过 `docker compose --env-file .env.platform --profile nanzi logs data-api agents platform-gateway` 查看。启动失败会给出具体阶段；不会只启动主界面就提示全部成功。
+前后端日志位于 `.runtime/backend.log` 和 `.runtime/frontend.log`。容器日志可通过 `docker compose --env-file .env.platform --profile nanzi logs data-engine data-api agents platform-gateway` 查看。启动失败会给出具体阶段；不会只启动主界面就提示全部成功。

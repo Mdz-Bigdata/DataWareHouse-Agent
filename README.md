@@ -1,16 +1,19 @@
 # DataWareHouse-Agent 智能问数与安全网闸系统 V2.0 🚀
 
-> 本仓库现已纳入 NanZi 数据服务平台、NanZi 智能体平台和听书问数
+> 本仓库现已纳入 NanZi 数据服务平台、NanZi 智能体平台、听书问数和
+> DeepSeek Harness 确定性 Data Agent Engine
 > LangGraph Agent 的固定源码快照。原项目能力仍保留在 `backend/` 与
 > `frontend/`，新增能力位于 `apps/`，通过 `platform_gateway/` 和统一能力
 > 中心接入。来源、版本和许可证见 `THIRD_PARTY.yml`。
 
-统一启动入口：运行 `./start.sh`，自动启动本地门户、问数 API、Docker、网关和两个
+统一启动入口：运行 `./start.sh`，自动启动本地门户、问数 API、确定性 Data Agent、Docker、网关和两个
 NanZi 完整平台及其数据库、Redis。核心问数默认使用持久化 PostgreSQL 数仓，首次迁移
 项目示例数据并明确标注初始来源，保留原有业务库配置；重复启动不会重置数据。
-能力中心的“外部面板”分别打开两个平台的完整界面。
+能力中心的“外部面板”分别打开两个平台的完整界面，顶部“确定性引擎”进入
+Ontology / MQL / 三令牌安全执行、探索取数、建模与调度工作台。
 启动与停止见 [本地启动说明](docs/local-start.md)，登录及数据源配置见
-[NanZi 集成说明](integrations/nanzi/README.md)。
+[NanZi 集成说明](integrations/nanzi/README.md)，确定性引擎配置见
+[Data Agent Engine 集成说明](integrations/data_engine/README.md)。
 
 DataWareHouse-Agent 是一款专为企业级数仓和金融级分析场景设计的**高可靠、高可信智能问数 (NL-to-SQL) 系统**。
 

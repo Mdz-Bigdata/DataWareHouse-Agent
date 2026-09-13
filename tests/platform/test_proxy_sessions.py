@@ -62,3 +62,38 @@ class ProxyResponseTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get_list("set-cookie"), cookies)
         self.assertEqual(response.json(), {"ok": True})
+
+    def test_same_origin_api_proxy_injects_only_the_internal_service_token(self):
+        received = {}
+
+        def upstream(request):
+            received["url"] = str(request.url)
+            received["authorization"] = request.headers.get("authorization")
+            return httpx.Response(200, stream=ResponseStream())
+
+        transport = main.create_http_client(transport=httpx.MockTransport(upstream))
+        registry = CapabilityRegistry([
+            Subsystem(
+                "data-engine",
+                "Engine",
+                "/platform/data-engine",
+                "http://data-engine:8050",
+                service_token="server-side-token",
+            )
+        ])
+        with patch.object(main, "registry", registry), patch.object(main, "create_http_client", return_value=transport):
+            with TestClient(main.app) as client:
+                response = client.post(
+                    "/api/platform/data-engine/api/tools/intent_classify?source=workbench",
+                    headers={"authorization": "Bearer browser-controlled-token"},
+                    json={"arguments": {"text": "GMV"}},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            received,
+            {
+                "url": "http://data-engine:8050/api/tools/intent_classify?source=workbench",
+                "authorization": "Bearer server-side-token",
+            },
+        )

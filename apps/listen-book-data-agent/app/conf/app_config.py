@@ -67,6 +67,14 @@ class EmbeddingConfig:
     host: str
     port: int
     model: str
+    # /ready 的三态口径开关：
+    #   auto（默认）—— 可选依赖。主机名解析不出来就判 not_configured（该服务不在
+    #                   当前 compose profile 里），能解析却连不上仍然是 error。
+    #   true        —— 显式启用。任何失败（含 DNS 解析失败）都必须报 error。
+    #   false       —— 显式关闭。直接判 not_configured，不探测。
+    # 启用了 embedding profile 就应当同时设 EMBEDDING_ENABLED=true，否则容器挂掉
+    # 后 DNS 记录一起消失，auto 档会把它当成「按设计未启用」。
+    enabled: str = "auto"
 
 
 # ==================== ES 配置模型 ====================

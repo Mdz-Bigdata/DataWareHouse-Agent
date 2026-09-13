@@ -1,0 +1,210 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# =============================================================================
+# 依赖说明（重要）
+#
+# 本包的 src/ 目录下没有任何**模块级**的第三方 import——全部 133 个模块的顶层
+# import 只用标准库（dataclasses / typing / datetime / enum / logging / json /
+# pathlib / re / collections / hashlib / uuid / urllib / decimal / fractions …）。
+# 所有外部客户端库（pymysql、mysql-connector、neo4j、kafka-python、boto3、
+# redis、requests、PyYAML、pyflink、pyspark）一律**延迟 import**：写在函数体内
+# 的 try/except ImportError 里，缺失时抛带安装指引的 RuntimeError /
+# MissingDependency，而不是让 import 失败。
+#
+# 因此 [project].dependencies 为空——裸装本包即可 import 全部模块、渲染全部
+# DDL/SQL、跑通全部 dry-run 编排与 tests/。需要真正连外部组件时，按下面的
+# optional-dependencies 分组按需安装。
+#
+# 下列分组由 grep 全量扫描 src/ 与 scripts/ 的实际 import 得出，未凭空添加。
+# =============================================================================
+
+[project]
+name = "adas-lakehouse"
+version = "0.1.0"
+description = "智驾数据闭环湖仓：11 数据域 / 四层 88 张 Paimon 表、三级 ID、质量门禁、血缘、向量检索与存储生命周期治理"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+keywords = ["adas", "lakehouse", "paimon", "flink", "starrocks", "data-closed-loop"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+
+# 核心依赖：无。见文件顶部说明。
+dependencies = []
+
+[project.optional-dependencies]
+
+# --- StarRocks / MySQL 协议客户端 -------------------------------------------
+# src/adas_lakehouse/ads/query.py          : import pymysql / import mysql.connector
+# src/adas_lakehouse/lifecycle/repository.py: import pymysql / import mysql.connector
+# src/adas_lakehouse/mining/backends.py    : import pymysql, import pymysql.cursors
+# src/adas_lakehouse/mining/watermark.py   : import pymysql
+# src/adas_lakehouse/vector/client.py      : import mysql.connector
+# 两个驱动是 or 关系（代码先试 pymysql，失败再试 mysql-connector），装一个即可；
+# 这里都列上以保证任一代码路径可用。
+starrocks = [
+    "pymysql>=1.1",
+    "mysql-connector-python>=8.3",
+]
+
+# --- Flink / Paimon ----------------------------------------------------------
+# src/adas_lakehouse/sampling/engine.py : from pyflink.table.udf import udtf
+#                                         from pyflink.table import DataTypes
+# 注：Flink SQL Gateway 走的是 HTTP（见 http 分组的 requests），不需要 pyflink；
+# 只有抽帧 UDTF 的流模式真正需要 PyFlink。
+flink = [
+    "apache-flink>=1.18",
+]
+
+# --- Neo4j 图库（血缘） -------------------------------------------------------
+# src/adas_lakehouse/lineage/graph.py        : import neo4j
+# src/adas_lakehouse/dataplane/execution.py  : from neo4j import GraphDatabase
+neo4j = [
+    "neo4j>=5.14",
+]
+
+# --- Kafka 事件流 -------------------------------------------------------------
+# src/adas_lakehouse/ingest/channels.py : from kafka import KafkaConsumer
+# src/adas_lakehouse/mining/backends.py : from kafka import KafkaProducer
+# src/adas_lakehouse/lineage/sync.py    : from kafka import KafkaConsumer
+kafka = [
+    "kafka-python>=2.0",
+]
+
+# --- 对象存储（OSS / MinIO，S3 协议） ----------------------------------------
+# src/adas_lakehouse/ingest/oss.py : import boto3
+oss = [
+    "boto3>=1.34",
+]
+
+# --- HTTP 客户端（Flink SQL Gateway / 子系统回调 / VLM 服务） -----------------
+# src/adas_lakehouse/sampling/engine.py       : import requests
+# src/adas_lakehouse/tags/pipeline.py         : import requests
+# src/adas_lakehouse/controlplane/reconcile.py: import requests
+http = [
+    "requests>=2.31",
+]
+
+# --- YAML 规则配置 ------------------------------------------------------------
+# src/adas_lakehouse/quality/loader.py : import yaml
+# （同一个 loader 也支持同结构的 JSON，不装 PyYAML 时可改用 .json 配置）
+yaml = [
+    "pyyaml>=6.0",
+]
+
+# --- Redis 热缓存（控制面任务状态） ------------------------------------------
+# src/adas_lakehouse/controlplane/store.py : import redis
+# （不装时用 InMemoryHotCache 兜底）
+redis = [
+    "redis>=5.0",
+]
+
+# --- Spark 批模式（存量历史数据回刷抽帧） ------------------------------------
+# src/adas_lakehouse/sampling/engine.py : from pyspark.sql import SparkSession
+spark = [
+    "pyspark>=3.5",
+]
+
+# --- 开发 / CI ----------------------------------------------------------------
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+# 一键装齐全部运行时可选依赖（不含 dev）。
+# 必须是上面所有非 dev 分组的并集——scripts/check_consistency.py --only deps 会核对，
+# 漏一个（比如曾经漏掉的 pyspark）就会红。
+all = [
+    "pymysql>=1.1",
+    "mysql-connector-python>=8.3",
+    "apache-flink>=1.18",
+    "neo4j>=5.14",
+    "kafka-python>=2.0",
+    "boto3>=1.34",
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "redis>=5.0",
+    "pyspark>=3.5",
+]
+
+[project.scripts]
+adas-lakehouse = "adas_lakehouse.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+adas_lakehouse = ["quality/rules/*.yaml", "quality/rules/*.json"]
+
+# =============================================================================
+# 工具配置
+# =============================================================================
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+markers = [
+    "smoke: 子系统冒烟测试——只用假数据，不连任何外部服务",
+    "contract: 与原文口径的对账测试（表数 / 数据域 / 分区 / bucket）",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",    # 行宽交给 formatter；中文注释按东亚宽度算会大面积误伤
+    "B008",    # 形参默认值里调用函数——本项目用 field(default_factory=...) 的地方会误报
+    "SIM108",  # 三元表达式不总是更好读，尤其带中文注释时
+    # 全项目刻意使用 `class X(str, Enum)`：枚举要能直接跟字符串比较
+    # （门禁 disposition_hint、表名前缀匹配、JSON 序列化都依赖这一点）。
+    # UP042 建议改用 StrEnum，会破坏这些调用点，故整体关闭。
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["adas_lakehouse"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[tool.coverage.run]
+source = ["src/adas_lakehouse"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

@@ -4,9 +4,12 @@ import { DevPanel } from "./components/DevPanel";
 import { LlmSettings } from "./components/LlmSettings";
 import { FlywheelPanel } from "./components/FlywheelPanel";
 import { PlatformPanel } from "./components/PlatformPanel";
+import { DataEnginePanel } from "./components/DataEnginePanel";
+import ThemeSwitcher from "./components/ThemeSwitcher";
 
 function App() {
-  const [activeTab, setActiveTab] = useState<"chat" | "flywheel" | "platform" | "dev" | "llm">("chat");
+  const initialTab = new URLSearchParams(window.location.search).get("panel") === "data-engine" ? "data-engine" : "chat";
+  const [activeTab, setActiveTab] = useState<"chat" | "flywheel" | "platform" | "data-engine" | "dev" | "llm">(initialTab);
   const [chatPresetQuestion, setChatPresetQuestion] = useState<string>("");
 
   const handleNavigateToChat = (presetQuestion?: string) => {
@@ -17,12 +20,12 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen text-slate-100">
+    <div className="app-shell flex flex-col min-h-screen text-slate-100">
       {/* 顶部 Header Navbar */}
       <header className="glass-card app-header rounded-none border-b border-b-slate-800/80 px-6 py-3.5 flex justify-between items-center sticky top-0 z-50 bg-[#070a13]/90 backdrop-blur-xl shadow-2xl">
-        <div className="flex items-center gap-3">
+        <div className="app-brand flex items-center gap-3">
           {/* Logo 效果 */}
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 flex items-center justify-center font-black text-white shadow-lg shadow-purple-500/25 tracking-wider text-sm">
+          <div className="app-brand__mark w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-400 flex items-center justify-center font-black text-white shadow-lg shadow-purple-500/25 tracking-wider text-sm">
             DW
           </div>
           <div>
@@ -32,14 +35,15 @@ function App() {
                 V2.0 PRO
               </span>
             </h1>
-            <p className="text-[10px] text-gray-400">阿里 QwenPaw-Data + 听书问数 + 湖图双引擎数据智能体</p>
+            <p className="text-[10px] text-gray-400">QwenPaw-Data + DSH/OAG + 听书问数 + 企业智能体统一平台</p>
           </div>
         </div>
 
         {/* Tab 控制器 */}
-        <div className="flex bg-slate-950/80 border border-slate-800/90 rounded-xl p-1 shadow-inner">
+        <nav aria-label="主导航" className="app-navigation flex flex-wrap bg-slate-950/80 border border-slate-800/90 rounded-xl p-1 shadow-inner">
           <button
             onClick={() => setActiveTab("chat")}
+            aria-pressed={activeTab === "chat"}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === "chat"
                 ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-900/40"
@@ -50,6 +54,7 @@ function App() {
           </button>
           <button
             onClick={() => setActiveTab("flywheel")}
+            aria-pressed={activeTab === "flywheel"}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === "flywheel"
                 ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-900/40"
@@ -60,6 +65,7 @@ function App() {
           </button>
           <button
             onClick={() => setActiveTab("platform")}
+            aria-pressed={activeTab === "platform"}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === "platform"
                 ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-900/40"
@@ -69,7 +75,19 @@ function App() {
             🧭 统一能力中心
           </button>
           <button
+            onClick={() => setActiveTab("data-engine")}
+            aria-pressed={activeTab === "data-engine"}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "data-engine"
+                ? "bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-900/40"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            🧩 确定性引擎
+          </button>
+          <button
             onClick={() => setActiveTab("dev")}
+            aria-pressed={activeTab === "dev"}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === "dev"
                 ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-900/40"
@@ -80,6 +98,7 @@ function App() {
           </button>
           <button
             onClick={() => setActiveTab("llm")}
+            aria-pressed={activeTab === "llm"}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === "llm"
                 ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-900/40"
@@ -88,10 +107,12 @@ function App() {
           >
             ⚙️ 模型设置
           </button>
-        </div>
+        </nav>
 
         {/* 右侧系统监控指示器 */}
-        <div className="hidden lg:flex items-center gap-3 text-xs font-mono">
+        <div className="app-header__actions">
+          <ThemeSwitcher />
+        <div className="app-health hidden lg:flex items-center gap-3 text-xs font-mono">
           <div className="flex items-center gap-1.5 bg-slate-900/70 border border-slate-800 px-2.5 py-1 rounded-lg">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="text-gray-300">Doris/SQLite 引擎: 就绪</span>
@@ -105,11 +126,13 @@ function App() {
             <span className="text-gray-300">AST 网闸: 运行中</span>
           </div>
         </div>
+        </div>
       </header>
 
       {/* 主面板内容 */}
       <main className="flex-grow w-full max-w-7xl mx-auto flex flex-col items-center">
-        {activeTab === "platform" && <PlatformPanel onNavigateToChat={handleNavigateToChat} />}
+        {activeTab === "platform" && <PlatformPanel onNavigateToChat={handleNavigateToChat} onNavigateToEngine={() => setActiveTab("data-engine")} />}
+        {activeTab === "data-engine" && <DataEnginePanel />}
         {activeTab === "chat" && <ChatPanel initialQuestion={chatPresetQuestion} />}
         {activeTab === "dev" && <DevPanel />}
         {activeTab === "llm" && <LlmSettings />}

@@ -53,14 +53,26 @@ const fallbackCapabilities: Capability[] = [
     badge: "生态协同",
     description: "企业级多智能体协同与自动化执行中枢，集成 ChatBI、工具库、行业知识库与定时调度任务",
     features: ["多 Agent 协同工作流", "ChatBI 自动看板生成", "企业专属 RAG 知识库", "自动化定时调度执行器"]
+  },
+  {
+    slug: "data-engine",
+    name: "确定性 Data Agent Engine",
+    route_prefix: "/platform/data-engine",
+    ui_url: "",
+    ui_port: 0,
+    enabled: true,
+    badge: "DSH / OAG / MCP",
+    description: "理解与执行分离的数据智能引擎，覆盖本体检索、MQL、安全令牌、确定性 SQL、探索取数、建模与调度闭环",
+    features: ["20 个原生 MCP 工具", "三令牌安全执行链", "Ontology 五类知识资产", "29 条金标 + 189 项单测"]
   }
 ];
 
 interface PlatformPanelProps {
   onNavigateToChat?: (presetQuestion?: string) => void;
+  onNavigateToEngine?: () => void;
 }
 
-export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }) => {
+export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat, onNavigateToEngine }) => {
   const [capabilities, setCapabilities] = useState(fallbackCapabilities);
   const [gatewayStatus, setGatewayStatus] = useState<"loading" | "online" | "offline">("loading");
   const [readiness, setReadiness] = useState<Record<string, boolean>>({});
@@ -131,7 +143,7 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
             </span>
           </div>
           <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
-            四大子系统既保持各自独立的垂直业务深度，又通过统一语义层、AST 物理网闸与同源网关形成三位一体的工业级智能底座。
+            五大子系统保留各自垂直能力，并通过统一语义层、确定性引擎、AST 物理网闸与同源网关组成完整的数据智能底座。
           </p>
         </div>
         
@@ -147,11 +159,12 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
         </div>
       </div>
 
-      {/* 四大核心能力网格卡片 */}
+      {/* 五大核心能力网格卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {capabilities.map((capability) => {
           const isCore = capability.slug === "core";
           const isAudio = capability.slug === "audio";
+          const isEngine = capability.slug === "data-engine";
           const uiUrl = resolvePlatformUiUrl(capability.slug, capability.ui_url, window.location.href, capability.ui_port);
 
           return (
@@ -159,13 +172,13 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
               key={capability.slug}
               className={`glass-card p-6 rounded-2xl border transition-all flex flex-col justify-between relative overflow-hidden group ${
                 isCore ? "border-purple-500/40 bg-gradient-to-br from-[#0c1024]/80 to-[#070b16]/80 hover:border-purple-500/70 shadow-purple-950/20" :
-                isAudio ? "border-cyan-500/40 bg-gradient-to-br from-[#0a1526]/80 to-[#070b16]/80 hover:border-cyan-500/70 shadow-cyan-950/20" :
+                (isAudio || isEngine) ? "border-cyan-500/40 bg-gradient-to-br from-[#0a1526]/80 to-[#070b16]/80 hover:border-cyan-500/70 shadow-cyan-950/20" :
                 "border-slate-800/90 bg-[#070b16]/70 hover:border-slate-700"
               }`}
             >
               {/* 背景装饰光晕 */}
               <div className={`absolute -top-16 -right-16 w-36 h-36 rounded-full blur-3xl opacity-20 pointer-events-none ${
-                isCore ? "bg-purple-500" : isAudio ? "bg-cyan-500" : "bg-blue-500"
+                isCore ? "bg-purple-500" : (isAudio || isEngine) ? "bg-cyan-500" : "bg-blue-500"
               }`}></div>
 
               <div>
@@ -180,7 +193,7 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
                   </div>
                   <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border uppercase tracking-wider ${
                     isCore ? "bg-purple-500/20 text-purple-300 border-purple-500/30" :
-                    isAudio ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/30" :
+                    (isAudio || isEngine) ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/30" :
                     "bg-blue-500/20 text-blue-300 border-blue-500/30"
                   }`}>
                     {capability.badge}
@@ -205,7 +218,7 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
               {/* 底部操作区 */}
               <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3">
                 <span className="text-[10px] text-gray-500 font-mono">
-                  {isAudio ? "内置听书问数 · 由核心数仓提供" : !capability.enabled ? "已停用" : isCore ? "内嵌原生驱动" :
+                  {isAudio ? "内置听书问数 · 由核心数仓提供" : isEngine ? "内嵌工作台 · 服务端安全代理" : !capability.enabled ? "已停用" : isCore ? "内嵌原生驱动" :
                     readiness[capability.slug] === true ? "完整应用 · 服务已就绪" :
                     readiness[capability.slug] === false ? "完整应用 · 服务暂不可用" : "完整应用 · 就绪状态未知"}
                 </span>
@@ -229,7 +242,17 @@ export const PlatformPanel: React.FC<PlatformPanelProps> = ({ onNavigateToChat }
                   </button>
                 )}
 
-                {!isCore && !isAudio && (capability.enabled && uiUrl ? (
+                {isEngine && (
+                  <button
+                    disabled={!capability.enabled}
+                    onClick={() => onNavigateToEngine && onNavigateToEngine()}
+                    className="px-4 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:brightness-110 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-lg shadow-cyan-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    打开确定性工作台
+                  </button>
+                )}
+
+                {!isCore && !isAudio && !isEngine && (capability.enabled && uiUrl ? (
                   <a
                     href={uiUrl}
                     target="_blank"
