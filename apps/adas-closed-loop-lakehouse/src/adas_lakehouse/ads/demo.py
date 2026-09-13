@@ -52,7 +52,6 @@ from .constants import (
     MINING_TAG_COVERAGE_WARN_THRESHOLD,
     MODEL_COMPARE_DEMO_BASELINE_PASS_RATE,
     MODEL_COMPARE_DEMO_BASELINE_VERSION,
-    MODEL_COMPARE_DEMO_DATASET_NAME,
     MODEL_COMPARE_DEMO_HIGHWAY_REGRESSION_PP,
     MODEL_COMPARE_DEMO_MODEL_VERSION,
     MODEL_COMPARE_DEMO_NIGHT_GAIN_PP,
@@ -365,7 +364,11 @@ def _model_compare_rows() -> list[Row]:
             "regression_flag": diff_pp < 0,
             "conclusion": "回归" if diff_pp < 0 else "显著提升",
             "stat_date": DEMO_PUBLISH_DATE,
-            "dataset_name": MODEL_COMPARE_DEMO_DATASET_NAME,
+            # ⚠️ 原文案例的数据集是按名字引用的（「城区 NOA 评测集 v5」＝
+            #    MODEL_COMPARE_DEMO_DATASET_NAME），但 ads_model_version_comparison
+            #    没有 dataset_name 列，只能落 dataset_id + dataset_version。
+            #    缺列已登记在 services.CATALOG_GAPS，这里不硬塞一个表上没有的列——
+            #    塞了只会让内存行源与真表分叉。
         }
 
     overall_diff_pp = round(

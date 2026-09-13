@@ -31,6 +31,7 @@ from typing import Any
 from ..ids import new_run_id
 from . import constants as K
 from . import lifecycle
+from .audit import SchemaAudit, audit_control_plane_schema
 from .contracts import (
     CONTROL_PLANE_ASSETS,
     DATA_PLANE_ASSETS,
@@ -156,6 +157,8 @@ class RebuildCheck:
     data_plane_after: int | None = None
     #: 清库带走的控制面任务行数——这个数越大越说明控制面确实只是运行态
     control_rows_dropped: int = 0
+    #: 模式层自检结论（审控制面建表语句本身）。``None`` 表示这次没审模式层。
+    schema_audit: SchemaAudit | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -168,6 +171,7 @@ class RebuildCheck:
             "data_plane_before": self.data_plane_before,
             "data_plane_after": self.data_plane_after,
             "control_rows_dropped": self.control_rows_dropped,
+            "schema_audit": self.schema_audit.as_dict() if self.schema_audit else None,
         }
 
 
@@ -447,28 +451,45 @@ class ControlPlane:
     def rebuild_check(self) -> RebuildCheck:
         """执行原文第四章的健康判据：把平台的数据库清空重建，业务数据是否完好？
 
-        本方法做的是**静态断言**，不真的清库：它检查控制面持有的资产清单里
-        有没有混入数据面主数据。只要没有，清空重建就必然安全。
+        本方法做的是**静态断言**，不真的清库；判据分两层：
 
-        真要演练清库，调 ``store.purge()`` 后再跑一遍本方法——结论不变，
-        因为结论只取决于「控制面持有什么」，与「控制面里现在有多少行」无关。
+        资产层
+            控制面持有的资产清单里有没有混进数据面主数据。
+            ⚠️ 这一层**自我指涉、恒为真**：:func:`~.contracts.asset_plane` 判归属的
+            依据就是「在不在 ``CONTROL_PLANE_ASSETS`` 里」，所以遍历该字典再问它归谁，
+            答案只能是控制面。保留它是为了兼容既有返回结构与调用方，
+            但它证明不了任何事——真正的判据在下一层。
+
+        模式层（:func:`~.audit.audit_control_plane_schema`）
+            审**真正会落盘**的东西：控制面 MySQL 建表语句的表清单与列名，
+            以及数据面资产能不能锚到 registry 登记在册的湖仓表上。多一张未登记的表、
+            多一列 ``image_embedding``、表名影射了湖仓表，这一层都会直接判不通过。
+
+        两层都过才 ``passed=True``。真要演练清库用 :meth:`rebuild_drill`。
         """
         leaked = [a for a in CONTROL_PLANE_ASSETS if asset_plane(a) is not Plane.CONTROL]
         intact = tuple(DATA_PLANE_ASSETS)
-        passed = not leaked
-        detail = (
-            "控制面只持有运行态（规则配置 / 任务配置与执行状态 / 审核流状态 / 热缓存），"
-            "主数据（clip / 图片 / 标签 / 向量）全部在 Paimon；"
-            "清空控制面后重建配置即可恢复，业务数据完好。"
-            if passed
-            else f"控制面持有了数据面资产：{leaked}——违反第一设计原则「{K.FIRST_PRINCIPLE}」"
-        )
+        schema = audit_control_plane_schema()
+        passed = not leaked and schema.passed
+        if leaked:
+            detail = f"控制面持有了数据面资产：{leaked}——违反第一设计原则「{K.FIRST_PRINCIPLE}」"
+        elif not schema.passed:
+            detail = "控制面持久化模式自检未通过：" + "；".join(f.detail for f in schema.findings)
+        else:
+            detail = (
+                "控制面只持有运行态（规则配置 / 任务配置与执行状态 / 审核流状态 / 热缓存），"
+                f"落盘只有 {schema.table_count} 张 cp_ 表 / {schema.column_count} 列，"
+                "无一列命中主数据黑名单；主数据（clip / 图片 / 标签 / 向量）全部在 Paimon，"
+                f"{len(schema.data_plane_anchors)} 类数据面资产逐一锚定到 registry 登记的湖仓表；"
+                "清空控制面后重建配置即可恢复，业务数据完好。"
+            )
         return RebuildCheck(
             criterion=K.HEALTH_CRITERION,
             control_plane_assets_lost=tuple(CONTROL_PLANE_ASSETS),
             data_plane_assets_intact=intact,
             passed=passed,
             detail=detail,
+            schema_audit=schema,
         )
 
     def rebuild_drill(self, data_plane_probe: Callable[[], int] | None = None) -> RebuildCheck:

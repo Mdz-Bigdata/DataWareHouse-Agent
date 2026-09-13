@@ -11,6 +11,11 @@
 
 生产链路的主力是 Flink 流作业本身（见 sql.py 生成的 ``flink/sql/ingest_*.sql``），
 Python 侧的 sink 服务于补数、回放、演练与测试——两者写的是同一张表、同一套系统字段。
+
+``InMemoryOdsSink`` 之外的三个实现在本包内部没有调用方，这是有意的：它们是**供外部
+编排按场景选用的公开 API**（都在 ``ingest.__all__`` 里）——离线补数选 ``JsonlOdsSink``，
+提交到集群选 ``FlinkSqlGatewaySink``，两者都要就用 ``CompositeOdsSink`` 扇出。
+通道只依赖 ``OdsSink`` 协议，装配权在调用方手里。
 """
 
 from __future__ import annotations

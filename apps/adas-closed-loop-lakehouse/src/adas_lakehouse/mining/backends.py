@@ -35,6 +35,8 @@ from ..config import settings
 from .constants import (
     EVENT_WINDOW_AFTER_SEC,
     EVENT_WINDOW_BEFORE_SEC,
+    HIGH_VALUE_SOURCES,
+    RULE_JOB_PROGRESS_API_PATH,
     RULE_JOBS_API_PATH,
 )
 from .tables import DWD_MINING_RESULT_DETAIL, TableRef, qualified
@@ -48,6 +50,8 @@ __all__ = [
     "DryRunBackend",
     "StarRocksBackend",
     "FlinkSqlGatewayBackend",
+    "TAG_SOURCE_RULE",
+    "RULE_TAG_CONFIDENCE",
     "TagWriteRequest",
     "TagService",
     "InMemoryTagService",
@@ -59,6 +63,8 @@ __all__ = [
     "ResultSink",
     "InMemoryResultSink",
     "SqlResultSink",
+    "rule_job_endpoint",
+    "rule_job_progress_endpoint",
 ]
 
 
@@ -244,12 +250,34 @@ class FlinkSqlGatewayBackend:
 # --------------------------------------------------------------------------- 统一标签服务
 
 
+#: 规则标签的来源码。registry 里 dwd_mining_data_tag_detail.tag_source 的注释写死了
+#: 取值域「collect 采集/rule 规则/vlm 模型」；统一标签服务侧的三来源枚举
+#: （``tags.sources.TagSource``）取值也是这三个。
+#:
+#: 它与 [S3-01] 五那三类「高价值数据来源」（「规则命中 / 事件抽帧 / VLM 标签」）
+#: **不是同一件事**，以前混用了：前者是标签事实表的列取值域，后者是向量化的成本分级口径。
+#: 把「规则命中」写进 tag_source 的后果是双份的——统一标签服务按枚举校验会直接拒收，
+#: 就算收了也在湖仓里落下一个取值域外的字符串，按 tag_source 做的一切统计从此少一块。
+TAG_SOURCE_RULE = "rule"
+
+#: 规则命中的置信度。registry 该列注释：「置信度（模型标签必填，人工/规则标签为 1.0）」——
+#: 规则是确定性判定，要么中要么不中。
+RULE_TAG_CONFIDENCE = 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class TagWriteRequest:
     """一次打标请求。
 
     原文（[S3-04] 二）要求命中「携带 rule_id 血缘」，所以 rule_id / rule_version
     是必填项，不是可选的元数据。
+
+    :meth:`to_payload` 的键名刻意与统一标签服务的公开入参
+    （``tags.records.RawTag`` 的字段名）对齐：本模块**不 import tags**
+    （子系统之间零耦合，见 controlplane/subsystems.py），但键名对齐之后，
+    把这个 payload 翻成 RawTag 就是一次机械的同名映射，中间不需要再来一张翻译表——
+    翻译表正是「改了一边忘了另一边」的高发地。两边字段名的一致性由
+    tests/deep/test_mining.py 的 ``test_tag_payload_speaks_the_tag_services_vocabulary`` 钉住。
     """
 
     data_id: str
@@ -258,18 +286,26 @@ class TagWriteRequest:
     rule_version: int
     run_id: str
     value_score: float
-    source: str = "规则命中"  # 对齐 [S3-01] 五的三类高价值数据来源之一
+    #: 标签来源码，落 tag_source 列。默认恒为 ``rule``——本引擎产出的都是规则标签。
+    tag_source: str = TAG_SOURCE_RULE
+    #: 成本分级口径的来源标记（[S3-01] 五的三类高价值数据来源之一）。
+    #: 它不落标签表，是给向量化队列分级看的，所以与 tag_source 分开两个字段。
+    high_value_source: str = HIGH_VALUE_SOURCES[0]
     event_time: datetime | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
+            # 归一前的原始写法：字典映射与别名归一是服务侧的职权（[S3-03] 二①）
+            "raw_tag": self.scene_label,
+            "source": self.tag_source,
             "data_id": self.data_id,
-            "tag_value": self.scene_label,
-            "tag_source": self.source,
             "rule_id": self.rule_id,
-            "rule_version": self.rule_version,
+            # registry 里 rule_version 是 STRING，类型口径在这里对齐
+            "rule_version": str(self.rule_version),
+            "confidence": RULE_TAG_CONFIDENCE,
             "run_id": self.run_id,
             "value_score": round(self.value_score, 4),
+            "high_value_source": self.high_value_source,
             "event_time": self.event_time.isoformat() if self.event_time else None,
         }
 
@@ -636,8 +672,32 @@ def _coerce(value: Any, column: str) -> Any:
 
 
 def rule_job_endpoint(base_url: str) -> str:
-    """规则任务的 OpenAPI 端点。
+    """规则任务创建的 OpenAPI 端点。
 
-    原文（[S3-01] 六、接口表「任务类」行）：``POST /api/v1/mining/rule-jobs``。
+    原文（[S3-01] 六、接口表「任务类」行）：``POST /api/v1/mining/rule-jobs；
+    GET /jobs/{jobId}/progress，任务创建与进度查询，幂等键防重复提交``。
+
+    本引擎自己不调这个接口——**它是出口不是入口**：外部编排（控制面 / 网关 / 运维脚本）
+    按这个路径把规则任务提交进来，本函数只负责把原文那条路径与部署的 base_url 拼一起，
+    保证「对外暴露的路径」全仓库只有 constants 一处定义。
     """
     return f"{base_url.rstrip('/')}{RULE_JOBS_API_PATH}"
+
+
+def rule_job_progress_endpoint(base_url: str, job_id: str) -> str:
+    """规则任务进度查询的 OpenAPI 端点。
+
+    原文出处同 :func:`rule_job_endpoint`：「GET /jobs/{jobId}/progress，
+    任务创建与进度查询」。同样是供外部编排调用的公开出口。
+
+    Args:
+        base_url: 网关地址。
+        job_id: 任务 ID，填进路径里的 ``{jobId}`` 占位符。
+
+    Raises:
+        ValueError: job_id 为空——拼出一个带 ``{jobId}`` 字面量的 URL 去请求，
+            会得到一个谁也看不懂的 404。
+    """
+    if not job_id:
+        raise ValueError("job_id 不能为空，否则路径里的 {jobId} 占位符会被原样发出去")
+    return f"{base_url.rstrip('/')}{RULE_JOB_PROGRESS_API_PATH.format(jobId=job_id)}"

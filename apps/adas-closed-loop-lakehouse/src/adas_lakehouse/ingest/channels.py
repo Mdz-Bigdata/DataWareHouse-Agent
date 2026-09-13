@@ -34,12 +34,16 @@ from ..domains import Layer
 from .constants import (
     CDC_PHASE_COUNT,
     CDC_SYNC_LATENCY_TEXT,
+    DUPLICATE_RATE_ALERT_THRESHOLD,
     INGEST_CHANNEL_COUNT,
+    KAFKA_FUTURE_TOLERANCE_SEC,
+    KAFKA_LAG_TOLERANCE_DAYS,
     LOCAL_REPLAY_BATCH_SIZE,
     ODS_WRITE_MAX_ATTEMPTS,
 )
 from .errors import ChannelError, MissingDependency, SinkError
 from .gate import (
+    ISSUE_CHANNEL_CODES,
     AnomalyClosedLoop,
     CheckResult,
     CheckStatus,
@@ -51,7 +55,7 @@ from .gate import (
     merge_outcomes,
 )
 from .oss import FILE_META_TABLE, FileMeta
-from .rows import project_to_table, stamp_system_fields
+from .rows import SYS_QUALITY_FLAG, dropped_fields, project_to_table, stamp_system_fields
 from .sinks import InMemoryOdsSink, OdsSink
 
 __all__ = [
@@ -70,6 +74,8 @@ __all__ = [
     "default_kafka_bindings",
     "default_file_meta_binding",
     "build_default_channels",
+    "isolating_closed_loop",
+    "DEFAULT_GENERIC_GATE",
     "unified_ingest",
 ]
 
@@ -97,8 +103,14 @@ class ChannelKind(Enum):
     def mechanism(self) -> str:
         return self.value[2]
 
+    @property
+    def issue_code(self) -> str:
+        """隔离表 ``ods_quality_issue.source_channel`` 的取值（mysql_cdc / kafka / oss_file）。"""
+        return ISSUE_CHANNEL_CODES[self.label]
+
 
 assert len(ChannelKind) == INGEST_CHANNEL_COUNT
+assert {k.label for k in ChannelKind} == set(ISSUE_CHANNEL_CODES)
 
 
 class CdcPhase(str, Enum):
@@ -130,6 +142,12 @@ class IngestReport:
     duplicates: int = 0
     #: 落 ODS 实际尝试的次数（1 = 一次成功；> 1 说明发生了重试）
     write_attempts: int = 0
+    #: 是否因为 ``limit`` 截断了输入。截断必须说出来——否则 500 条之后的数据静默消失
+    truncated: bool = False
+    #: 投影到目标表时被丢掉的列（契约里没有对应列）。同样是「不静默丢弃」：
+    #: [a5]「WARNING 带标放行的数据写入 ``_quality_flag``」——契约里眼下没有这一列，
+    #: 它就会在投影时消失；消失可以，消失得无人知晓不行。
+    dropped_columns: set[str] = field(default_factory=set)
     started_at: datetime = field(default_factory=datetime.now)
     finished_at: datetime | None = None
     rejections: list[GateOutcome] = field(default_factory=list)
@@ -139,12 +157,29 @@ class IngestReport:
     def elapsed_seconds(self) -> float:
         return ((self.finished_at or datetime.now()) - self.started_at).total_seconds()
 
+    @property
+    def duplicate_rate(self) -> float:
+        """本批的重复率 = 幂等去重条数 / 总条数。
+
+        [a6] 4.2「重复率监控」：「事件 ID 幂等去重（Paimon 主键 Upsert），
+        重复率 > 5% 告警」，处理方式是「自动去重 **+ 超限告警**」。去重在
+        ``IngestChannel.run`` 里，告警判据是这个比率（见 ``duplicate_rate_exceeded``）。
+        """
+        return self.duplicates / self.total if self.total else 0.0
+
+    @property
+    def duplicate_rate_exceeded(self) -> bool:
+        """重复率是否越过 [a6] 的 5% 告警线（严格大于，与原文「> 5%」一致）。"""
+        return self.duplicate_rate > DUPLICATE_RATE_ALERT_THRESHOLD
+
     def summary(self) -> str:
+        tail = "，输入被 limit 截断" if self.truncated else ""
         return (
             f"[{self.channel.label}] → {self.target_table}："
             f"共 {self.total} 条，入湖 {self.accepted} 条（带标放行 {self.warned} 条），"
-            f"拒绝 {self.rejected} 条，幂等去重 {self.duplicates} 条，"
-            f"写入尝试 {self.write_attempts} 次，耗时 {self.elapsed_seconds:.3f}s"
+            f"拒绝 {self.rejected} 条，幂等去重 {self.duplicates} 条"
+            f"（重复率 {self.duplicate_rate:.1%}），"
+            f"写入尝试 {self.write_attempts} 次，耗时 {self.elapsed_seconds:.3f}s{tail}"
         )
 
 
@@ -279,17 +314,36 @@ class IngestChannel(ABC):
         report = IngestReport(self.kind, self.target_table, self.source_system)
         source = records if records is not None else self.read()
         buffer: list[dict[str, Any]] = []
-        batch_keys: list[str] = []
+        batch_keys: set[str] = set()
 
         for i, raw in enumerate(source):
             if limit is not None and i >= limit:
+                # 截断要留痕：静默丢掉第 limit 条之后的数据，就是「查不出来的数据丢失」
+                report.truncated = True
+                report.errors.append(
+                    f"输入超过单批上限 {limit} 条，其余记录未处理——"
+                    "请调大 limit 或分批喂入（limit=None 表示不限）"
+                )
                 break
             report.total += 1
             try:
                 row = self.transform(raw)
             except Exception as exc:
-                report.errors.append(f"转换失败: {exc}")
+                # 转换失败 = [a6] 五步异常闭环里的「Schema 不可解析」，P0 典型场景之一。
+                # 它必须进隔离表而不是被 continue 掉：脏消息被门禁看见、留下原始报文，
+                # 才谈得上复验重放。sql.py 生成的 Kafka 源表同样写死
+                # 'json.ignore-parse-errors' = 'false'，两侧取向一致。
                 report.rejected += 1
+                outcome = self._schema_failure(raw, exc)
+                report.rejections.append(outcome)
+                report.errors.append(f"转换失败: {exc}")
+                self.closed_loop.handle(
+                    subject=outcome.subject or f"{self.kind.issue_code}#{i}",
+                    outcome=outcome,
+                    channel=self.kind.label,
+                    target_table=self.target_table,
+                    payload=self._raw_as_payload(raw),
+                )
                 continue
 
             # 门禁先于落表：通道专属规则 + （挂上时）三通道通用的六维门禁
@@ -324,12 +378,14 @@ class IngestChannel(ABC):
             key = self.idempotency_key(row) if self.dedupe else None
             if key is not None and (key in self._written_keys or key in batch_keys):
                 report.duplicates += 1
-                continue
+                continue  # 自动去重（[a6] 4.2）；超限告警在本批结束后统一发
 
             if outcome.decision is Decision.ACCEPT_WITH_WARNING:
                 report.warned += 1
-                # WARNING 带标放行：把门禁结论写进行内，下游可据此过滤
-                row["_quality_warning"] = outcome.reason_text()
+                # [a5]「带标记放行的数据写入 _quality_flag，供下游按质量筛选，不阻塞主链路」。
+                # 列名取原文，也与 quality.severity.QUALITY_FLAG_FIELD 一致——
+                # 自起一个 _quality_warning 的话，下游按 _quality_flag 筛选就永远筛不到。
+                row[SYS_QUALITY_FLAG] = outcome.reason_text()
 
             stamped = stamp_system_fields(
                 row,
@@ -338,15 +394,73 @@ class IngestChannel(ABC):
                 layer=self.layer,
             )
             buffer.append(project_to_table(self.target_table, stamped))
+            report.dropped_columns.update(dropped_fields(self.target_table, stamped))
             if key is not None:
-                batch_keys.append(key)
+                batch_keys.add(key)
             report.accepted += 1
 
         if buffer:
             self._write_with_retry(buffer, report)
             self._written_keys.update(batch_keys)
+        self._alert_on_duplicate_rate(report)
         report.finished_at = datetime.now()
         return report
+
+    # ---- 异常路径 ----
+
+    _SCHEMA_CHECK = GateCheck(
+        "schema_unparsable",
+        "Schema 不可解析",
+        "源报文无法转换成 ODS 行（必填字段缺失 / 取值非法 / JSON 结构不符）",
+        # [a6] 第五章 SLA 表：「P0 合规级 | 脱敏标记缺失、主键为空、**Schema 不可解析**、
+        # 多模态整帧缺失」——这是原文点名的 P0 典型场景，不是本项目自定级别。
+        Severity.P0,
+        "有效性",
+    )
+
+    def _schema_failure(self, raw: Any, exc: Exception) -> GateOutcome:
+        """把一次转换失败包成门禁结论，好让它走完整的五步异常闭环。"""
+        subject = ""
+        if isinstance(raw, Mapping):
+            for candidate in ("file_id", "event_id", "data_id"):
+                value = raw.get(candidate)
+                if value not in (None, ""):
+                    subject = str(value)
+                    break
+        return GateOutcome(
+            Decision.REJECT,
+            [
+                CheckResult(
+                    self._SCHEMA_CHECK,
+                    CheckStatus.FAIL,
+                    (f"{type(exc).__name__}: {exc}",),
+                )
+            ],
+            Severity.P0,
+            subject=subject,
+        )
+
+    @staticmethod
+    def _raw_as_payload(raw: Any) -> dict[str, Any]:
+        """原始报文 → 隔离表的 ``raw_payload``。非字典报文原样裹一层，**不丢**。"""
+        if isinstance(raw, Mapping):
+            return dict(raw)
+        return {"_raw": repr(raw)}
+
+    def _alert_on_duplicate_rate(self, report: IngestReport) -> None:
+        """[a6] 4.2「重复率监控」：自动去重之外，重复率 > 5% 还要告警。
+
+        级别取 P3——[a6] 第五章 SLA 表把「重复率波动」归在「P3 观察」档。
+        """
+        if not report.duplicate_rate_exceeded:
+            return
+        message = (
+            f"{self.kind.label} 通道 {self.target_table} 本批重复率 "
+            f"{report.duplicate_rate:.1%} 超过 {DUPLICATE_RATE_ALERT_THRESHOLD:.0%} 告警线"
+            f"（{report.duplicates}/{report.total} 条被幂等去重）"
+        )
+        report.errors.append(message)
+        self.closed_loop.alert_only(Severity.P3, message, channel=self.kind.label)
 
     def _write_with_retry(self, buffer: Sequence[Mapping[str, Any]], report: IngestReport) -> None:
         """落 ODS，失败按 ``max_write_attempts`` 重试；耗尽仍失败则抛 ``SinkError``。
@@ -582,10 +696,11 @@ class KafkaChannel(IngestChannel):
     kind: ClassVar[ChannelKind] = ChannelKind.KAFKA
 
     #: ⚠️ 原文未明确，本项目设计：原文只说「Kafka 通道查时空合理」，未给容忍窗口。
-    #: 这里给出可覆盖的默认值——未来时间 300 秒（覆盖车端与云端的常见时钟漂移），
-    #: 滞后 30 天（覆盖车端离线缓存后补传的场景）。两者都可在构造时按业务调整。
-    DEFAULT_FUTURE_TOLERANCE_SEC = 300
-    DEFAULT_LAG_TOLERANCE_DAYS = 30
+    #: 取值登记在 ``constants``，与 ``sql.render_kafka_pipeline`` 生成的 Flink SQL
+    #: 同源——未来时间 300 秒（覆盖车端与云端的常见时钟漂移）、滞后 30 天（覆盖车端
+    #: 离线缓存后补传）。两者都可在构造时按业务调整。
+    DEFAULT_FUTURE_TOLERANCE_SEC = KAFKA_FUTURE_TOLERANCE_SEC
+    DEFAULT_LAG_TOLERANCE_DAYS = KAFKA_LAG_TOLERANCE_DAYS
 
     _SPACETIME_CHECK = GateCheck(
         "kafka_spacetime_sane",
@@ -801,21 +916,30 @@ class OssFileChannel(IngestChannel):
         )
         self.binding = binding
         self.gate = gate if gate is not None else OssComplianceGate()
-        self._metas: dict[str, FileMeta] = {}
+        self._metas: dict[tuple[str, str], FileMeta] = {}
 
     #: 幂等键字段：与共享契约 ods_data_file_meta 的主键 (file_id, file_type) 同口径
     KEY_FIELDS: ClassVar[tuple[str, str]] = ("file_id", "file_type")
+
+    @staticmethod
+    def _meta_key(row: Mapping[str, Any]) -> tuple[str, str]:
+        """缓存键取目标表主键 ``(file_id, file_type)``。
+
+        只按 file_id 缓存会在同一个 file_id 挂着多种 file_type 时串台——
+        主键是两列，缓存键也必须是两列。
+        """
+        return (str(row.get("file_id", "")), str(row.get("file_type", "")))
 
     def transform(self, raw: Mapping[str, Any]) -> dict[str, Any]:
         """Kafka 元信息消息 → 入湖行，并缓存 FileMeta 供门禁使用。"""
         meta = raw if isinstance(raw, FileMeta) else FileMeta.from_kafka_message(raw)
         row = meta.to_row()
-        self._metas[meta.file_id] = meta
+        self._metas[self._meta_key(row)] = meta
         return row
 
     def gate_check(self, row: Mapping[str, Any]) -> GateOutcome:
         """跑 OSS 通道四项专属检查。"""
-        meta = self._metas.get(str(row.get("file_id", "")))
+        meta = self._metas.get(self._meta_key(row))
         if meta is None:  # pragma: no cover - transform 必定先于 gate_check 执行
             meta = FileMeta.from_kafka_message(row)
         return self.gate.check(meta, row=row)
@@ -826,7 +950,7 @@ class OssFileChannel(IngestChannel):
         探针结果只有跑完 P1 检查才知道，而 ``transform()`` 早于门禁执行——
         不在这里回写，湖表里这一列永远是 NULL。
         """
-        meta = self._metas.get(str(row.get("file_id", "")))
+        meta = self._metas.get(self._meta_key(row))
         if meta is not None:
             row["decodable_flag"] = meta.decodable_flag
 
@@ -929,41 +1053,107 @@ def default_file_meta_binding() -> FileMetaBinding:
     return FileMetaBinding()
 
 
+def isolating_closed_loop(
+    sink: OdsSink,
+    *,
+    alert: Callable[[Severity, str], None] | None = None,
+) -> AnomalyClosedLoop:
+    """造一个**真的把被拒数据写进隔离表**的五步异常闭环。
+
+    [a6] 第三章：「被拒绝的数据连同命中规则一起落表，而不是打日志了事。
+    原始数据不丢失是整套门禁可重放、可审计的根基。」——所以默认装配必须接上写出口，
+    而不是留一个 ``isolate=None`` 的空钩子等调用方想起来接。
+
+    行在写出口之前经 ``rows.project_to_table`` 投影到 ``ods_quality_issue`` 的注册列，
+    并按 ODS 层规范盖 ``_ingest_time`` + ``_source_system``——隔离表也是一张 ODS 表。
+    """
+
+    def _isolate(table: str, row: Mapping[str, Any]) -> int:
+        stamped = stamp_system_fields(row, source_system="入湖质量门禁", layer=Layer.ODS)
+        return sink.write(table, [project_to_table(table, stamped)])
+
+    return AnomalyClosedLoop(isolate=_isolate, alert=alert)
+
+
+#: ``build_default_channels(generic_gate=...)`` 的「没传」与「显式关掉」必须分得开：
+#: 没传 → 自动接上 quality 的通用六维门禁（门禁不能分）；传 None → 明确只跑通道专属规则。
+DEFAULT_GENERIC_GATE = object()
+
+
 def build_default_channels(
     *,
     sink: OdsSink | None = None,
     closed_loop: AnomalyClosedLoop | None = None,
     gate: OssComplianceGate | None = None,
-    generic_gate: Callable[[Mapping[str, Any]], Sequence[CheckResult]] | None = None,
+    generic_gate: Callable[[Mapping[str, Any]], Sequence[CheckResult]] | None | Any = (
+        DEFAULT_GENERIC_GATE
+    ),
 ) -> list[IngestChannel]:
     """按默认绑定构造三条通道的全部 channel 实例，共享同一个 sink 与异常闭环。
 
     Args:
         sink: 三条通道共用的 ODS 写出口。
         closed_loop: 三条通道共用的五步异常闭环——被拒数据不分通道，一律进同一个隔离表。
+            不传则按 ``isolating_closed_loop(sink)`` 装配：拦下来的数据真的写
+            ``ods_quality_issue``。
         gate: OSS 通道的四项专属门禁。
-        generic_gate: **三条通道共用**的通用六维门禁钩子。三条通道拿到的是同一个
-            可调用对象，这就是「通道可以分，门禁不能分」在装配层面的落点；
-            要接 ``adas_lakehouse.quality`` 的规则集，用
-            ``ingest.quality_bridge.unified_gate_hook(kind)`` 构造。
+        generic_gate: **三条通道共用**的通用六维门禁钩子。缺省（不传）时自动接上
+            ``quality_bridge.unified_gate_hook``，三条通道共享**同一个** ``QualityGate``
+            实例——规则一套、灰度状态一套、指标一套，这就是「通道可以分，门禁不能分」
+            在装配层面的落点。显式传 ``None`` 表示只跑通道专属规则（离线演练用）。
+
+    Note:
+        这是给外部编排调用的公开装配入口（``ingest.__all__`` 已导出），本包内部不调用它——
+        生产链路的常规形态是 ``sql.py`` 生成的 Flink 流作业，本函数服务于补数、回放与演练。
     """
     shared_sink = sink if sink is not None else InMemoryOdsSink()
-    loop = closed_loop if closed_loop is not None else AnomalyClosedLoop()
+    loop = closed_loop if closed_loop is not None else isolating_closed_loop(shared_sink)
+
+    #: 三条通道共享的那**一个** QualityGate 实例，首次需要时才建
+    shared_quality_gate: list[Any] = []
+
+    def _hook_for(kind: ChannelKind, table: str) -> Any:
+        if generic_gate is not DEFAULT_GENERIC_GATE:
+            return generic_gate
+        # 局部 import：quality 在 import 期会装载整套内置规则，
+        # `import adas_lakehouse.ingest` 不该为此付代价。
+        from ..quality import QualityGate
+        from .quality_bridge import unified_gate_hook
+
+        if not shared_quality_gate:
+            shared_quality_gate.append(QualityGate())
+        hook = unified_gate_hook(kind, table=table, gate=shared_quality_gate[0])
+        # 把共享的那个 QualityGate 挂在钩子上：装配完之后要能查得出来三条通道用的是不是
+        # 同一个实例（规则一套、灰度状态一套、指标一套），而不是靠读闭包变量猜。
+        hook.quality_gate = shared_quality_gate[0]  # type: ignore[attr-defined]
+        return hook
+
     channels: list[IngestChannel] = [
-        CdcChannel(b, sink=shared_sink, closed_loop=loop, generic_gate=generic_gate)
+        CdcChannel(
+            b,
+            sink=shared_sink,
+            closed_loop=loop,
+            generic_gate=_hook_for(ChannelKind.CDC, b.target_table),
+        )
         for b in DEFAULT_CDC_BINDINGS
     ]
     channels.extend(
-        KafkaChannel(b, sink=shared_sink, closed_loop=loop, generic_gate=generic_gate)
+        KafkaChannel(
+            b,
+            sink=shared_sink,
+            closed_loop=loop,
+            generic_gate=_hook_for(ChannelKind.KAFKA, b.target_table),
+        )
         for b in default_kafka_bindings()
     )
+    file_binding = default_file_meta_binding()
     channels.append(
         OssFileChannel(
-            default_file_meta_binding(),
+            file_binding,
             gate=gate,
             sink=shared_sink,
             closed_loop=loop,
-            generic_gate=generic_gate,
+            generic_gate=_hook_for(ChannelKind.OSS, file_binding.target_table),
         )
     )
     return channels
@@ -976,6 +1166,9 @@ def unified_ingest(
     on_report: Callable[[IngestReport], None] | None = None,
 ) -> list[IngestReport]:
     """统一入湖入口：逐条通道执行，返回各自的报告。
+
+    本包内部不调用它——这是给外部编排（补数脚本 / 演练 / 调度任务）用的公开 API，
+    已在 ``ingest.__all__`` 导出。生产实时链路的形态是 ``sql.py`` 生成的 Flink 作业。
 
     Args:
         channels: 通道实例列表（通常来自 ``build_default_channels()``）。

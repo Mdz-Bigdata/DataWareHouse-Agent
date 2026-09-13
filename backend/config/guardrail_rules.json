@@ -1,0 +1,245 @@
+{
+  "_comment": [
+    "网闸（Guardrail）外置规则配置。app/service/guardrail.py 启动时加载，找不到本文件时",
+    "回退到代码里的 DEFAULT_CONFIG——两者语义完全一致，删掉本文件不会改变系统行为。",
+    "",
+    "覆盖顺序：DEFAULT_CONFIG < 本文件 < 环境变量（GUARDRAIL_* ）< 运行时 API",
+    "  环境变量：GUARDRAIL_RULES_PATH / GUARDRAIL_AUDIT_DIR / GUARDRAIL_AUDIT_ENABLED",
+    "           / GUARDRAIL_PARTITION_MODE（off|warning|error，一把梭覆盖分区裁剪闸门严重级）",
+    "",
+    "severity 语义：",
+    "  error   —— 拦截（抛 GuardrailException），并写审计",
+    "  warning —— 放行，但在返回值 warnings[] 中标记，并写审计",
+    "  off     —— 该规则/该表不检查（P0 安全规则不允许降级，见下方 _p0_rules 说明）",
+    "",
+    "灰度（按表）：rules.<id>.tables 里登记 表名 -> severity，优先级高于 rules.<id>.severity。",
+    "  mode=grey 时规则只在 tables 里显式登记的表上生效（新规则先在单表试运行）；",
+    "  mode=full 时所有表都跑，未登记的表用 rules.<id>.severity。",
+    "  运行时可用 guardrail.ruleset.start_grey(rule_id, table) / promote(rule_id, table=...) 调整，",
+    "  guardrail.ruleset.save() 可把当前灰度状态写回本文件。"
+  ],
+  "version": 1,
+  "audit": {
+    "enabled": true,
+    "dir": null,
+    "filename": "guardrail_audit.jsonl",
+    "max_bytes": 10485760,
+    "backup_count": 7,
+    "log_sql": false,
+    "log_pass": true
+  },
+  "partition_discovery": {
+    "_comment": [
+      "large_tables 的填充来源（此前全仓没有任何写入点，分区裁剪闸门永不触发）：",
+      "  1) 语义层 Schema 自动发现 discovered_table_columns —— 含下列分区列之一的表进闸门",
+      "  2) 运行时统计 —— guardrail.record_table_row_count(table, rows)，配合 min_rows 门槛",
+      "  3) 本文件 partition_keys 显式登记（最高优先级，可指定非常规分区列名）"
+    ],
+    "enabled": true,
+    "partition_columns": [
+      "dt",
+      "ds",
+      "pt",
+      "p_date",
+      "date",
+      "data_date",
+      "stat_date",
+      "log_date"
+    ],
+    "exclude_prefixes": [
+      "sqlite_",
+      "information_schema"
+    ],
+    "exclude_tables": [],
+    "min_rows": 0,
+    "partition_keys": {}
+  },
+  "security_levels": {
+    "_comment": [
+      "#9 敏感列元数据驱动：密级 L1 公开 / L2 内部 / L3 机密，与 data-agent-engine",
+      "ontology（backend/ontology/objects.yaml 的 security_level）同一套取值。",
+      "查级顺序：columns 显式登记 > 元数据源（metadata_sources / 语义层 Dimension.security_level",
+      "         / guardrail.register_column_security_levels 运行时注入） > patterns 兜底模式匹配。"
+    ],
+    "roles": {
+      "L1": [
+        "*"
+      ],
+      "L2": [
+        "admin",
+        "analyst"
+      ],
+      "L3": [
+        "admin"
+      ]
+    },
+    "columns": {
+      "customer_phone": "L3",
+      "customer_card_no": "L3"
+    },
+    "patterns": [
+      {
+        "match": "phone",
+        "level": "L3"
+      },
+      {
+        "match": "mobile",
+        "level": "L3"
+      },
+      {
+        "match": "card",
+        "level": "L3"
+      },
+      {
+        "match": "id_no",
+        "level": "L3"
+      },
+      {
+        "match": "idcard",
+        "level": "L3"
+      },
+      {
+        "match": "bank_account",
+        "level": "L3"
+      },
+      {
+        "match": "passwd",
+        "level": "L3"
+      },
+      {
+        "match": "password",
+        "level": "L3"
+      },
+      {
+        "match": "email",
+        "level": "L2",
+        "severity": "warning"
+      },
+      {
+        "match": "address",
+        "level": "L2",
+        "severity": "warning"
+      },
+      {
+        "match": "salary",
+        "level": "L2",
+        "severity": "warning"
+      },
+      {
+        "match": "birthday",
+        "level": "L2",
+        "severity": "warning"
+      }
+    ],
+    "legacy_substring_match": true,
+    "metadata_sources": [
+      {
+        "enabled": false,
+        "format": "engine_ontology",
+        "path": "../apps/data-agent-engine/backend/ontology/objects.yaml",
+        "_comment": [
+          "engine 侧本体的对象级 security_level 下沉成列级密级（对象密级 → 该对象 properties",
+          "与 source_tables.field_mapping 覆盖到的物理列）。默认 enabled=false：跨应用读文件属于",
+          "耦合，需由 integrations/data_engine 适配器显式开启，或改走运行时注入 API。",
+          "yaml 解析优先用 PyYAML；backend venv 目前没装 PyYAML，会自动降级为受限正则解析，",
+          "并在审计日志里记一条 guardrail.metadata_source 的 degraded 记录。"
+        ]
+      }
+    ]
+  },
+  "rules": {
+    "dsl.metric_missing": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.metric_unregistered": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.metric_role": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.dimension_unregistered": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.sensitive_column": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.row_level_region": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.metric_dimension_compat": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "dsl.time_span": {
+      "mode": "full",
+      "severity": "error",
+      "max_days": 365
+    },
+    "sql.parse": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.ddl_dml": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.division_by_zero": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.join_no_equality": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.join_cartesian": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.dialect_precheck": {
+      "mode": "full",
+      "severity": "error"
+    },
+    "sql.partition_pruning": {
+      "_comment": [
+        "此前是死闸门（large_tables 永远为空）。接上 Schema 发现后默认 warning：",
+        "先观察不拦截，避免把既有能跑通的查询一把拦死；确认某张表的查询都带分区条件后，",
+        "用 tables 登记成 error 全量执法（灰度转正），或整体 GUARDRAIL_PARTITION_MODE=error。"
+      ],
+      "mode": "full",
+      "severity": "warning",
+      "promote_min_samples": 20,
+      "tables": {}
+    },
+    "sql.scan_rows": {
+      "_comment": "SQLite 仿真底座上的扫描量熔断（既有行为，保持 error 不变）。",
+      "mode": "full",
+      "severity": "error",
+      "limit": 50000
+    },
+    "sql.scan_rows_physical": {
+      "_comment": [
+        "物理库 EXPLAIN 估算行数熔断。原实现只跑 EXPLAIN 做语法预检、把计划丢掉，",
+        "物理库模式下扫描量闸门形同虚设。现在解析 EXPLAIN 估算行数，默认 warning。"
+      ],
+      "mode": "full",
+      "severity": "warning",
+      "limit": 50000
+    },
+    "sql.sensitive_column": {
+      "_comment": "物理 SQL 层的密级执法。默认 warning 是「观察期」，但凡是在 sensitive_columns.json 里被【人工显式登记】为 L3 的列所在的表，一律提级为 error：显式登记代表有人明确认定这是金融级数据，只观察不拦截等于把这条安全声明作废。模式推断出来的密级仍维持 warning——启发式不该凭空变成拦截。注意：提级后内部画像/剖析也会被拦住读这些表，这是预期行为（画像程序不该把支付账户数据捞进进程），调用方需优雅降级。新增 L3 表却漏登记会被 tests/test_s7_sensitive_enforcement.py 钉住。 star_severity 同为 error：SELECT * 会把该表全部 L3 列一并带出，比显式点名单列更该拦——留 warning 等于开了一道比正门更宽的后门。",
+      "mode": "full",
+      "severity": "warning",
+      "star_severity": "error",
+      "tables": {
+        "users": "error",
+        "withdrawal_requests": "error"
+      }
+    }
+  }
+}

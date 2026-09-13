@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import uuid
+import os
+import time
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
 from .capabilities import CapabilityRegistry
 from .proxy import HOP_BY_HOP_HEADERS, build_upstream_url, forwarded_headers, stateless_cookie_jar
+from .tracing import TRACE_HEADER, resolve_trace_id, trace_log
 
 
 registry = CapabilityRegistry.from_environment()
@@ -42,6 +44,26 @@ async def health() -> dict[str, object]:
 @app.get("/api/platform/capabilities")
 async def capabilities() -> dict[str, object]:
     return {"items": [item.public_dict() for item in registry.all()]}
+
+
+def trace_endpoint_enabled() -> bool:
+    """运维排障用的追溯查询端点，默认关闭（它会暴露最近被访问的子系统与路径）。"""
+
+    return os.getenv("PLATFORM_TRACE_ENDPOINT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@app.get("/api/platform/traces")
+async def traces(trace_id: str = Query("", max_length=64), limit: int = Query(50, ge=1, le=200)):
+    """按 trace_id 回查网关段调用记录；不带 trace_id 则返回最近若干条。
+
+    默认关闭：置 ``PLATFORM_TRACE_ENDPOINT=1`` 才开放。记录只在内存里、条数有界，
+    且不含请求体与查询串。
+    """
+
+    if not trace_endpoint_enabled():
+        raise HTTPException(status_code=404, detail="trace endpoint disabled")
+    items = trace_log.for_trace(trace_id) if trace_id else trace_log.recent(limit)
+    return {"items": items[:limit], "trace_header": TRACE_HEADER}
 
 
 @app.get("/api/platform/ready")
@@ -159,7 +181,8 @@ async def proxy(subsystem_slug: str, path: str, request: Request):
     if not subsystem.enabled:
         raise HTTPException(status_code=503, detail=f"subsystem disabled: {subsystem_slug}")
 
-    trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex
+    # 入站 trace_id 是外部输入：不合规就重新签发，绝不原样回显进响应头。
+    trace_id = resolve_trace_id(request.headers)
     upstream_request = request.app.state.http.build_request(
         request.method,
         build_upstream_url(subsystem.upstream_url, path, request.scope.get("query_string", b"")),
@@ -170,17 +193,31 @@ async def proxy(subsystem_slug: str, path: str, request: Request):
         ),
         content=await request.body(),
     )
+    started = time.perf_counter()
     try:
         upstream = await request.app.state.http.send(upstream_request, stream=True)
     except httpx.HTTPError as exc:
+        trace_log.record(
+            trace_id=trace_id, subsystem=subsystem_slug, method=request.method,
+            path=request.url.path, status_code=502,
+            elapsed_ms=(time.perf_counter() - started) * 1000.0, error=type(exc).__name__,
+        )
         raise HTTPException(status_code=502, detail=f"upstream unavailable: {subsystem_slug}") from exc
+
+    # 流式响应下，这里量到的是上游首字节（响应头）耗时——网关这一段的真实开销。
+    upstream_ms = (time.perf_counter() - started) * 1000.0
+    trace_log.record(
+        trace_id=trace_id, subsystem=subsystem_slug, method=request.method,
+        path=request.url.path, status_code=upstream.status_code, elapsed_ms=upstream_ms,
+    )
 
     response_headers = [
         (name, value)
         for name, value in upstream.headers.raw
-        if name.decode("ascii").lower() not in HOP_BY_HOP_HEADERS | {"x-trace-id"}
+        if name.decode("ascii").lower() not in HOP_BY_HOP_HEADERS | {TRACE_HEADER, "x-gateway-upstream-ms"}
     ]
-    response_headers.append((b"x-trace-id", trace_id.encode("latin-1")))
+    response_headers.append((TRACE_HEADER.encode("ascii"), trace_id.encode("latin-1")))
+    response_headers.append((b"x-gateway-upstream-ms", f"{upstream_ms:.3f}".encode("ascii")))
     response = StreamingResponse(
         upstream.aiter_raw(),
         status_code=upstream.status_code,

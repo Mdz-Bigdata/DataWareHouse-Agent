@@ -62,6 +62,7 @@ from __future__ import annotations
 from . import constants
 from .channels import (
     DEFAULT_CDC_BINDINGS,
+    DEFAULT_GENERIC_GATE,
     CdcBinding,
     CdcChannel,
     CdcPhase,
@@ -76,6 +77,7 @@ from .channels import (
     build_default_channels,
     default_file_meta_binding,
     default_kafka_bindings,
+    isolating_closed_loop,
     unified_ingest,
 )
 from .compliance import (
@@ -102,9 +104,12 @@ from .errors import (
     SinkError,
 )
 from .gate import (
+    DIMENSION_KEYS,
+    ISSUE_CHANNEL_CODES,
     OSS_CHANNEL_CHECKS,
     QUALITY_DIMENSIONS,
     QUALITY_ISSUE_TABLE,
+    AlertNotice,
     AnomalyClosedLoop,
     AnomalyRecord,
     AnomalyStep,
@@ -113,9 +118,13 @@ from .gate import (
     Decision,
     GateCheck,
     GateOutcome,
+    IssueStatus,
     OssComplianceGate,
     Severity,
+    TriageBranch,
     decide,
+    dump_payload,
+    load_payload,
     merge_outcomes,
 )
 from .oss import (
@@ -174,6 +183,8 @@ __all__ = [
     "default_kafka_bindings",
     "default_file_meta_binding",
     "build_default_channels",
+    "isolating_closed_loop",
+    "DEFAULT_GENERIC_GATE",
     "unified_ingest",
     # 合规链路
     "ComplianceSite",
@@ -217,12 +228,19 @@ __all__ = [
     "merge_outcomes",
     "OSS_CHANNEL_CHECKS",
     "QUALITY_DIMENSIONS",
+    "DIMENSION_KEYS",
+    "ISSUE_CHANNEL_CODES",
     "QUALITY_ISSUE_TABLE",
     "OssComplianceGate",
     "unified_gate_hook",
     "AnomalyStep",
+    "TriageBranch",
+    "IssueStatus",
+    "AlertNotice",
     "AnomalyRecord",
     "AnomalyClosedLoop",
+    "dump_payload",
+    "load_payload",
     # 落地
     "OdsSink",
     "InMemoryOdsSink",

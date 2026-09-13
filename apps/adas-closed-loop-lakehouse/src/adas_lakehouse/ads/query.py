@@ -41,6 +41,7 @@ from .routing import QueryRoute, WorkloadKind, qualify, route_for
 from .schema import column_names, require_column
 
 __all__ = [
+    "Row",
     "Filter",
     "AdsQuery",
     "QueryResult",
@@ -48,6 +49,7 @@ __all__ = [
     "StarRocksRowSource",
     "StaticRowSource",
     "AdsQueryService",
+    "ensure_columns",
     "SUPPORTED_OPERATORS",
 ]
 
@@ -379,17 +381,41 @@ class StaticRowSource:
     没有 StarRocks 的环境里被测试与演示（验收阶段的全量 import 检查、单元测试、
     产品评审的假数据大屏），因此提供这个实现——它复用 :meth:`Filter.matches`，
     保证内存语义与 SQL 语义同源，不会出现「测试过了、线上不一样」。
+
+    「同源」还包括**列必须真实存在**：写入的行里出现表上没有的列一律拒绝
+    （见 :meth:`put`）。列可以少（缺的当 ``NULL``），但不能多——多出来的列在内存里
+    能查到、在 StarRocks 上是 ``Unknown column``，那正是「测试过了、线上不一样」
+    的典型形态。
     """
 
     def __init__(self, tables: dict[str, Iterable[Row]] | None = None) -> None:
-        self._tables: dict[str, list[Row]] = {
-            name: [dict(r) for r in rows] for name, rows in (tables or {}).items()
-        }
+        self._tables: dict[str, list[Row]] = {}
+        for name, rows in (tables or {}).items():
+            self.put(name, rows)
 
     def put(self, table: str, rows: Iterable[Row]) -> None:
-        """写入/覆盖一张表的数据。表名同样要在 11 张产品矩阵内。"""
+        """写入/覆盖一张表的数据。
+
+        Args:
+            table: ADS 表名，必须在 11 张产品矩阵内。
+            rows: 行数据。列可以只给一部分（缺的按 ``None`` 处理），
+                但不能出现该表没有的列。
+
+        Raises:
+            UnknownTableError: 表不在 11 张产品矩阵内。
+            UnknownColumnError: 行里出现了该表没有的列。
+        """
         get_product(table)
-        self._tables[table] = [dict(r) for r in rows]
+        allowed = set(column_names(table))
+        materialized = [dict(r) for r in rows]
+        for index, row in enumerate(materialized):
+            unknown = sorted(set(row) - allowed)
+            if unknown:
+                raise UnknownColumnError(
+                    f"{table} 第 {index} 行出现了表上没有的列：{', '.join(unknown)}；"
+                    f"内存行源与真表必须同构，否则这行数据只在测试里查得到"
+                )
+        self._tables[table] = materialized
 
     def execute(
         self, sql: str, params: Sequence[Any], *, query: AdsQuery | None = None
@@ -468,7 +494,7 @@ class AdsQueryService:
         """
         route = route_for(query.workload).route
         sql, params = query.render()
-        key = self._cache_key(sql, params)
+        key = self._cache_key(query.table, sql, params)
 
         if use_cache and self.cache_ttl_seconds > 0:
             hit = self._cache.get(key)
@@ -588,7 +614,17 @@ class AdsQueryService:
         }
 
     def invalidate_cache(self, table: str | None = None) -> int:
-        """清空结果缓存（物化作业跑完后调用）。返回清掉的条目数。"""
+        """清空结果缓存（物化作业跑完后调用）。返回清掉的条目数。
+
+        Args:
+            table: 只清这张表的缓存；``None`` 清全部。
+
+        Returns:
+            清掉的条目数。
+
+        Raises:
+            UnknownTableError: 表不在 11 张产品矩阵内。
+        """
         if table is None:
             n = len(self._cache)
             self._cache.clear()
@@ -600,16 +636,37 @@ class AdsQueryService:
         return len(keys)
 
     @staticmethod
-    def _cache_key(sql: str, params: Sequence[Any]) -> tuple[Any, ...]:
-        table = sql.split("`")[-2] if "`" in sql else sql
+    def _cache_key(table: str, sql: str, params: Sequence[Any]) -> tuple[Any, ...]:
+        """缓存键：(表名, SQL, 参数)。
+
+        表名取自 :class:`AdsQuery`，**不从 SQL 文本里反解**。曾经的写法是
+        ``sql.split("`")[-2]``，那取到的是 SQL 里最后一个反引号标识符——
+        带 ORDER BY 时是排序列、带 WHERE 时是过滤列，只有裸查询才碰巧等于表名。
+        键的第一段一旦不是表名，:meth:`invalidate_cache` 按表清理就永远匹配不到，
+        T+1 物化跑完后大屏还会继续吃最长 :data:`constants.ADS_RESULT_CACHE_TTL_SECONDS`
+        秒的旧数据，而且不报错。
+        """
         return (table, sql, tuple(str(p) for p in params))
 
 
 def ensure_columns(table: str, columns: Sequence[str]) -> tuple[str, ...]:
-    """批量校验字段并回传，供服务层在构造查询前做一次显式检查。
+    """批量校验字段并回传，供调用方在构造查询前做一次显式检查。
+
+    **这是供外部编排调用的公开 API**，本子系统内部没有调用点：:class:`AdsQuery`
+    在 ``__post_init__`` 里已经逐列校验过，服务层不需要再查一遍。它存在是给业务平台
+    做「预检」——大屏配置页在用户保存字段选择时先调它，把「这张表没有这个字段」
+    一次性报全（``AdsQuery`` 只会报第一个），而不是等到渲染时才在运行期炸。
+
+    Args:
+        table: ADS 表名。
+        columns: 待校验的字段名。
+
+    Returns:
+        原样回传的字段元组（便于 ``columns=ensure_columns(...)`` 链式书写）。
 
     Raises:
-        UnknownColumnError: 任一字段不属于该表。
+        UnknownTableError: 表不在 11 张产品矩阵内。
+        UnknownColumnError: 任一字段不属于该表（一次列全所有缺失字段）。
     """
     missing = [c for c in columns if c not in column_names(table)]
     if missing:

@@ -3,11 +3,15 @@ import os
 import json
 from datetime import datetime
 
+from app.core.paths import repo_root
+
 # NOTE: 数仓开发 Agent 协作协调器。根据选定的数据源和 SQL 引擎驱动 7 大 Agent 的开发工作流仿真并产出多引擎适配代码。
 
 class DevAgentCoordinator:
     def __init__(self):
-        self.workspace_dir = "/Users/mindezhi/DataWareHouse-Agent"
+        # 产物工作区 = 仓库根目录；按包结构推导，DWH_REPO_ROOT 可覆盖。
+        # 仍存 str，下游 os.path.join / 返回给前端的相对路径拼接逻辑不变。
+        self.workspace_dir = str(repo_root())
 
     def start_dev_workflow(self, requirement: str, datasource: str = "doris", sql_engine: str = "doris") -> dict:
         """

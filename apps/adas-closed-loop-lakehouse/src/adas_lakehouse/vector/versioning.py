@@ -20,12 +20,15 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from .params import DEFAULT_VECTOR_DIM
+from .params import DEFAULT_VECTOR_DIM, SEARCH_P95_SLA_SECONDS, SEARCH_SLA_SCALE_CN
 from .schema import VECTOR_TABLE_NAME, VectorStatus
 
 __all__ = [
     "EmbeddingVersion",
     "VersionRegistry",
+    "ReleaseGate",
+    "ReleaseGateBlocked",
+    "evaluate_release_gate",
     "render_activate_sql",
     "render_deprecate_sql",
     "render_rollback_sql",
@@ -164,6 +167,95 @@ def render_active_filter(version: str | None = None) -> str:
     return ACTIVE_FILTER_CLAUSE
 
 
+@dataclass(frozen=True, slots=True)
+class ReleaseGate:
+    """embedding_version 切换前的**性能基准发布门禁**结论。
+
+    为什么要有这道门：原文第六章把「千万级数据量单次向量检索 P95 ≤ 2 秒」称作
+    **整条链路的验收线**，:data:`~.params.POC_CHECKLIST` 第 5 项也是它。但这条线原先
+    只在两个地方起作用——选型时的 :meth:`~.backend.BackendSelector.decide_from_poc`
+    与上线后的 :meth:`~.backend.BackendSelector.decide_from_runtime`，
+    **换代发布这条路上一个门都没有**：``plan_switch`` 从来不问新版本压过没有，
+    一条 UPDATE 就把全站检索切到未经基准验证的向量上。换代恰恰是最容易踩线的时刻
+    （维度变了、模型变了、索引要重建），线上 P95 崩了才发现，只能回滚。
+
+    ⚠️ 原文未明确，本项目设计：原文给了验收线与 POC 五项，但没说换代发布要不要复用它。
+    本门禁复用同一条线（:data:`~.params.SEARCH_P95_SLA_SECONDS`），不新造判据；
+    默认**不强制**（``require_benchmark=False``），只在没有基准数据时留一条 WARNING，
+    以免既有调用方被一刀切拦住。要卡死就把 :attr:`VersionRegistry.require_benchmark`
+    打开。
+
+    :param passed: 是否放行
+    :param reason_cn: 中文理由，可直接贴进发布单
+    :param measured_p95_sec: 本次基准实测 P95（秒）；None 表示压根没测
+    :param sla_seconds: 对照的验收线
+    """
+
+    passed: bool
+    reason_cn: str
+    measured_p95_sec: float | None = None
+    sla_seconds: float = SEARCH_P95_SLA_SECONDS
+
+    @property
+    def evidence_missing(self) -> bool:
+        """没有基准数据——放行也只是「没人拦」，不是「压过了」。"""
+        return self.measured_p95_sec is None
+
+
+def evaluate_release_gate(
+    measured_p95_sec: float | None,
+    *,
+    sla_seconds: float = SEARCH_P95_SLA_SECONDS,
+    require_benchmark: bool = False,
+) -> ReleaseGate:
+    """按验收线判一次发布门禁。纯函数，不碰台账，便于在发布流水线里单独调用。
+
+    :param measured_p95_sec: 新版本在 :data:`~.params.SEARCH_SLA_SCALE_CN` 数据量上的
+        实测 P95（秒）。None = 没做基准。
+    :param sla_seconds: 验收线，默认原文的 2 秒
+    :param require_benchmark: True 时「没做基准」也判不通过
+    """
+    if measured_p95_sec is None:
+        if require_benchmark:
+            return ReleaseGate(
+                False,
+                f"未提供基准实测 P95，且已开启强制基准：换代发布必须先在 "
+                f"{SEARCH_SLA_SCALE_CN}数据量上压出 P95（验收线 {sla_seconds}s）",
+                None,
+                sla_seconds,
+            )
+        return ReleaseGate(
+            True,
+            f"未提供基准实测 P95（强制基准未开启）：放行，但这不等于压过了验收线 "
+            f"{sla_seconds}s——建议发布前补一次 {SEARCH_SLA_SCALE_CN}基准",
+            None,
+            sla_seconds,
+        )
+    if measured_p95_sec <= sla_seconds:
+        return ReleaseGate(
+            True,
+            f"基准实测 P95 {measured_p95_sec:.3f}s ≤ 验收线 {sla_seconds}s，准予发布",
+            measured_p95_sec,
+            sla_seconds,
+        )
+    return ReleaseGate(
+        False,
+        f"基准实测 P95 {measured_p95_sec:.3f}s 超过验收线 {sla_seconds}s，"
+        "拒绝切换：换代前先调 HNSW 参数或按 backend.BackendSelector 降级到内表，"
+        "不要把未达标的版本切成 active",
+        measured_p95_sec,
+        sla_seconds,
+    )
+
+
+class ReleaseGateBlocked(RuntimeError):
+    """发布门禁未通过，切换被拒。异常里带着 :class:`ReleaseGate` 供发布单留痕。"""
+
+    def __init__(self, gate: ReleaseGate) -> None:
+        super().__init__(gate.reason_cn)
+        self.gate = gate
+
+
 @dataclass(slots=True)
 class VersionRegistry:
     """进程内的 embedding_version 台账 + 切换编排。
@@ -181,6 +273,11 @@ class VersionRegistry:
     """
 
     versions: dict[str, EmbeddingVersion] = field(default_factory=dict)
+    #: 是否强制要求换代发布带基准实测 P95。
+    #: **默认 False = 行为与从前一致**（没基准也放行，只留 WARNING）；打开即卡死。
+    require_benchmark: bool = False
+    #: 最近一次 :meth:`plan_switch` 的门禁结论，供发布单留痕。
+    last_gate: ReleaseGate | None = field(default=None, init=False)
 
     def register(self, version: EmbeddingVersion) -> EmbeddingVersion:
         """登记一个版本。重复登记直接覆盖，方便调度重放。"""
@@ -221,13 +318,39 @@ class VersionRegistry:
 
     # ---- 切换编排 ----
 
-    def plan_switch(self, from_version: str, to_version: str) -> tuple[str, ...]:
+    def plan_switch(
+        self,
+        from_version: str,
+        to_version: str,
+        *,
+        measured_p95_sec: float | None = None,
+    ) -> tuple[str, ...]:
         """生成灰度切换语句，并同步更新内存台账。
 
+        :param measured_p95_sec: 新版本在 :data:`~.params.SEARCH_SLA_SCALE_CN` 数据量上的
+            基准实测 P95（秒）。**默认 None：行为与从前完全一致**——不拦，只在日志里
+            说明这次换代没有基准背书。传了值就走
+            :func:`evaluate_release_gate`；超线抛 :class:`ReleaseGateBlocked`。
+            把 :attr:`require_benchmark` 打开后，不传值也会被拦。
         :return: 待下发的 SQL 语句序列（先激活新版本，再退役旧版本——顺序反过来会出现
                  「一瞬间没有 active 版本」的检索空窗）
+        :raises ReleaseGateBlocked: 性能基准发布门禁未通过
         """
         old, new = self.get(from_version), self.get(to_version)
+
+        gate = evaluate_release_gate(measured_p95_sec, require_benchmark=self.require_benchmark)
+        self.last_gate = gate
+        if not gate.passed:
+            _log.error("embedding_version 切换被门禁拒绝: %s", gate.reason_cn)
+            raise ReleaseGateBlocked(gate)
+        if gate.evidence_missing:
+            _log.warning(
+                "embedding_version %s -> %s 换代没有基准实测 P95：%s",
+                from_version,
+                to_version,
+                gate.reason_cn,
+            )
+
         self.versions[new.version] = new.with_status(VectorStatus.ACTIVE)
         self.versions[old.version] = old.with_status(VectorStatus.DEPRECATED)
         _log.info("embedding_version 切换: %s -> %s", from_version, to_version)

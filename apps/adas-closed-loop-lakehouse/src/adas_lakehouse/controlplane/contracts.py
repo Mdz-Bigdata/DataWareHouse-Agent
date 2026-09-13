@@ -64,6 +64,8 @@ __all__ = [
     "DATA_PLANE_ASSETS",
     "asset_plane",
     "assert_no_master_data",
+    "master_data_field_hints",
+    "pointer_field_whitelist",
 ]
 
 
@@ -101,9 +103,12 @@ CONTROL_PLANE_ASSETS: dict[str, str] = {
 DATA_PLANE_ASSETS: dict[str, str] = {
     "clip": f"采集单元元信息，复用采集域既有的 {K.TABLE_CLIP_DETAIL}（原文：clip 元数据不新建表）",
     "image": f"抽帧图片元信息，{K.TABLE_IMAGE_FRAME_DETAIL}",
-    "tag": "标签（采集/规则/大模型三来源统一字典）",
+    # 表名写进描述里不是为了好看：audit.audit_control_plane_schema() 的规则 4 靠它
+    # 把每一类数据面资产锚定到一张 registry 登记在册的湖仓表上。锚不住的资产，
+    # 「清库后业务数据完好」就无从验证——数据在哪都说不出，谈何完好。
+    "tag": "标签（采集/规则/大模型三来源统一字典），字典 dwd_mining_tag_dict_detail",
     "vector": f"图片与文本向量，{K.TABLE_IMAGE_VECTOR_DETAIL}",
-    "dataset": "圈选结果回写数据资产域",
+    "dataset": "圈选结果回写数据资产域，版本明细 dwd_dataset_version_detail",
 }
 
 
@@ -188,6 +193,21 @@ _POINTER_FIELD_WHITELIST: tuple[str, ...] = (
     "embedding_model",
     "embedding_model_version",
 )
+
+
+def master_data_field_hints() -> tuple[str, ...]:
+    """主数据字段黑名单（只读副本）。
+
+    :mod:`~.audit` 的模式层自检要用同一份清单去审建表语句的列名——运行时守卫拦载荷、
+    模式层自检拦列定义，两处必须同源，否则「运行时过了、建表语句里却留了一列」。
+    """
+    return _MASTER_DATA_FIELD_HINTS
+
+
+def pointer_field_whitelist() -> tuple[str, ...]:
+    """指针型字段白名单（只读副本）。理由同 :func:`master_data_field_hints`。"""
+    return _POINTER_FIELD_WHITELIST
+
 
 #: 单个标量字符串的长度上限。⚠️ 原文未明确，本项目设计：
 #: 4096 字符足够放下最长的 SQL 谓词，又放不下任何有意义的图片/向量载荷。

@@ -394,6 +394,11 @@ class ComplianceCloudTopology:
     object_store_public_endpoint: bool = False
     #: 数据副本与元信息是否走内网（必须为 True：不出公网、不落第三方）
     intranet_only: bool = True
+    #: 合规云对象存储的 bucket。声明出来，门禁才能把「file_path 指向合规云」这件事
+    #: 说成边界违规而不是「bucket 不在白名单里」——见 ``oss.validate_object_key``。
+    compliance_cloud_bucket: str = ""
+    #: 智驾云 OSS 的 bucket（合规数据副本的落点）。留空则取 ``settings().minio.raw_bucket``。
+    adas_cloud_bucket: str = ""
 
     def validate(self) -> list[str]:
         """返回违反的架构约束；空列表表示三条约束全部满足。"""
@@ -416,6 +421,15 @@ class ComplianceCloudTopology:
             problems.append("不对外暴露：合规云对象存储存在对外访问入口")
         if not self.intranet_only:
             problems.append("不对外暴露：数据副本与元信息未限定内网流转（不出公网、不落第三方）")
+        if (
+            self.compliance_cloud_bucket
+            and self.adas_cloud_bucket
+            and self.compliance_cloud_bucket == self.adas_cloud_bucket
+        ):
+            problems.append(
+                "物理上隔离：合规云与智驾云共用同一个 bucket "
+                f"{self.compliance_cloud_bucket!r}，原始与未脱密数据就没有「止步于合规云」的落点"
+            )
         return problems
 
     def assert_valid(self) -> None:
@@ -425,6 +439,22 @@ class ComplianceCloudTopology:
             raise ComplianceViolation(
                 f"合规云架构约束（共 {COMPLIANCE_CLOUD_CONSTRAINTS} 条）未满足",
                 violations=problems,
+            )
+
+    def assert_not_publicly_exposed(self) -> None:
+        """第 ② 步「上传至合规云对象存储（**不对外暴露**）」的准入条件。
+
+        三条架构约束里的第 3 条在第 ② 步就已经生效：硬盘数据上传进合规云的那一刻，
+        对象存储就不能有对外访问入口。把它留到第 ④ 步才查，等于允许数据先在一个
+        暴露的桶里躺两天。
+
+        Raises:
+            ComplianceViolation: 合规云对象存储存在对外访问入口。
+        """
+        if self.object_store_public_endpoint:
+            raise ComplianceViolation(
+                "第 2 步「合规室上传」的目的地必须是不对外暴露的合规云对象存储，"
+                "当前拓扑声明了对外访问入口"
             )
 
 
@@ -491,7 +521,9 @@ class ComplianceChain:
     约束：
       · 顺序不能乱（step N 之前 step N-1 必须已完成）；
       · 第 ① 步必须落下车端脱敏标记，第 ③ 步必须落下合规云脱密标记；
-      · 第 ④ 步必须通过合规云架构约束校验（同一 VPC / 独立云 / 不对外暴露）。
+      · 第 ② 步的上传目的地必须是不对外暴露的合规云对象存储（拓扑已知时生效）；
+      · 第 ④ 步必须通过合规云架构约束校验（同一 VPC / 独立云 / 不对外暴露），
+        且过境载荷只能是「合规数据副本 + 文件元信息」两类。
     """
 
     data_id: str
@@ -549,6 +581,11 @@ class ComplianceChain:
 
         if step is ComplianceStep.VEHICLE_REDACTION:
             self._require_stage(RedactionStage.VEHICLE_SIMPLE, step)
+        elif step is ComplianceStep.COMPLIANCE_ROOM_UPLOAD:
+            # ② 合规室上传：「上传至合规云对象存储（不对外暴露）」——拓扑已知就在这一步查，
+            # 不等到第 ④ 步。拓扑未知时不拦（智驾云侧可能只拿到「已上传」的回执）。
+            if self.topology is not None:
+                self.topology.assert_not_publicly_exposed()
         elif step is ComplianceStep.COMPLIANCE_CLOUD_DESENSITIZATION:
             self._require_stage(RedactionStage.CLOUD_COMPLEX, step)
         elif step is ComplianceStep.COMPLIANT_DATA_DISTRIBUTION:
@@ -641,6 +678,9 @@ class ComplianceChain:
             "compliance_chain_complete": self.is_complete,
             "compliance_status": "compliant" if not self.ready_for_ingest() else "pending",
             "crossed_payloads": ",".join(p.value for p in self.crossed_payloads),
+            # 链路耗时口径：车端脱敏到最后一步的墙钟秒数。阈值不在这里定——
+            # 闭环耗时的 SLA 归 DWS 层的效率指标表，本行只负责把事实带出去。
+            "chain_elapsed_sec": self.elapsed_seconds(),
         }
         for step in ComplianceStep:
             moment = self.completed.get(step)

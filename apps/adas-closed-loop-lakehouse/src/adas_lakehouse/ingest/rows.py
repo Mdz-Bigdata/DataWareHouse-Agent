@@ -25,6 +25,7 @@ __all__ = [
     "SYS_INGEST_TIME",
     "SYS_SOURCE_SYSTEM",
     "SYS_UPDATE_TIME",
+    "SYS_QUALITY_FLAG",
     "stamp_system_fields",
     "registered_columns",
     "project_to_table",
@@ -35,6 +36,14 @@ __all__ = [
 SYS_INGEST_TIME = "_ingest_time"
 SYS_SOURCE_SYSTEM = "_source_system"
 SYS_UPDATE_TIME = "update_time"
+
+#: 带标放行的质量标记列。[a5] 第六章 / [a6] 第二章逐字：「带标记放行的数据写入
+#: **_quality_flag**，供下游按质量筛选，不阻塞主链路」。
+#: 名字必须与 ``quality.severity.QUALITY_FLAG_FIELD`` 一致——同一列两个写入方。
+#: ⚠️ 契约缺列：``catalog.registry`` 里眼下没有任何一张表登记这一列，因此它在
+#: ``project_to_table`` 时会被投影掉；被投影掉的列由 ``IngestReport.dropped_columns``
+#: 如实报出来，不做静默丢弃。
+SYS_QUALITY_FLAG = "_quality_flag"
 
 
 def stamp_system_fields(
@@ -58,8 +67,13 @@ def stamp_system_fields(
         ValueError: ODS 层未给 source_system。
 
     Note:
-        业务字段优先：若 ``row`` 里已经带了同名字段（例如 CDC 源表自带 update_time），
-        保留原值不覆盖，与 ``TableSpec.all_columns()`` 的去重口径一致。
+        两类字段的口径**不一样**，不要合并处理：
+
+        · ``_ingest_time`` / ``_source_system`` 是**入湖侧盖的章**，一律以本函数的入参
+          为准，覆盖行里的同名值。源报文里带一个 ``_source_system`` 不该能改写这行数据
+          「从哪条通道进来的」——那是通道的事实，不是报文的声明；
+        · ``update_time`` 是业务列（CDC 源表自带），业务值优先，与
+          ``TableSpec.all_columns()`` 的去重口径一致。
     """
     if layer is Layer.ODS and not source_system:
         raise ValueError("ODS 层每一行都必须带 _source_system（来源系统标识），不能为空")
@@ -67,9 +81,9 @@ def stamp_system_fields(
     out = dict(row)
     fields = layer.system_fields
     if SYS_INGEST_TIME in fields:
-        out.setdefault(SYS_INGEST_TIME, ingest_time or datetime.now())
+        out[SYS_INGEST_TIME] = ingest_time or datetime.now()
     if SYS_SOURCE_SYSTEM in fields:
-        out.setdefault(SYS_SOURCE_SYSTEM, source_system)
+        out[SYS_SOURCE_SYSTEM] = source_system
     if SYS_UPDATE_TIME in fields:
         out.setdefault(SYS_UPDATE_TIME, None)
     return out

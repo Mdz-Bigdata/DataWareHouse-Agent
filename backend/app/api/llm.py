@@ -4,12 +4,15 @@ import json
 import os
 import requests
 from app.schema.llm import LLMConfigRequest, TestConnectionRequest, TestConnectionResponse
+from app.core.paths import llm_config_path
 
 # NOTE: API 控制器层 - 智能模型供应商配置路由。负责获取、保存及测试连接各种大模型供应商。
 
 router = APIRouter(prefix="/llm", tags=["模型配置"])
 
-CONFIG_PATH = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
+# 路径按包结构推导，可用 DWH_LLM_CONFIG_PATH 覆盖（容器部署时配置文件常挂在别处）。
+# 保持模块级常量的既有契约：值仍是 str，_load_config/_save_config 调用方无需改动。
+CONFIG_PATH = str(llm_config_path())
 
 def _load_config():
     if os.path.exists(CONFIG_PATH):

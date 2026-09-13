@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
 from .constants import (
@@ -50,17 +51,33 @@ __all__ = [
 #: 网格边长（度）。别名，读代码时比常量名更直观。
 GRID_SIZE_DEGREES: Final[float] = GEO_GRID_PRECISION_DEGREES
 
+#: 网格刻度的十进制形态。走 Decimal 而不是 float，是为了让 Python 侧的舍入
+#: 与 Flink 侧 ``ROUND()`` 的舍入**逐字相同**，理由见 :func:`_snap`。
+_STEP: Final[Decimal] = Decimal(str(GEO_GRID_PRECISION_DEGREES))
 
-def _snap(value: float) -> float:
-    """把一个坐标吸附到网格中心所在的刻度上。
 
-    用「除以精度 → 四舍五入 → 乘回精度」而不是 :func:`round(value, 2)`，
-    这样精度换成 0.05 / 0.25 这类非十进制刻度时公式依然成立。
+def _snap(value: float) -> Decimal:
+    """把一个坐标吸附到网格中心所在的刻度上，按 **HALF_UP**（四舍五入、逢半进位）取整。
+
+    两个实现选择都是为了兑现本模块开头那句承诺——「批作业算出来的等级与服务层
+    重算出来的等级永远同档」：
+
+    1. 用「除以精度 → 取整 → 乘回精度」而不是 :func:`round(value, 2)`，
+       这样精度换成 0.05 / 0.25 这类非十进制刻度时公式依然成立；
+    2. 用 :class:`decimal.Decimal` + :data:`decimal.ROUND_HALF_UP` 而不是内置
+       :func:`round`。内置 ``round`` 是**银行家舍入**（逢半取偶）：
+       ``round(3122.5)`` 得 3122，而 Flink 的 ``ROUND(3122.5)`` 得 3123
+       （Flink 的 ``sround`` 走 ``BigDecimal.valueOf(x).setScale(0, HALF_UP)``）。
+       正好落在网格边界（如纬度 31.225）的坐标会因此被两边分到**不同网格**，
+       热力图上就出现「同一批触发被劈成两格」。
+       ``Decimal(str(x))`` 与 Java 的 ``BigDecimal.valueOf(double)`` 都取
+       double 的最短往返十进制表示，配上 HALF_UP 后两边是同一套算术。
     """
-    return round(value / GEO_GRID_PRECISION_DEGREES) * GEO_GRID_PRECISION_DEGREES
+    quotient = (Decimal(str(value)) / _STEP).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return quotient * _STEP
 
 
-def _fmt(value: float) -> str:
+def _fmt(value: Decimal) -> str:
     """格式化成固定小数位，并抹掉 ``-0.00`` 这种负零写法。
 
     固定小数位是网格键可比性的前提：``31.2`` 与 ``31.20`` 必须是同一个网格。
@@ -68,7 +85,7 @@ def _fmt(value: float) -> str:
     （见 :func:`grid_id_sql`），两边编码逐字一致。
     """
     text = f"{value:.{GEO_GRID_ID_DECIMALS}f}"
-    return text[1:] if text.startswith("-") and float(text) == 0.0 else text
+    return text[1:] if text.startswith("-") and Decimal(text) == 0 else text
 
 
 def grid_id(lat: float, lon: float) -> str:
@@ -170,7 +187,8 @@ def grid_id_sql(lat_expr: str, lon_expr: str) -> str:
     d = GEO_GRID_ID_DECIMALS
 
     def _snap_sql(expr: str, precision: int) -> str:
-        # ROUND(expr / step) * step 与 Python 的 _snap 同式；DECIMAL(p, d) 定标输出
+        # ROUND(expr / step) * step 与 Python 的 _snap 同式（同为 HALF_UP 舍入，
+        # 见 _snap 的第 2 条说明）；DECIMAL(p, d) 定标输出
         return f"CAST(CAST(ROUND({expr} / {step}) * {step} AS DECIMAL({precision}, {d})) AS STRING)"
 
     # 纬度 ±90、经度 ±180：整数位分别最多 2 位与 3 位，加上小数位即总精度

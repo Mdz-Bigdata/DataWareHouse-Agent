@@ -369,9 +369,18 @@ class TagDictionary:
         if entry.merged_into_tag_id and entry.merged_into_tag_id not in self._by_id:
             raise ValueError(f"{entry.tag_id}: 合并目标 {entry.merged_into_tag_id} 未登记")
 
-        if replace and entry.tag_id in self._by_id:
-            self._drop_alias_keys(entry.tag_id)
-
+        # ---- 先判后改：别名冲突仲裁必须在动倒排索引之前全部判完 ----
+        #
+        # 为什么不能边判边写：``replace=True`` 的路径（别名治理工单走的就是它）
+        # 原先先 ``_drop_alias_keys`` 再逐个 key 判冲突，中途抛异常时，这条标签
+        # **既有**的别名已经被从倒排索引里摘掉、却还没来得及装回去——工单被拒了，
+        # 字典却留下内伤：条目自称有那个别名，``lookup()`` 却查不到它。
+        # 于是该写法静默落进候选池，正是「防标签爆炸」这套设计要拦的东西。
+        #
+        # 仲裁规则（原文只说「同一写法只能有一个归口」，先来后到是本项目的裁法）：
+        #   · 已被别的 active/candidate 标签占用 → 拒绝整单，一个 key 都不改；
+        #   · 本条目是 merged 墓碑          → 墓碑让位，跳过该 key（旧写法已转挂目标标签）。
+        claims: list[str] = []
         for key in entry.normalized_forms:
             owner = self._alias_index.get(key)
             if owner is not None and owner != entry.tag_id:
@@ -382,6 +391,12 @@ class TagDictionary:
                     f"别名冲突：{key!r} 已属于 {owner}，不能再指给 {entry.tag_id}"
                     "（同一写法只能有一个归口，否则又是标签爆炸）"
                 )
+            claims.append(key)
+
+        # 判完了才动手：到这里不会再抛，索引与 _by_id 一定同时更新成功。
+        if replace and entry.tag_id in self._by_id:
+            self._drop_alias_keys(entry.tag_id)
+        for key in claims:
             self._alias_index[key] = entry.tag_id
 
         self._by_id[entry.tag_id] = entry

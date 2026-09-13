@@ -53,6 +53,10 @@ class QueryDetails(BaseModel):
     estimated_rows: Optional[int] = 0
     data_source: Optional[str] = None
     time_scope: Optional[str] = None
+    # §7.9-6 截断声明。结果被 LIMIT 截断时必须在返回体里说出来，否则使用者会拿
+    # 不完整的数据下结论。结构见 semantic_layer.TruncationNotice；可选且默认 None，
+    # 老调用方与老缓存条目不受影响（未声明的字段 pydantic 会直接丢弃）。
+    truncation: Optional[dict] = None
 
 class ClarificationOption(BaseModel):
     label: str
@@ -80,6 +84,11 @@ class AskResponse(BaseModel):
     cache_type: Optional[str] = None
     matched_question: Optional[str] = None
     similarity_score: Optional[float] = None
+    # 全链路追溯 ID。ask() 一直会把它们放进返回体，但响应模型此前没有声明，
+    # FastAPI 会在序列化时丢掉 —— 调用方因此无法把一次问数和网关日志对上。
+    # 两个字段都可选且默认 None，老调用方不受影响。
+    trace_id: Optional[str] = None
+    run_id: Optional[str] = None
 
 class HistoryRecord(BaseModel):
     id: int

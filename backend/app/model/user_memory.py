@@ -1,75 +1,229 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 import json
+import logging
 import os
+import tempfile
 
 # NOTE: 用户记忆系统模型，存储和分析用户的查询历史，并生成画像偏好与主动推荐。
+#
+# 落盘位置通过 resolve_storage_path() 决定（环境变量优先），不再硬编码开发机路径；
+# 写盘采用「临时文件 + 原子替换」，失败时记录真实日志并把失败状态暴露给调用方
+# （persistence_status() / last_save_error），不再 print 一行就当作成功。
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MEMORY_FILENAME = "user_memory.json"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str, default: bool = False, env=None) -> bool:
+    env = os.environ if env is None else env
+    raw = env.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in _TRUTHY
+
+
+def resolve_storage_path(env=None) -> str:
+    """决定用户记忆文件的落盘位置。
+
+    优先级：
+      1. USER_MEMORY_PATH —— 完整文件路径（容器里用它指向挂载卷，如
+         /app/data/user_memory.json）；
+      2. USER_MEMORY_DIR  —— 只给目录，文件名固定 user_memory.json；
+      3. 兜底：后端包根目录下的 user_memory.json。开发机上等于原来的
+         backend/user_memory.json（历史记忆不会因为这次改动而丢失），
+         容器里（Dockerfile WORKDIR=/app）等于 /app/user_memory.json。
+    """
+    env = os.environ if env is None else env
+    explicit = (env.get("USER_MEMORY_PATH") or "").strip()
+    if explicit:
+        return os.path.abspath(os.path.expanduser(explicit))
+    directory = (env.get("USER_MEMORY_DIR") or "").strip()
+    if directory:
+        return os.path.abspath(
+            os.path.join(os.path.expanduser(directory), DEFAULT_MEMORY_FILENAME)
+        )
+    package_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(package_root, DEFAULT_MEMORY_FILENAME)
+
+
+class MemoryPersistenceError(RuntimeError):
+    """用户记忆写盘失败。
+
+    默认不抛出（写盘失败不应该让一次正常问数直接 500 —— 用户至少要拿到答案），
+    调用方通过 persistence_status() 感知；把 USER_MEMORY_STRICT_PERSISTENCE=true
+    打开后，所有改写记忆的方法会改为抛出本异常。
+    """
+
+
+def demo_seed_records():
+    """明确标注的示例历史，仅在 USER_MEMORY_SEED_DEMO=true 时装载。
+
+    这些数字是编造的，所以每条都带 is_demo=True，并且在用户名和结论文案里写死
+    「示例」字样 —— 即便前端 schema 丢掉 is_demo 字段，界面上也不会把它误读成
+    用户的真实问数历史。
+    """
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return [
+        {
+            "id": 1,
+            "user": "示例用户",
+            "question": "【示例】华东区过去30天GMV是多少",
+            "sql": "SELECT SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE region_name = '华东' AND dt >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY)",
+            "dialect": "doris",
+            "execution_time": "0.02s",
+            "result_summary": "【示例数据，非真实查询结果】过去30天华东区GMV为 ¥1,234.50 万",
+            "created_at": stamp,
+            "is_demo": True,
+        },
+        {
+            "id": 2,
+            "user": "示例用户",
+            "question": "【示例】过去6个月销售额趋势",
+            "sql": "SELECT DATE_TRUNC('month', dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily GROUP BY month ORDER BY month",
+            "dialect": "clickhouse",
+            "execution_time": "0.05s",
+            "result_summary": "【示例数据，非真实查询结果】近6月GMV呈稳步上升趋势，在 5 月达到峰值 ¥1,235 万",
+            "created_at": stamp,
+            "is_demo": True,
+        },
+    ]
+
 
 class UserMemory:
-    def __init__(self, storage_path="/Users/mindezhi/DataWareHouse-Agent/backend/user_memory.json"):
-        self.storage_path = storage_path
+    def __init__(self, storage_path=None, strict_persistence=None, seed_demo=None):
+        self.storage_path = storage_path or resolve_storage_path()
+        self.strict_persistence = (
+            _env_flag("USER_MEMORY_STRICT_PERSISTENCE", False)
+            if strict_persistence is None else bool(strict_persistence)
+        )
+        self.seed_demo = (
+            _env_flag("USER_MEMORY_SEED_DEMO", False) if seed_demo is None else bool(seed_demo)
+        )
         self.history = []
         self.custom_preferences = {}
         self.error_corrections = []
+        # 写盘健康状态：调用方/健康检查据此判断「记忆是不是真的存下去了」
+        self.last_save_error = None
+        self.last_save_error_at = None
+        self.failed_save_count = 0
+        self.load_error = None
         self._load()
+
+    # ------------------------------------------------------------------
+    # 持久化
+    # ------------------------------------------------------------------
+    def _quarantine_corrupt_file(self):
+        """把读不动的记忆文件改名存档，而不是让下一次 _save 直接覆盖掉。
+
+        原实现解析失败后以空记忆继续跑，紧接着的一次写入就把原文件整个盖掉，
+        用户的真实历史再也找不回来 —— 这同样是一种静默丢数。
+        """
+        backup_path = f"{self.storage_path}.corrupt-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        try:
+            os.replace(self.storage_path, backup_path)
+            return backup_path
+        except OSError:
+            logger.exception("隔离损坏的用户记忆文件失败：path=%s", self.storage_path)
+            return None
 
     def _load(self):
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if isinstance(data, dict):
-                        self.history = data.get("history", [])
-                        self.custom_preferences = data.get("custom_preferences", {})
-                        self.error_corrections = data.get("error_corrections", [])
-                    else:
-                        self.history = data
-                        self.custom_preferences = {}
-                        self.error_corrections = []
+                if isinstance(data, dict):
+                    self.history = data.get("history", [])
+                    self.custom_preferences = data.get("custom_preferences", {})
+                    self.error_corrections = data.get("error_corrections", [])
+                else:
+                    self.history = data
+                    self.custom_preferences = {}
+                    self.error_corrections = []
+                self.load_error = None
+                return
             except Exception as e:
-                print(f"Error loading user memory: {e}")
                 self.history = []
                 self.custom_preferences = {}
                 self.error_corrections = []
-        else:
-            # 预置一些历史数据以充实页面体验
-            self.history = [
-                {
-                    "id": 1,
-                    "user": "张三",
-                    "question": "华东区过去30天GMV是多少",
-                    "sql": "SELECT SUM(gmv) AS total_gmv FROM dws_trade_order_daily WHERE region_name = '华东' AND dt >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY)",
-                    "dialect": "doris",
-                    "execution_time": "0.02s",
-                    "result_summary": "过去30天华东区GMV为 ¥1,234.50 万",
-                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                },
-                {
-                    "id": 2,
-                    "user": "张三",
-                    "question": "过去6个月销售额趋势",
-                    "sql": "SELECT DATE_TRUNC('month', dt) AS month, SUM(gmv) AS total_gmv FROM dws_trade_order_daily GROUP BY month ORDER BY month",
-                    "dialect": "clickhouse",
-                    "execution_time": "0.05s",
-                    "result_summary": "近6月GMV呈稳步上升趋势，在 5 月达到峰值 ¥1,235 万",
-                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            ]
-            self.custom_preferences = {}
-            self.error_corrections = []
+                backup_path = self._quarantine_corrupt_file()
+                self.load_error = f"{type(e).__name__}: {e}"
+                logger.error(
+                    "用户记忆文件无法解析，已以空记忆启动；原文件备份至 %s：path=%s",
+                    backup_path or "(备份失败)", self.storage_path, exc_info=True,
+                )
+                return
+
+        # 文件不存在 = 全新部署，就是一段空历史。
+        # 绝不再往这里塞编造的「¥1,234.50 万」当成用户的真实问数记录。
+        self.history = list(demo_seed_records()) if self.seed_demo else []
+        self.custom_preferences = {}
+        self.error_corrections = []
+        if self.seed_demo:
+            logger.warning(
+                "USER_MEMORY_SEED_DEMO 已开启，装载 %d 条带【示例】标记的演示历史：path=%s",
+                len(self.history), self.storage_path,
+            )
             self._save()
 
-    def _save(self):
+    def _save(self) -> bool:
+        """把记忆写盘。成功返回 True，失败返回 False（严格模式下改为抛异常）。"""
+        payload = {
+            "history": self.history,
+            "custom_preferences": self.custom_preferences,
+            "error_corrections": self.error_corrections,
+        }
+        tmp_path = None
         try:
-            with open(self.storage_path, "w", encoding="utf-8") as f:
-                data = {
-                    "history": self.history,
-                    "custom_preferences": self.custom_preferences,
-                    "error_corrections": self.error_corrections
-                }
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            directory = os.path.dirname(self.storage_path) or "."
+            os.makedirs(directory, exist_ok=True)
+            # 同目录临时文件 + os.replace：进程被杀或磁盘写满时，不会把已有的
+            # 记忆截断成半个 JSON（那会在下次启动时变成「解析失败」）。
+            fd, tmp_path = tempfile.mkstemp(prefix=".user_memory-", suffix=".tmp", dir=directory)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.storage_path)
+            tmp_path = None
         except Exception as e:
-            print(f"Error saving user memory: {e}")
+            self.failed_save_count += 1
+            self.last_save_error = f"{type(e).__name__}: {e}"
+            self.last_save_error_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.error(
+                "用户记忆写入失败，本次改动只存在于内存中，重启即丢失：path=%s",
+                self.storage_path, exc_info=True,
+            )
+            if self.strict_persistence:
+                raise MemoryPersistenceError(
+                    f"用户记忆写入失败（{self.storage_path}）：{self.last_save_error}"
+                ) from e
+            return False
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    logger.warning("清理用户记忆临时文件失败：%s", tmp_path, exc_info=True)
+        self.last_save_error = None
+        self.last_save_error_at = None
+        return True
+
+    def persistence_status(self) -> dict:
+        """记忆落盘健康状态，供调用方/健康检查感知「写进去了没有」。"""
+        return {
+            "storage_path": self.storage_path,
+            "healthy": self.last_save_error is None and self.load_error is None,
+            "last_save_error": self.last_save_error,
+            "last_save_error_at": self.last_save_error_at,
+            "failed_save_count": self.failed_save_count,
+            "load_error": self.load_error,
+            "strict_persistence": self.strict_persistence,
+            "history_count": len(self.history),
+            "error_correction_count": len(self.error_corrections),
+        }
 
     def add_history(self, user: str, question: str, sql: str, dialect: str, result_summary: str):
         """
@@ -94,13 +248,13 @@ class UserMemory:
         """
         L1 - 查询历史列表
         """
-        return [h for h in self.history if h["user"] == user][:limit]
+        return [h for h in self.history if h.get("user") == user][:limit]
 
     def get_preference_profile(self, user: str) -> dict:
         """
         L2 - 基于历史行为提取用户偏好画像
         """
-        user_history = [h for h in self.history if h["user"] == user]
+        user_history = [h for h in self.history if h.get("user") == user]
         
         # 默认画像（在无历史记录时起效）
         profile = {
@@ -118,8 +272,8 @@ class UserMemory:
         ranges = {}
 
         for h in user_history:
-            q = h["question"]
-            sql_lower = h["sql"].lower()
+            q = h.get("question") or ""
+            sql_lower = (h.get("sql") or "").lower()
 
             # 统计表
             if "dws_trade_order_daily" in sql_lower:

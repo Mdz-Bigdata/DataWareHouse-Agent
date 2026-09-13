@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 
+from .tracing import TRACE_HEADER, new_trace_id, normalize_trace_id
+
 
 class RejectResponseCookies(DefaultCookiePolicy):
     """A shared transport must never retain one browser's upstream login."""
@@ -53,7 +55,8 @@ def forwarded_headers(
         for name, value in incoming.items()
         if name.lower() not in HOP_BY_HOP_HEADERS
     }
-    headers["x-trace-id"] = trace_id
+    # 纵深防御：注入点自己也校验一次，任何调用方都不可能把不合规的 trace_id 送进子系统。
+    headers[TRACE_HEADER] = normalize_trace_id(trace_id) or new_trace_id()
     if subsystem_token:
         headers["authorization"] = f"Bearer {subsystem_token}"
     return headers

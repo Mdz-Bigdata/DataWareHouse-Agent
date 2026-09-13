@@ -88,10 +88,10 @@ def _priority_from_db(value: Any) -> RulePriority:
     if isinstance(value, RulePriority):
         return value
     text = str(value).strip()
-    if text.upper().startswith("P"):
-        return RulePriority(text.upper())
     try:
-        return RulePriority(f"P{int(text)}")
+        # 两种写法都认，但**越界一律拒**：档位决定向量化队列分级（[S3-04] 一），
+        # 悄悄兜底成 P2 会让一条本该优先向量化的规则静默降级。
+        return RulePriority(text.upper() if text.upper().startswith("P") else f"P{int(text)}")
     except (TypeError, ValueError) as exc:
         raise RuleValidationError(f"rule_priority={value!r} 既不是 P0-P3 也不是 0-3") from exc
 

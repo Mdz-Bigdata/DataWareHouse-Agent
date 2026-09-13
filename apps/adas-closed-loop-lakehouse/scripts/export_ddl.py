@@ -52,6 +52,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--layer", choices=[layer.value for layer in Layer], help="只导出指定层")
     p.add_argument("--out", metavar="DIR", help="输出目录，缺省 <repo>/ddl")
     p.add_argument("--check", action="store_true", help="只做契约校验与计数自检，不写盘")
+    p.add_argument(
+        "--variant-fallback",
+        metavar="TYPE",
+        default=None,
+        help="把 VARIANT 列降级成 TYPE（实践里写 STRING）导出，供低于 Flink 2.1 的引擎执行。"
+        "默认关闭——契约口径就是 VARIANT；降级产物别提交回仓库（详见 source-deviations A-12）",
+    )
     return p.parse_args(argv)
 
 
@@ -75,7 +82,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     layer = Layer(args.layer) if args.layer else None
-    written = cli.export_ddl(out_dir=args.out, layer=layer, cfg=cfg)
+    written = cli.export_ddl(
+        out_dir=args.out, layer=layer, cfg=cfg, variant_fallback_type=args.variant_fallback
+    )
+    if args.variant_fallback:
+        print(
+            f"⚠️ VARIANT → {args.variant_fallback} 降级已启用：产物只供低版本引擎执行，"
+            "不是契约口径，勿覆盖回仓库的 ddl/"
+        )
     out_dir = written[0][0].parent
 
     print(

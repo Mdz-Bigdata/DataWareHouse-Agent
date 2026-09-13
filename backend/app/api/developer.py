@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, Body
 import os
 from app.schema.developer import DevRequest, DevResponse
 from app.service.dev_agent_coordinator import dev_agent_coordinator
+from app.core.paths import PathEscapeError, repo_root, resolve_within
 
 # NOTE: API 控制器层 - 数仓开发多 Agent 协作流接口路由，处理需求调度及物理文件的读取与在线更新。
 
@@ -28,12 +29,14 @@ def get_file_content(path: str = Query(..., description="相对工作区的路�
     """
     获取生成的 DDL、ETL SQL、Job 配置或文档的源码内容
     """
-    base_dir = "/Users/mindezhi/DataWareHouse-Agent"
-    # 限制路径防越权
-    safe_path = os.path.normpath(os.path.join(base_dir, path))
-    if not safe_path.startswith(base_dir):
+    # 沙箱根 = 仓库根目录，按包结构推导（DWH_REPO_ROOT 可覆盖），不再写死开发机路径。
+    # 越权判定改用 resolve_within：逐级父目录比对 + 跟随符号链接，比原来的
+    # startswith 字符串前缀更严——原写法会放行 ../DataWareHouse-Agent-evil/x。
+    try:
+        safe_path = str(resolve_within(repo_root(), path))
+    except PathEscapeError:
         raise HTTPException(status_code=403, detail="拒绝访问非项目目录文件")
-    
+
     if not os.path.exists(safe_path):
         raise HTTPException(status_code=404, detail="文件未找到，请先运行协作流生成文件。")
     
@@ -49,11 +52,12 @@ def update_file_content(path: str = Query(...), content: str = Body(..., embed=T
     """
     允许用户在前端直接修改生成的 DDL 或 SQL
     """
-    base_dir = "/Users/mindezhi/DataWareHouse-Agent"
-    safe_path = os.path.normpath(os.path.join(base_dir, path))
-    if not safe_path.startswith(base_dir):
+    # 同 GET：沙箱根可配置，越权判定收紧（写接口更不能靠字符串前缀兜底）。
+    try:
+        safe_path = str(resolve_within(repo_root(), path))
+    except PathEscapeError:
         raise HTTPException(status_code=403, detail="拒绝访问非项目目录文件")
-        
+
     try:
         # 确保父目录存在
         os.makedirs(os.path.dirname(safe_path), exist_ok=True)

@@ -31,7 +31,7 @@ from pathlib import Path
 
 from . import __version__, ids, naming
 from .catalog import registry
-from .catalog.spec import TableSpec
+from .catalog.spec import VARIANT_MIN_ENGINE, VARIANT_TYPE, TableSpec
 from .config import Settings, settings
 from .domains import QUALITY_GATE_PSEUDO_DOMAIN, DataDomain, Layer
 
@@ -204,8 +204,18 @@ def _layer_domain_rows(tables: Sequence[TableSpec]) -> list[str]:
     return [f"  · {k[1]}: {len(v)} 张" for k, v in sorted(grouped.items())]
 
 
-def render_layer_script(layer: Layer, cfg: Settings | None = None) -> str:
-    """某一层的全部建表语句。字段与物理策略全部来自 catalog.registry 的 TableSpec。"""
+def render_layer_script(
+    layer: Layer,
+    cfg: Settings | None = None,
+    *,
+    variant_fallback_type: str | None = None,
+) -> str:
+    """某一层的全部建表语句。字段与物理策略全部来自 catalog.registry 的 TableSpec。
+
+    :param variant_fallback_type: 默认 None = 不降级，产物与从前逐字节一致。
+        传类型字面量时 VARIANT 列改用该类型渲染，供 Flink <
+        :data:`~.catalog.spec.VARIANT_MIN_ENGINE`\\ ``['flink']`` 的部署使用。
+    """
     cfg = cfg or settings()
     tables = registry.by_layer(layer)
     notes = [
@@ -216,8 +226,20 @@ def render_layer_script(layer: Layer, cfg: Settings | None = None) -> str:
         *_layer_domain_rows(tables),
         "物理策略（分区 / bucket / changelog-producer）由 catalog/spec.py 硬校验后渲染。",
     ]
+    if variant_fallback_type:
+        notes.append(
+            f"⚠️ 本次导出启用了 {VARIANT_TYPE} → {variant_fallback_type} 降级"
+            f"（目标引擎低于 Flink {VARIANT_MIN_ENGINE['flink']}）："
+            "半结构化列按文本承接，shredding 与 variant_get 谓词下推不可用。"
+            "引擎升级后请重新无参导出，勿把降级产物当契约。"
+        )
     body = "\n".join(
-        t.render_ddl(catalog=cfg.paimon.catalog, database=cfg.paimon.database) for t in tables
+        t.render_ddl(
+            catalog=cfg.paimon.catalog,
+            database=cfg.paimon.database,
+            variant_fallback_type=variant_fallback_type,
+        )
+        for t in tables
     )
     return _sql_header(f"湖仓建表 · {layer.value.upper()} 层", notes) + "\n" + body
 
@@ -230,6 +252,8 @@ def export_ddl(
     out_dir: Path | str | None = None,
     layer: Layer | None = None,
     cfg: Settings | None = None,
+    *,
+    variant_fallback_type: str | None = None,
 ) -> list[tuple[Path, int]]:
     """导出建表脚本。
 
@@ -254,7 +278,7 @@ def export_ddl(
 
     for lyr in [layer] if layer else list(Layer):
         path = target / LAYER_FILES[lyr]
-        sql = render_layer_script(lyr, cfg)
+        sql = render_layer_script(lyr, cfg, variant_fallback_type=variant_fallback_type)
         path.write_text(sql, encoding="utf-8")
         written.append((path, _count_create_table(sql)))
     return written
@@ -325,9 +349,15 @@ def _name_list(tables: Sequence[TableSpec], *, indent: str = "       ") -> str:
 def cmd_ddl_export(args: argparse.Namespace) -> int:
     layer = Layer(args.layer) if args.layer else None
     cfg = settings()
-    written = export_ddl(out_dir=args.out, layer=layer, cfg=cfg)
+    fallback = getattr(args, "variant_fallback", None)
+    written = export_ddl(out_dir=args.out, layer=layer, cfg=cfg, variant_fallback_type=fallback)
 
     print(_rule("ddl-export"))
+    if fallback:
+        print(
+            f"⚠️ {VARIANT_TYPE} → {fallback} 降级已启用（目标引擎低于 Flink "
+            f"{VARIANT_MIN_ENGINE['flink']}）：产物不是契约口径，勿提交回仓库。"
+        )
     print(f"Paimon catalog : {cfg.paimon.catalog}")
     print(f"Database       : {cfg.paimon.database}")
     print(f"Warehouse      : {cfg.minio.warehouse_path}  (metastore={cfg.paimon.metastore})")
@@ -631,6 +661,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="只导出指定层；缺省导出四层并附带 00_catalog.sql",
     )
     p_ddl.add_argument("--out", metavar="DIR", help="输出目录，缺省 <repo>/ddl")
+    p_ddl.add_argument(
+        "--variant-fallback",
+        metavar="TYPE",
+        default=None,
+        help=f"把 {VARIANT_TYPE} 列降级成 TYPE（实践里写 STRING）导出。"
+        f"默认关闭——契约口径就是 {VARIANT_TYPE}。只有当目标引擎低于 Flink "
+        f"{VARIANT_MIN_ENGINE['flink']} / Spark {VARIANT_MIN_ENGINE['spark']}"
+        "（本仓 docker/flink 钉的 1.20.1 即是）才需要它；降级产物只供那套引擎执行，"
+        "不要提交回仓库",
+    )
     p_ddl.set_defaults(func=cmd_ddl_export)
 
     p_val = sub.add_parser(

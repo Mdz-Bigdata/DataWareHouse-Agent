@@ -101,8 +101,8 @@ validate:
 	$(PYTHON) -m adas_lakehouse.cli catalog-validate
 
 # 跨模块一致性：表名 / 列契约 / 本地 TableSpec / SQL 列引用 / 环境变量 / 依赖
-# ⚠️ 目前**尚未全绿**（子系统与 catalog 的列定义漂移待收敛），所以不进 check，
-#    但每一条输出都是真实缺口，别把它当噪音。
+# 2026-09-13 起**已全绿**（此前的注释说「尚未全绿」，已过期）。仍不进 check：
+# 它比 validate 慢一个量级且会解析 SQL 文本，留作显式体检；每一条输出都是真实缺口。
 consistency:
 	$(PYTHON) $(ROOT)/scripts/check_consistency.py
 

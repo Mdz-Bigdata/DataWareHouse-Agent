@@ -60,11 +60,9 @@ COMPLIANCE_RULE_IDS: frozenset[str] = frozenset({"QG-OSS-001-desensitization-fla
 
 #: 入湖通道 → quality 侧通道枚举的名字对应。两边都是 [a5] 第六章那三条通道，
 #: 只是各自用了自己的枚举；这里用**值的字符串**对应，避免 import 期依赖 quality。
-CHANNEL_MAP: dict[ChannelKind, str] = {
-    ChannelKind.CDC: "mysql_cdc",
-    ChannelKind.KAFKA: "kafka",
-    ChannelKind.OSS: "oss_file",
-}
+#: 取值来自 ``gate.ISSUE_CHANNEL_CODES``——隔离表 ``ods_quality_issue.source_channel``
+#: 写的也是这一套字面量，一个通道在两边只能有一个名字。
+CHANNEL_MAP: dict[ChannelKind, str] = {kind: kind.issue_code for kind in ChannelKind}
 
 
 def quality_channel_of(kind: ChannelKind) -> Any:

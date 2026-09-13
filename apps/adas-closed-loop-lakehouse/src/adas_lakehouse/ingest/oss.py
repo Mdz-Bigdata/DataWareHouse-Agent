@@ -508,7 +508,12 @@ def parse_object_uri(uri: str, *, default_bucket: str | None = None) -> ObjectUr
     return ObjectUri(parsed.scheme, parsed.netloc, key)
 
 
-def validate_object_key(uri: str, *, allowed_buckets: Iterable[str] | None = None) -> list[str]:
+def validate_object_key(
+    uri: str,
+    *,
+    allowed_buckets: Iterable[str] | None = None,
+    forbidden_buckets: Iterable[str] | None = None,
+) -> list[str]:
     """校验 file_path 合法且指向智驾云 OSS（门禁 P1 检查项的前半段）。
 
     Args:
@@ -516,6 +521,10 @@ def validate_object_key(uri: str, *, allowed_buckets: Iterable[str] | None = Non
         allowed_buckets: 允许的 bucket 白名单，缺省为 ``settings().minio.raw_bucket``。
             **合规云的 bucket 永远不在白名单里**——[a8] 第四章：合规云对象存储
             不对外暴露，智驾云侧的 file_path 只能指向合规数据副本所在的智驾云 OSS。
+        forbidden_buckets: 明令禁止的 bucket（合规云对象存储）。白名单已经能拦下它，
+            这里单列一条是为了让拒绝理由说清楚**越的是哪条边界**：指向合规云的
+            file_path 意味着智驾云侧的下游会直接去读合规云的对象，而 [a8] 第二章的
+            分界是「进入智驾云的只有合规数据副本 + 文件元信息」。
 
     Returns:
         违规描述列表，空列表表示通过。
@@ -526,6 +535,13 @@ def validate_object_key(uri: str, *, allowed_buckets: Iterable[str] | None = Non
     except ValueError as exc:
         return [str(exc)]
 
+    for bucket in forbidden_buckets or ():
+        if bucket and parsed.bucket == bucket:
+            problems.append(
+                f"file_path 指向合规云 bucket={bucket!r}：合规云对象存储不对外暴露，"
+                "只有脱敏脱密后的数据副本与文件元信息可以离开，湖表里的 file_path "
+                "必须指向智驾云 OSS 上的副本"
+            )
     buckets = tuple(allowed_buckets or (settings().minio.raw_bucket,))
     if parsed.bucket not in buckets:
         problems.append(
@@ -585,7 +601,6 @@ FILE_MAGIC: dict[FileType, tuple[bytes, ...]] = {
     FileType.VIDEO: (
         b"\xff\xd8\xff",  # JPEG
         b"\x89PNG\r\n\x1a\n",  # PNG
-        b"\x00\x00\x00",  # ISO BMFF(mp4) 的 box size 前缀，配合 ftyp 判断
         b"RIFF",  # AVI
     ),
     FileType.POINTCLOUD: (
@@ -595,6 +610,16 @@ FILE_MAGIC: dict[FileType, tuple[bytes, ...]] = {
         b"ply",
     ),
 }
+
+#: ISO BMFF（mp4 / mov）没有固定的首字节魔数：前 4 字节是 box size，第 5~8 字节才是
+#: ``ftyp``。早先这里用 ``b"\x00\x00\x00"`` 当前缀，等于「任何以三个零字节开头的文件都算
+#: 可解码」——一个被截断成全零的坏文件正好从这里溜过去。改判偏移 4 处的 box type。
+_ISO_BMFF_BOX_TYPES: tuple[bytes, ...] = (b"ftyp",)
+
+
+def _is_iso_bmff(header: bytes) -> bool:
+    """mp4 / mov：前 4 字节是 box size，第 5~8 字节是 box type ``ftyp``。"""
+    return len(header) >= 8 and header[4:8] in _ISO_BMFF_BOX_TYPES
 
 
 @dataclass(frozen=True, slots=True)
@@ -647,6 +672,8 @@ def probe_decodable(
     if not header:
         return DecodeProbeResult(False, False, "读取文件头失败，跳过可解码性校验")
     if any(header.startswith(m) for m in magics):
+        return DecodeProbeResult(True, True, "")
+    if meta.file_type is FileType.VIDEO and _is_iso_bmff(header):
         return DecodeProbeResult(True, True, "")
     return DecodeProbeResult(
         True,

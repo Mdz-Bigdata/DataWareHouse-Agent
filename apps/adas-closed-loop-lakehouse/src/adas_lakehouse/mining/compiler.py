@@ -30,6 +30,7 @@ from .constants import (
     BATCH_SLA_HOURS,
     EVENT_WINDOW_AFTER_SEC,
     EVENT_WINDOW_BEFORE_SEC,
+    FUNNEL_STAGES,
     HARSH_DECEL_MIN_DURATION_SEC,
 )
 from .rules import (
@@ -411,6 +412,7 @@ class RuleCompiler:
             existing_hit_count=existing_hit_count,
             now=now,
             weights=self.weights,
+            dialect=Dialect.SPARK,
         )
         run_ref = literal(run_id) if run_id else ":run_id"
         task_ref = self._task_ref(rule, run_id, task_id)
@@ -471,7 +473,7 @@ class RuleCompiler:
             f"{a}.`vehicle_code` AS `vehicle_code`",
         ]
         header = (
-            f"-- 规则挖掘 · T+1 批（Spark SQL on Paimon）\n"
+            f"-- 规则挖掘 · T+1 批（Spark SQL on Paimon）· 三级漏斗第一层：{FUNNEL_STAGES[0]}\n"
             f"-- 规则: {rule.rule_id} v{rule.rule_version} 「{rule.rule_name}」 "
             f"{rule.rule_type.name_cn}\n"
             f"-- 原文条件与执行: {rule.rule_type.spec.condition_note}\n"
@@ -736,6 +738,7 @@ class RuleCompiler:
             time_column=time_col_name,
             now=now,
             weights=self.weights,
+            dialect=Dialect.FLINK,
         )
         run_ref = literal(run_id) if run_id else ":run_id"
         cols = self._stream_projection(
@@ -750,7 +753,7 @@ class RuleCompiler:
         )
         src = self._source_sql(source_table or ODS_VEHICLE_TRIGGER_EVENT)
         header = (
-            f"-- 规则挖掘 · 准实时流（Flink 消费回传触发事件流）\n"
+            f"-- 规则挖掘 · 准实时流（Flink 消费回传触发事件流）· 第一层：{FUNNEL_STAGES[0]}\n"
             f"-- 规则: {rule.rule_id} v{rule.rule_version} 「{rule.rule_name}」 {rule.rule_type.name_cn}\n"
             f"-- 原文条件与执行: {rule.rule_type.spec.condition_note}\n"
             f"-- 事件窗口: 前 {EVENT_WINDOW_BEFORE_SEC} 秒 / 后 {EVENT_WINDOW_AFTER_SEC} 秒（补抽帧加密采样区间）"
@@ -823,8 +826,20 @@ class RuleCompiler:
         毫秒时间戳列 ``event_ts_ms`` 作差，阈值写成 ``0.5 * 1000``——
         原文的 0.5 逐字留在 SQL 里，不预先算成 500。
 
+        两处不显眼但必须这么写的地方：
+
+        1. **按 signal_name 预过滤放在 MATCH_RECOGNIZE 之前**。信号流是多信号共用一条
+           （``signal_name`` 本来就是它的一列），而 ``PATTERN (A+ B)`` 要求 A 段的行
+           **首尾相连**；不预过滤的话，中间插进来的一行别的信号既不满足 A 也不满足 B，
+           整个匹配从那里断开——一段真实的急减速会被切成两截，两截各自不够 0.5 秒，
+           于是这条规则在生产上「从来不命中」，而且没有任何报错。
+        2. **峰值聚合跟着算子走**（:attr:`~adas_lakehouse.mining.rules.SignalCondition.peak_aggregate`）：
+           ``<`` 取 MIN、``>`` 取 MAX。峰值是严重度打分的输入，取反了就等于把最轻的
+           采样当成最严重的。
+
         ⚠️ 原文未明确，本项目设计：``event_ts_ms`` 列、MATCH_RECOGNIZE 的模式写法
         （``A+ B``，以「首个不再满足条件的样本」收尾）都是本项目的落地方案。
+        Python 侧的等价求值见 :func:`~adas_lakehouse.mining.rules.sustained_matches`。
         """
         min_dur = cond.min_duration_sec
         assert min_dur is not None  # 调用方已判
@@ -845,6 +860,7 @@ class RuleCompiler:
             signal_value_column="peak_value",
             now=now,
             weights=self.weights,
+            dialect=Dialect.FLINK,
         )
         cols = self._stream_projection(
             rule,
@@ -858,17 +874,21 @@ class RuleCompiler:
         )
         src = self._source_sql(source_table or VEHICLE_SIGNAL_STREAM)
         header = (
-            f"-- 规则挖掘 · 准实时流（Flink MATCH_RECOGNIZE 持续时长判定）\n"
+            f"-- 规则挖掘 · 准实时流（Flink MATCH_RECOGNIZE 持续时长判定）· 第一层：{FUNNEL_STAGES[0]}\n"
             f"-- 规则: {rule.rule_id} v{rule.rule_version} 「{rule.rule_name}」 {rule.rule_type.name_cn}\n"
             f"-- 原文条件与执行: {rule.rule_type.spec.condition_note}\n"
             f"-- 阈值 {cond.threshold} 与持续时长 {min_dur}s 逐字取自原文，见 constants.py"
         )
         projection = ",\n".join(indent_sql(c) for c in cols)
+        peak = cond.peak_aggregate
         inner = f"""SELECT
 {projection}
 FROM (
   SELECT *
-  FROM {src} AS {a}
+  FROM (
+    -- 先按信号名收窄再做模式匹配：A+ 要求首尾相连，混进别的信号会把一段切成两截
+    SELECT * FROM {src} AS {a} WHERE {a}.`signal_name` = {name_lit}
+  ) AS `src`
   MATCH_RECOGNIZE (
     PARTITION BY `data_id`, `vehicle_code`, `project_code`
     ORDER BY `event_time`
@@ -876,14 +896,14 @@ FROM (
       FIRST(A.`event_time`)  AS `anchor_time`,
       FIRST(A.`event_ts_ms`) AS `sustain_start_ms`,
       LAST(A.`event_ts_ms`)  AS `sustain_end_ms`,
-      MIN(A.`signal_value`)  AS `peak_value`,
+      {peak}(A.`signal_value`)  AS `peak_value`,
       COUNT(A.`event_ts_ms`) AS `sample_count`
     ONE ROW PER MATCH
     AFTER MATCH SKIP PAST LAST ROW
     PATTERN (A+ B)
     DEFINE
-      A AS A.`signal_name` = {name_lit} AND A.`signal_value` {op} {thr_lit},
-      B AS B.`signal_name` = {name_lit} AND B.`signal_value` {inverse} {thr_lit}
+      A AS A.`signal_value` {op} {thr_lit},
+      B AS B.`signal_value` {inverse} {thr_lit}
   )
 ) AS `m`
 -- 持续 ≥ {min_dur}s：毫秒作差，阈值保留原文的 {min_dur} 不预乘

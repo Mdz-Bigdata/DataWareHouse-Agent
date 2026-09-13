@@ -32,6 +32,7 @@ from ._sqlfmt import ident, literal
 from .constants import EVENT_WINDOW_TOTAL_SEC
 from .rules import (
     ConditionGroup,
+    Dialect,
     RuleDefinition,
     RuleType,
     SignalCondition,
@@ -369,6 +370,22 @@ def rank_hits(
 # --------------------------------------------------------------------------- SQL 侧
 
 
+def _age_days_sql(dialect: Dialect, time_col: str, ref: datetime) -> str:
+    """渲染「从 time_col 到参考时刻过了多少天」，**分方言**。
+
+    ``DATEDIFF`` 是 Spark/Hive 的函数，Flink SQL 里根本没有这一个（它只有
+    ``TIMESTAMPDIFF(unit, t1, t2)``）。以前两条腿共用 DATEDIFF，批路没事，
+    流路的作业**提交时**才会因为「找不到函数 DATEDIFF」失败——而准实时作业是长驻的，
+    提交失败往往只在网关日志里留一行，线上表现就是这条规则「从来不出命中」。
+
+    注意两边的参数顺序是反的：Spark 的 ``DATEDIFF(end, start)`` 等于
+    Flink 的 ``TIMESTAMPDIFF(DAY, start, end)``。
+    """
+    if dialect is Dialect.FLINK:
+        return f"TIMESTAMPDIFF(DAY, {time_col}, {literal(ref)})"
+    return f"DATEDIFF({literal(ref)}, {time_col})"
+
+
 def sql_score_expression(
     rule: RuleDefinition,
     *,
@@ -378,6 +395,7 @@ def sql_score_expression(
     signal_value_column: str | None = None,
     now: datetime | None = None,
     weights: ScoreWeights = DEFAULT_WEIGHTS,
+    dialect: Dialect = Dialect.SPARK,
 ) -> str:
     """把同一套评分公式渲染成 SQL 表达式，供 ``INSERT INTO ... SELECT`` 直接算分。
 
@@ -397,6 +415,7 @@ def sql_score_expression(
             聚合成了 ``peak_value``，列名与原始信号流不同，编译器在那里会传这个参数。
         now: 参考时刻，默认当前。
         weights: 权重。
+        dialect: 目标方言。新鲜度那一项的日期差函数两个引擎不同名，见 :func:`_age_days_sql`。
 
     Returns:
         一个返回 DOUBLE 的 SQL 表达式字符串。
@@ -417,7 +436,7 @@ def sql_score_expression(
 
     tcol = f"{ident(alias)}.{ident(time_column)}" if alias else ident(time_column)
     fresh_expr = (
-        f"POWER(0.5, GREATEST(0.0, CAST(DATEDIFF({literal(ref)}, {tcol}) AS DOUBLE))"
+        f"POWER(0.5, GREATEST(0.0, CAST({_age_days_sql(dialect, tcol, ref)} AS DOUBLE))"
         f" / {literal(FRESHNESS_HALF_LIFE_DAYS)})"
     )
 

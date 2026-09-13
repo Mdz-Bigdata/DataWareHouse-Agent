@@ -14,10 +14,31 @@ from app.service.semantic_layer import semantic_layer, DSLCompiler, align_timezo
 from app.service.vector_service import vector_service
 from app.service.semantic_cache import semantic_cache
 from app.service.date_ranges import question_periods
+from app.service.run_trace import RunRecord, resolve_trace_id, run_trace_registry
+from app.service.llm_cost import record_llm_usage
 
 # =====================================================================
 # 智能问数 Agent V2.0：从 Text2SQL 到语义层 + DSL 升级实现
 # =====================================================================
+
+# §7.9-6 截断声明的探测开关。
+#
+# 关（默认）：SQL 文本一字不改（仍是 LIMIT n）。返回行数顶到上限时声明
+#             「可能被截断」——如实说明无法确认，不谎报。
+# 开（DWH_TRUNCATION_PROBE=1）：编译成 LIMIT n+1，多出来的那一行只用于判定
+#             「确实还有更多」，裁掉后再交给结论/图表，呈现给用户的行数与关闭时
+#             完全一致；声明升级为确定口径「本次结果被截断」。
+#
+# 默认关是因为它会改变 details.sql 里展示的 SQL 文本（LIMIT n+1），属于可见行为变化。
+TRUNCATION_PROBE_ENV = "DWH_TRUNCATION_PROBE"
+
+
+def _env_flag(name: str) -> bool:
+    """把环境变量读成布尔开关；未设置/空串一律视为关闭。"""
+    return (os.getenv(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+TRUNCATION_PROBE_ENABLED = _env_flag(TRUNCATION_PROBE_ENV)
 
 class AskAgent:
     def __init__(self):
@@ -38,9 +59,86 @@ class AskAgent:
             return sql.strip()
 
     def _call_llm(self, prompt: str, system_prompt: str = "", user: str = "anonymous", model_tier: str = "fast") -> str:
+        """调用大模型（逻辑在 :meth:`_call_llm_raw`），并把本次 token 用量与折算成本记进成本日表。
+
+        这里只在原有调用逻辑外面包一层记账，**不改变任何调用行为**：
+        ``_usage_sink`` 由 ``_call_llm_raw`` 在真正发起请求时填好（厂商、路由到的模型、
+        厂商回传的 usage），本方法据此写一行到 :mod:`app.service.llm_cost` 的成本日表。
+
+        记账全程包在 try 里、失败只打日志：成本表再有用，也不该让用户的问数请求因为它挂掉。
+        """
+        usage: dict = {}
+        try:
+            text = self._call_llm_raw(prompt, system_prompt=system_prompt, user=user,
+                                      model_tier=model_tier, _usage_sink=usage)
+        except BaseException:
+            # 调用失败同样记一笔：多数厂商对失败请求照样收 prompt token 的钱，不记就漏账。
+            self._meter_llm_call(usage, prompt, system_prompt, "", model_tier, ok=False)
+            raise
+        self._meter_llm_call(usage, prompt, system_prompt, text, model_tier, ok=True)
+        return text
+
+    @staticmethod
+    def _meter_llm_call(usage: dict, prompt: str, system_prompt: str, completion: str,
+                        model_tier: str, ok: bool) -> None:
+        """把一次模型调用登记进 LLM 成本日表。整段包 try——计量失败绝不影响问数主流程。"""
+        try:
+            vendor = (usage or {}).get("vendor")
+            if vendor is None:
+                if os.getenv("MOCK_LLM") == "true":
+                    # 本地假调用：token 量照记（便于看调用量），但单价为 0，
+                    # 不能把没花过的钱混进成本表。
+                    vendor, model = "mock", "mock"
+                else:
+                    # 压根没发出去（例如 API Key 未配置），不存在花销，不记账。
+                    return
+            else:
+                model = usage.get("model") or "unknown"
+            record_llm_usage(
+                model=model,
+                model_tier=model_tier,
+                vendor=vendor,
+                prompt_tokens=usage.get("prompt_tokens"),
+                completion_tokens=usage.get("completion_tokens"),
+                # 厂商没回 usage 时用原文估算兜底（会被标记成 estimated）。
+                prompt_text=f"{system_prompt}\n{prompt}",
+                completion_text=completion,
+                ok=ok,
+            )
+        except Exception as error:  # noqa: BLE001 - 纵深防御，record_llm_usage 自己也不抛
+            print(f"[LLM Cost] 调用点记账失败（已忽略，不影响问数）：{error}")
+
+    @staticmethod
+    def _extract_usage(sink: dict, response) -> None:
+        """把厂商返回里的真实 token 用量抄进 ``sink``；抄不到就留空，由字符估算兜底。"""
+        if sink is None:
+            return
+        try:
+            prompt_tokens = completion_tokens = None
+            usage = getattr(response, "usage", None)  # OpenAI 兼容接口
+            if usage is not None:
+                prompt_tokens = getattr(usage, "prompt_tokens", None)
+                completion_tokens = getattr(usage, "completion_tokens", None)
+            else:
+                usage = getattr(response, "usage_metadata", None)  # Gemini
+                if usage is not None:
+                    prompt_tokens = getattr(usage, "prompt_token_count", None)
+                    completion_tokens = getattr(usage, "candidates_token_count", None)
+            if prompt_tokens is not None:
+                sink["prompt_tokens"] = int(prompt_tokens)
+            if completion_tokens is not None:
+                sink["completion_tokens"] = int(completion_tokens)
+        except Exception as error:  # noqa: BLE001
+            print(f"[LLM Cost] 读取厂商 usage 失败，本次改用估算：{error}")
+
+    def _call_llm_raw(self, prompt: str, system_prompt: str = "", user: str = "anonymous",
+                      model_tier: str = "fast", _usage_sink: dict = None) -> str:
         """
         调用真实大语言模型 (OpenAI / Gemini / DeepSeek) 并进行模型分级路由 (Model Routing)。
         model_tier: "fast" (低延迟小模型，用于改写、意图提取) 或 "complex" (高推理大模型，用于复杂SQL、纠错与归因)
+
+        ``_usage_sink``: 计量用的出参字典，由 :meth:`_call_llm` 传入。真正发起请求前写入
+        厂商与路由到的模型，拿到响应后写入厂商回传的 token 用量。留空则不计量。
         """
         # 1.1 Mock LLM Fallback (仅当开启 MOCK_LLM 环境变量时有效)
         if os.getenv("MOCK_LLM") == "true":
@@ -104,7 +202,11 @@ class AskAgent:
             return prompt
 
         # 1. 动态加载本地 llm_config.json 配置文件
-        config_path = "/Users/mindezhi/DataWareHouse-Agent/backend/llm_config.json"
+        # 路径按包结构推导，DWH_LLM_CONFIG_PATH 可覆盖；原来写死开发机绝对路径，
+        # 容器里必然读不到而静默退化成无 Key。函数内 import 是刻意的：本文件是
+        # 主链路大文件，改动只限这一处，不碰顶部 import 块。
+        from app.core.paths import llm_config_path
+        config_path = str(llm_config_path())
         api_key = ""
         base_url = ""
         active_text_model = ""
@@ -159,12 +261,18 @@ class AskAgent:
         print(f"[Model Router] Routed '{model_tier}' tier query to model: '{routed_model}' (Vendor: {active_vendor})")
 
         # 2. 发起大模型真实推理
+        # 计量锚点：在真正发出请求之前就记下厂商与路由到的模型，这样即便请求抛异常，
+        # 上层也知道「这笔钱确实发生了」（厂商通常仍按 prompt token 计费）。
+        if _usage_sink is not None:
+            _usage_sink["vendor"] = active_vendor or "unknown"
+            _usage_sink["model"] = routed_model
         try:
             if active_vendor == "gemini" and "generativelanguage" in base_url.lower():
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel(routed_model)
                 response = model.generate_content(f"{system_prompt}\n\n{prompt}")
+                self._extract_usage(_usage_sink, response)
                 return response.text
             else:
                 from openai import OpenAI
@@ -178,6 +286,7 @@ class AskAgent:
                     temperature=0.0,
                     timeout=20.0
                 )
+                self._extract_usage(_usage_sink, response)
                 return response.choices[0].message.content
         except Exception as e:
             print(f"[Model Router Error] 调用外部大模型 [{active_vendor}] 遇到异常: {e}")
@@ -758,7 +867,54 @@ class AskAgent:
             "config": {}
         }
 
-    def ask(self, question: str, dialect: str = "doris", user: str = "anonymous", role: str = None) -> dict:
+    @staticmethod
+    def _stamp_trace(payload: dict, run: RunRecord, status: str, error: str = None) -> dict:
+        """收口一条运行记录，并把追溯 ID 与分阶段耗时贴进响应。
+
+        只做加法：既有字段一个不动，前端/调用方不读新字段也照常工作。
+        """
+        run.finish(status, error)
+        run_trace_registry.record(run)
+        if not isinstance(payload, dict):
+            return payload
+        payload.setdefault("trace_id", run.trace_id)
+        payload.setdefault("run_id", run.run_id)
+        details = payload.get("details")
+        if isinstance(details, dict):
+            details["trace_id"] = run.trace_id
+            details["run_id"] = run.run_id
+            details["stage_timings"] = [item.to_dict() for item in run.stages]
+        print(
+            f"[RunTrace] trace={run.trace_id} run={run.run_id} status={status} "
+            f"total={run.total_ms:.1f}ms stages="
+            + ", ".join(f"{item.name}:{item.duration_ms:.1f}ms" for item in run.stages)
+        )
+        return payload
+
+    def ask(self, question: str, dialect: str = "doris", user: str = "anonymous", role: str = None,
+            trace_id: str = None) -> dict:
+        """全链路问数入口。签发本次执行的运行记录后进入主链路。
+
+        :param trace_id: 上游（platform_gateway 的 ``x-trace-id``）签发的全链路追溯 ID。
+            留空则沿用 ``run_trace.trace_scope`` 绑定的上下文值，仍取不到就地补签一个，
+            保证每次问数都有 trace_id。本次执行另行签发 run_id：一次执行一条运行记录，
+            落在 ``run_trace_registry``，可按 run_id / trace_id 回查。
+        """
+        run = run_trace_registry.start_run(
+            trace_id=resolve_trace_id(trace_id),
+            question=question,
+            user=user,
+            role=role or "",
+            dialect=dialect,
+        )
+        try:
+            return self._ask_traced(question=question, dialect=dialect, user=user, role=role, run=run)
+        except BaseException as exc:  # noqa: BLE001 - 记录后原样抛出，不改变既有异常行为
+            if run.status == "running":
+                run.finish("crashed", f"{type(exc).__name__}: {exc}")
+            raise
+
+    def _ask_traced(self, question: str, dialect: str, user: str, role: str, run: RunRecord) -> dict:
         """
         全链路 V2.0 升级架构问数接口：
         1. 偏好注入 & 多轮 Session 合并
@@ -767,6 +923,8 @@ class AskAgent:
         4. DSLCompiler 确定性 SQL 编译器构建 SQL (包含时区北京->芝加哥映射)
         5. guardrail.check_sql 物理 SQL 校验 (第二层网闸)
         6. 数据仿真执行与商业摘要渲染
+
+        ``run`` 是本次执行的运行记录：各阶段耗时、DSL、SQL、命中的网闸与最终状态都写在上面。
         """
         # 0. 确定用户角色权限，防止硬编码
         if role:
@@ -780,18 +938,26 @@ class AskAgent:
             else:
                 user_role = "user"
 
-        print(f"\n[AskAgent V2.0] Question from '{user}' (Role: {user_role}): {question} (Dialect: {dialect})")
+        # 0.05 角色确定后补进运行记录（trace_id / run_id 在 ask() 入口已签发）
+        run.role = user_role[:60]  # role 来自请求体，截断后再入记录
+        print(f"\n[AskAgent V2.0] Question from '{user}' (Role: {user_role}): {question} (Dialect: {dialect}) "
+              f"[trace={run.trace_id} run={run.run_id}]")
         start_time = time.time()
         local_demo = db_service.is_sample_data and os.getenv("MOCK_LLM") != "true"
         is_followup = bool(re.match(r"^(那|那么|再看|换成|改为|这些|它们)", question.strip()))
 
         # 0.1 检索多级语义缓存 (Semantic Query Cache - 毫秒级直接命中加速)
-        query_vec = vector_service.get_embedding(question)
-        cache_hit = semantic_cache.get(question, dialect=dialect, role=user_role, query_embedding=query_vec)
+        with run.stage("embedding"):
+            query_vec = vector_service.get_embedding(question)
+        with run.stage("cache_lookup") as cache_stage:
+            cache_hit = semantic_cache.get(question, dialect=dialect, role=user_role, query_embedding=query_vec)
+            cache_stage.meta["hit"] = bool(cache_hit)
         if cache_hit:
             cached_resp, hit_type = cache_hit
             print(f"[Semantic Cache Hit] Returning response from {hit_type} cache for question: '{question}'")
-            return cached_resp
+            # 缓存命中同样是一次可追溯的运行：复用的是结果，不是别人的 trace_id。
+            run.cache_hit = hit_type
+            return self._stamp_trace(cached_resp, run, "cache_hit")
 
         # 0.5 多轮上下文问句改写 (Query Rewriter Pipeline)
         history_queries = self.user_history_questions.get(user, [])
@@ -805,11 +971,12 @@ class AskAgent:
                 + "请直接输出改写后的完整中文自然语言问句，不要包含任何多余的解释、前导词或 Markdown 标记。"
             )
             try:
-                rewritten_question = self._call_llm(
-                    prompt=rewrite_prompt,
-                    system_prompt="你是一个极为专业的智能多轮问数改写助手。你的唯一目标是还原代词指代和补齐省略，确保输出的句子独立完备。",
-                    model_tier="fast"
-                )
+                with run.stage("llm_query_rewrite", model_tier="fast"):
+                    rewritten_question = self._call_llm(
+                        prompt=rewrite_prompt,
+                        system_prompt="你是一个极为专业的智能多轮问数改写助手。你的唯一目标是还原代词指代和补齐省略，确保输出的句子独立完备。",
+                        model_tier="fast"
+                    )
                 question_to_parse = rewritten_question.strip()
                 print(f"[Query Rewriter] Rewrote: '{question}' -> '{question_to_parse}'")
             except Exception as e:
@@ -817,6 +984,8 @@ class AskAgent:
                 question_to_parse = question
         else:
             question_to_parse = question
+        if question_to_parse != question:
+            run.rewritten_question = question_to_parse[:1000]
 
         # 将用户的当前原始问题追加进历史记录中
         if user not in self.user_history_questions:
@@ -827,8 +996,11 @@ class AskAgent:
         preference = user_memory.get_preference_profile(user)
         
         # 1.1 检索 Qdrant 知识库候选元数据与 Few-shot 对话示例 (采用改写后的完备问句)
-        recalled_meta = [] if local_demo else vector_service.recall_semantic_meta(question_to_parse, limit=4)
-        recalled_fewshots = [] if local_demo else vector_service.recall_fewshot_examples(question_to_parse, limit=2)
+        with run.stage("qdrant_recall", skipped=local_demo) as recall_stage:
+            recalled_meta = [] if local_demo else vector_service.recall_semantic_meta(question_to_parse, limit=4)
+            recalled_fewshots = [] if local_demo else vector_service.recall_fewshot_examples(question_to_parse, limit=2)
+            recall_stage.meta["meta_count"] = len(recalled_meta)
+            recall_stage.meta["fewshot_count"] = len(recalled_fewshots)
 
         # 1.2 相似度得分硬阻断过滤 (Qdrant Score Hard Truncation)
         # 为防止大模型在缺乏特定指标元数据时脑补（如问“食堂消费”却猜“GMV”），
@@ -850,13 +1022,18 @@ class AskAgent:
             recalled_meta=recalled_meta,
             user_preference=preference
         )
-        matched_skill = skill_orchestrator.route(skill_ctx)
+        with run.stage("skill_route"):
+            matched_skill = skill_orchestrator.route(skill_ctx)
         if matched_skill:
-            skill_res = matched_skill.execute(skill_ctx)
+            skill_name = type(matched_skill).__name__
+            run.note("skill", skill_name)
+            with run.stage("skill_execute", skill=skill_name):
+                skill_res = matched_skill.execute(skill_ctx)
             resp_dict = skill_res.model_dump()
             # 存入多级语义缓存
             semantic_cache.put(question, dialect, user_role, resp_dict, embedding=query_vec)
-            return resp_dict
+            return self._stamp_trace(resp_dict, run, "skill" if resp_dict.get("success") else "skill_failed",
+                                     resp_dict.get("error"))
 
         system_prompt = (
             "你是一个智能元数据意图解析器。你的任务是将用户提问映射为结构化的查询 JSON DSL。\n"
@@ -893,20 +1070,22 @@ class AskAgent:
 
         # 2. 调用 LLM 得到当前意图 DSL 碎片，若外部 API 超时或网络异常，自适应降级为确定性语义 AST 编译器
         def fallback_or_clarify():
-            try:
-                return self._deterministic_semantic_ast_fallback(question_to_parse, recalled_meta)
-            except ValueError as error:
-                return {"need_clarification": True, "clarification_msg": str(error), "metrics": []}
+            with run.stage("deterministic_fallback"):
+                try:
+                    return self._deterministic_semantic_ast_fallback(question_to_parse, recalled_meta)
+                except ValueError as error:
+                    return {"need_clarification": True, "clarification_msg": str(error), "metrics": []}
 
         try:
             if local_demo:
                 raise RuntimeError("演示数仓使用本地语义解析")
-            new_dsl_json = self._call_llm(
-                prompt=user_prompt,
-                system_prompt=system_prompt,
-                user=user,
-                model_tier=complexity_tier
-            )
+            with run.stage("llm_dsl", model_tier=complexity_tier):
+                new_dsl_json = self._call_llm(
+                    prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    user=user,
+                    model_tier=complexity_tier
+                )
             # 强制提取或纠错 json
             new_dsl_json = re.sub(r"^\s*```[a-zA-Z]*\n", "", new_dsl_json)
             new_dsl_json = re.sub(r"\n\s*```\s*$", "", new_dsl_json)
@@ -929,7 +1108,8 @@ class AskAgent:
         # 2.1 主动澄清熔断拦截 (第一层澄清网闸)
         if new_dsl.get("need_clarification") is True:
             elapsed_time = f"{time.time() - start_time:.3f}s"
-            return {
+            run.add_guardrail("clarification", "block", new_dsl.get("clarification_msg", ""))
+            return self._stamp_trace({
                 "success": False,
                 "error": new_dsl.get("clarification_msg", "您的问题存在歧义，需要澄清。"),
                 "clarification": {
@@ -945,7 +1125,7 @@ class AskAgent:
                     "source_desc": "大模型主动识别模糊意图，触发澄清建议",
                     "filters": []
                 }
-            }
+            }, run, "clarification", new_dsl.get("clarification_msg", ""))
 
         # 归一化清洗逻辑，防御大模型格式漂移 (e.g. 把 metrics 返回为 ["gmv"] 字符串列表)
         def clean_dsl_format(dsl_obj: dict) -> dict:
@@ -1025,14 +1205,19 @@ class AskAgent:
         prev_dsl = self.user_sessions.get(user, {})
         if not is_followup:
             prev_dsl = {}  # A self-contained question starts a fresh scope.
-        final_dsl = self._merge_session_dsl(prev_dsl, new_dsl)
-        final_dsl = clean_dsl_format(final_dsl)
+        with run.stage("session_merge", followup=is_followup):
+            final_dsl = self._merge_session_dsl(prev_dsl, new_dsl)
+            final_dsl = clean_dsl_format(final_dsl)
+        run.set_dsl(final_dsl)
         print(f"[AskAgent V2.0] Session Merged DSL: {json.dumps(final_dsl, ensure_ascii=False)}")
 
         # 4. 执行第一层网闸：DSL 语义审计
         try:
-            guardrail.check_dsl(final_dsl, self.semantic_layer, user_role=user_role)
+            with run.stage("guardrail_dsl"):
+                guardrail.check_dsl(final_dsl, self.semantic_layer, user_role=user_role)
+            run.add_guardrail("dsl", "pass")
         except GuardrailException as ge:
+            run.add_guardrail("dsl", "block", ge.message)
             # 语义审计拦截，直接返回错误，不编译 SQL
             elapsed_time = f"{time.time() - start_time:.3f}s"
             # 构造虚拟 SQL 以供前台显示拦截情况
@@ -1045,13 +1230,15 @@ class AskAgent:
                     choices = self.semantic_layer.suggested_dimensions(metric) if metric else []
                     message = (f"指标 '{metric.name}' 不支持所请求的分组维度。可用分组维度：{', '.join(choices)}。"
                                if metric else "当前指标不支持所请求的分组维度，请选择已注册的分组字段。")
-                return {"success": False, "error": message,
-                        "clarification": {"need_clarification": True, "message": message, "options": []},
-                        "details": {"sql": "", "dialect": dialect, "elapsed_time": elapsed_time,
-                                    "tables": [], "source_desc": "查询条件需要调整，未执行物理查询",
-                                    "filters": final_dsl.get("filters", [])}}
+                return self._stamp_trace(
+                    {"success": False, "error": message,
+                     "clarification": {"need_clarification": True, "message": message, "options": []},
+                     "details": {"sql": "", "dialect": dialect, "elapsed_time": elapsed_time,
+                                 "tables": [], "source_desc": "查询条件需要调整，未执行物理查询",
+                                 "filters": final_dsl.get("filters", [])}},
+                    run, "clarification", message)
             dummy_sql = f"-- [语义拦截]: {ge.message}"
-            return {
+            return self._stamp_trace({
                 "success": False,
                 "error": ge.message,
                 "details": {
@@ -1063,16 +1250,21 @@ class AskAgent:
                     "filters": final_dsl.get("filters", []),
                     "estimated_rows": 0
                 }
-            }
+            }, run, "guardrail_blocked", ge.message)
 
         # 5. DSL 确定性编译器组装 SQL (包含北京时区转换为芝加哥时区)
         compiler = DSLCompiler(layer=self.semantic_layer, dialect=dialect)
         try:
-            sql = compiler.compile(final_dsl)
+            with run.stage("sql_compile", dialect=dialect):
+                if TRUNCATION_PROBE_ENABLED:
+                    # 多取一行只为判定「还有更多」，裁剪在执行之后立刻做。
+                    sql, _ = compiler.compile_with_probe(final_dsl)
+                else:
+                    sql = compiler.compile(final_dsl)
         except Exception as e:
             # 编译失败直接熔断
             elapsed_time = f"{time.time() - start_time:.3f}s"
-            return {
+            return self._stamp_trace({
                 "success": False,
                 "error": f"DSL 编译器组装 SQL 失败: {str(e)}",
                 "details": {
@@ -1084,8 +1276,9 @@ class AskAgent:
                     "filters": final_dsl.get("filters", []),
                     "estimated_rows": 0
                 }
-            }
+            }, run, "compile_error", str(e))
 
+        run.set_sql(sql)
         print(f"[AskAgent V2.0] Compiled Dialect SQL ({dialect}):\n{sql}")
 
         # 6. 执行第二层网闸：SQL 物理安全审计
@@ -1100,16 +1293,22 @@ class AskAgent:
         first_error_msg = None
 
         while retry_count < max_retries:
+            attempt = retry_count + 1
             try:
                 # 物理层安全与扫描预估审计
-                guardrail_result = guardrail.check_sql(sql, dialect=dialect, conn=db_service.conn)
-                
+                with run.stage("guardrail_sql", attempt=attempt):
+                    guardrail_result = guardrail.check_sql(sql, dialect=dialect, conn=db_service.conn)
+                run.add_guardrail("sql", "pass", attempt=attempt,
+                                  estimated_rows=guardrail_result.get("estimated_rows", 0))
+
                 # 执行 SQL
-                df = db_service.execute_query(sql, dialect=dialect)
+                with run.stage("db_execute", attempt=attempt, dialect=dialect):
+                    df = db_service.execute_query(sql, dialect=dialect)
                 execution_error = None
                 break
             except GuardrailException as ge:
                 execution_error = str(ge)
+                run.add_guardrail("sql", "block", execution_error, attempt=attempt)
                 if first_error_msg is None:
                     first_error_msg = execution_error
                 print(f"[Guardrail SQL Checked Failed - Retry {retry_count+1}]: {ge}")
@@ -1118,16 +1317,18 @@ class AskAgent:
                 if first_error_msg is None:
                     first_error_msg = execution_error
                 print(f"[DB Execution Error - Retry {retry_count+1}]: {e}")
-            
+
             # 若执行失败，触发纠错重试
             retry_count += 1
+            run.retry_count = retry_count
             if retry_count < max_retries:
                 # 检索纠错经验库中的 Few-shot
-                recalled_corrections = vector_service.recall_error_corrections(
-                    query=question_to_parse,
-                    error_message=execution_error,
-                    limit=1
-                )
+                with run.stage("correction_recall", attempt=attempt):
+                    recalled_corrections = vector_service.recall_error_corrections(
+                        query=question_to_parse,
+                        error_message=execution_error,
+                        limit=1
+                    )
                 history_context = ""
                 if recalled_corrections:
                     item = recalled_corrections[0]
@@ -1146,21 +1347,44 @@ class AskAgent:
                     f"请进行纠错重写，并只返回修正后的 SQL。"
                 )
                 try:
-                    sql = self._call_llm(
-                        prompt=prompt_retry,
-                        system_prompt="你是一个 SQL 纠错助手，请直接返回纯 SQL 文本，不要使用 Markdown 包装。",
-                        model_tier="complex"
-                    )
+                    with run.stage("llm_sql_repair", attempt=attempt, model_tier="complex"):
+                        sql = self._call_llm(
+                            prompt=prompt_retry,
+                            system_prompt="你是一个 SQL 纠错助手，请直接返回纯 SQL 文本，不要使用 Markdown 包装。",
+                            model_tier="complex"
+                        )
                     sql = re.sub(r"^\s*```[a-zA-Z]*\n", "", sql)
                     sql = re.sub(r"\n\s*```\s*$", "", sql)
                     sql = sql.strip()
+                    run.set_sql(sql)
                 except Exception as err:
                     print(f"[Self-Correction LLM Retry Error]: {err}. 保持原SQL或自动降级。")
                     break
 
+        # 6.5 §7.9-6 截断判定：必须在裁剪之前读原始行数，裁剪之后行数就看不出截断了。
+        #
+        # 纠错重试重写过 SQL 时，compiler.last_limit 描述的是被替换掉的那条语句，
+        # 拿它生成声明等于拿旧口径说新结果——此时宁可不声明，也不给错误的确定性。
+        raw_row_count = len(df)
+        truncation_notice = None
+        if not execution_error:
+            probe_info = compiler.last_limit or {}
+            probe_limit = int(probe_info.get("limit") or 0)
+            if probe_info.get("probe") and probe_limit > 0 and len(df) > probe_limit:
+                # 多取的那一行只用于判定，绝不呈现：裁剪后下游（结论/图表/返回体）
+                # 看到的行数与探测关闭时完全一致。
+                df = df.head(probe_limit)
+            if retry_count == 0 or sql == original_sql:
+                try:
+                    truncation_notice = compiler.truncation_notice(raw_row_count)
+                except Exception as err:  # 声明缺失不该拖垮问数主链路
+                    print(f"[Truncation Notice Skipped]: {err}")
+                    truncation_notice = None
+
         # 7. 渲染结果与图表展示
         elapsed_time = f"{time.time() - start_time:.3f}s"
-        formatted_sql = self._format_sql_for_display(sql, dialect)
+        with run.stage("format_sql"):
+            formatted_sql = self._format_sql_for_display(sql, dialect)
 
         if execution_error:
             # 物理层出错记录历史
@@ -1171,7 +1395,7 @@ class AskAgent:
                 dialect=dialect,
                 result_summary=f"物理层报错: {execution_error}"
             )
-            return {
+            return self._stamp_trace({
                 "success": False,
                 "error": execution_error,
                 "details": {
@@ -1183,7 +1407,7 @@ class AskAgent:
                     "filters": final_dsl.get("filters", []),
                     "estimated_rows": 0
                 }
-            }
+            }, run, "execution_error", execution_error)
 
         # 如果是经过模型纠错重试且成功，写入纠错自学习经验库
         if retry_count > 0 and not execution_error:
@@ -1205,11 +1429,12 @@ class AskAgent:
         try:
             if local_demo:
                 raise RuntimeError("演示数仓使用查询结果摘要")
-            conclusion = self._call_llm(
-                prompt=summary_prompt,
-                system_prompt="你是一个资深商业分析师，用一句话总结下面的数据分析结论，并指出亮点或环比变化。",
-                model_tier="complex"
-            )
+            with run.stage("llm_conclusion", model_tier="complex"):
+                conclusion = self._call_llm(
+                    prompt=summary_prompt,
+                    system_prompt="你是一个资深商业分析师，用一句话总结下面的数据分析结论，并指出亮点或环比变化。",
+                    model_tier="complex"
+                )
         except Exception as e:
             print(f"[Conclusion LLM Fallback]: {e}")
             metric_names = [m.get("name", "") for m in final_dsl.get("metrics", [])]
@@ -1217,8 +1442,10 @@ class AskAgent:
             conclusion = f"{sample_prefix}本次查询返回 {len(df)} 个分组，指标：{', '.join(metric_names)}。数值及查询范围见下方结果。"
 
         # 自适应图表类型
-        column_types = self._detect_column_types(df, final_dsl)
-        chart_info = self._auto_detect_chart_type(df, final_dsl, column_types)
+        with run.stage("render_chart", rows=len(df)):
+            column_types = self._detect_column_types(df, final_dsl)
+            chart_info = self._auto_detect_chart_type(df, final_dsl, column_types)
+        run.row_count = len(df)
 
         # 获取来源表说明
         source_tables = list({self.semantic_layer.resolve_metric(m["name"]).source_table for m in final_dsl["metrics"] if self.semantic_layer.resolve_metric(m["name"])})
@@ -1236,6 +1463,11 @@ class AskAgent:
             dialect=dialect,
             result_summary=conclusion
         )
+
+        # §7.9-6：声明前置到结论上。用户先看到「这不是全量数据」，再看数字。
+        # 未截断时 apply_to 原样返回，历史记录保持不带声明的原文。
+        if truncation_notice is not None:
+            conclusion = truncation_notice.apply_to(conclusion)
 
         response_data = {
             "success": True,
@@ -1255,12 +1487,14 @@ class AskAgent:
                 "tables": source_tables,
                 "source_desc": source_desc,
                 "filters": final_dsl["filters"],
-                "estimated_rows": guardrail_result.get("estimated_rows", 0)
+                "estimated_rows": guardrail_result.get("estimated_rows", 0),
+                # 结构化声明，供前端与下游程序判定，不必去解析结论文案。
+                "truncation": truncation_notice.model_dump() if truncation_notice is not None else None
             },
             "cache_hit": False
         }
         # 存入多级语义缓存
         semantic_cache.put(question, dialect, user_role, response_data, embedding=query_vec)
-        return response_data
+        return self._stamp_trace(response_data, run, "success")
 
 ask_agent = AskAgent()

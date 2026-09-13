@@ -68,6 +68,9 @@ __all__ = [
     "RuleDefinition",
     "RuleChange",
     "RuleValidationError",
+    "SignalSample",
+    "SustainedHit",
+    "sustained_matches",
     "harsh_deceleration_condition",
     "rules_by_mode",
     "sort_by_priority",
@@ -319,6 +322,18 @@ class CompareOp(str, Enum):
     @property
     def sql(self) -> str:
         return self.value
+
+
+#: 比较算子的 Python 实现。SQL 侧渲染成同名算子，两边同一套语义——
+#: 尤其是 ``<``：原文「CAN 减速度 < -4m/s²」写的是严格小于，实测恰好 -4.0 不算命中。
+_COMPARATORS: dict[CompareOp, Any] = {
+    CompareOp.LT: lambda v, t: v < t,
+    CompareOp.LTE: lambda v, t: v <= t,
+    CompareOp.GT: lambda v, t: v > t,
+    CompareOp.GTE: lambda v, t: v >= t,
+    CompareOp.EQ: lambda v, t: v == t,
+    CompareOp.NEQ: lambda v, t: v != t,
+}
 
 
 class TagMatch(str, Enum):
@@ -702,6 +717,49 @@ class SignalCondition(Condition):
         dur = f" 持续 ≥ {self.min_duration_sec}s" if self.min_duration_sec is not None else ""
         return f"{self.signal} {self.op.sql} {self.threshold}{dur}"
 
+    # ---- 求值：与编译出来的 SQL 同一套语义 ----
+
+    def matches_point(self, value: float | None) -> bool:
+        """单个采样点满不满足阈值条件。
+
+        这是「CAN 减速度 < -4m/s²」里那个 ``<`` 的**唯一** Python 实现，
+        :func:`sustained_matches` 与流式 MATCH_RECOGNIZE 的 ``DEFINE A`` 共用它的语义：
+
+        * ``<`` 是**严格**小于——原文写的就是 ``<``，实测恰好 -4.0 不触发；
+        * ``≥`` 的持续时长判定不在这里，见 :func:`sustained_matches`。
+
+        Args:
+            value: 实测信号值。``None``（该采样点没有值）一律判为不满足——
+                缺值不是命中，宁可漏也不能凭空造一次命中。
+        """
+        if value is None:
+            return False
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return False
+        if v != v:  # NaN：与任何阈值比较都是 False，显式挡掉免得被当成不满足以外的东西
+            return False
+        thr = float(self.threshold)
+        return _COMPARATORS[self.op](v, thr)
+
+    @property
+    def peak_aggregate(self) -> str:
+        """「最严重的那个采样点」该取 MIN 还是 MAX。
+
+        严重度打分（:func:`~adas_lakehouse.mining.scoring.signal_severity`）看的是
+        实测值离阈值多远，所以「峰值」必须往**超阈的那一侧**取：
+
+        * ``<`` / ``<=``（急减速：减速度越负越严重）→ ``MIN``；
+        * ``>`` / ``>=``（急变道：横向加速度越大越严重）→ ``MAX``。
+
+        以前两边都写死 MIN，后果很具体：一条 ``lateral_accel > 4`` 的急变道规则
+        会把整段里**最轻**的那个采样点当成峰值报上去，severity 恒为 0，
+        高价值评分把最该细筛的那批命中排到最后。
+        ``=`` / ``<>`` 两个算子上整段取值要么相等要么无所谓，沿用 MIN。
+        """
+        return "MAX" if self.op in (CompareOp.GT, CompareOp.GTE) else "MIN"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelOutputCondition(Condition):
@@ -803,8 +861,12 @@ class EventCondition(Condition):
 #: 但「工程师写 SQL」这条路径天然是任意 SQL 注入点，编译期必须拦。
 #: ⚠️ 原文未明确，本项目设计。
 _FORBIDDEN_SQL = re.compile(
+    # 关键字这一组后面跟 \b（防止误伤 `created_at` 这种以关键字开头的列名）；
+    # `set x =` 与分隔符/注释**不能**跟 \b——`=` 后面往往是空格或引号，
+    # 补一个 \b 会让这条分支永远匹配不上，等于这道闸形同虚设。
     r"(?is)\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|call|merge|"
-    r"load\s+data|set\s+\w+\s*=)\b|;|--|/\*"
+    r"load\s+data)\b"
+    r"|\bset\s+\w+\s*=|;|--|/\*"
 )
 
 
@@ -1302,6 +1364,202 @@ class RuleDefinition:
 # --------------------------------------------------------------------------- 原文规则实例
 
 
+@dataclass(frozen=True, slots=True)
+class SignalSample:
+    """CAN / 传感器信号流的一条采样——``vehicle_signal_stream`` 的一行。
+
+    字段名逐字取自 :data:`~adas_lakehouse.mining.tables.VEHICLE_SIGNAL_STREAM` 的列契约。
+    本模块**刻意不 import tables**（那会把 registry 与 config 拖进规则模型），
+    两份定义的一致性由 tests/deep/test_mining.py 的
+    ``test_signal_sample_fields_match_the_stream_contract`` 钉住——
+    与 constants.py 里 keyframe 上下界的做法同一路数：用测试对账，不用 import 制造耦合。
+
+    Attributes:
+        data_id: 所属 clip，MATCH_RECOGNIZE 的 PARTITION BY 第一段。
+        signal_name: 信号名，如 ``can_longitudinal_accel_mps2``。
+        signal_value: 实测值。
+        event_time: 采样时刻（流源的 ``event_time`` 列）。
+        event_ts_ms: 毫秒时间戳。原文的持续时长是 **0.5 秒**——亚秒级，
+            Flink 的 TIMESTAMPDIFF 只到秒，判不了，所以流侧专门要了这一列；
+            Python 侧留空时由 :attr:`ts_ms` 从 event_time 现算。
+    """
+
+    data_id: str
+    signal_name: str
+    signal_value: float | None
+    event_time: datetime
+    event_ts_ms: int | None = None
+    vehicle_code: str = ""
+    project_code: str = ""
+
+    @property
+    def ts_ms(self) -> int:
+        """毫秒时间戳。流里有 ``event_ts_ms`` 就用它，否则从 event_time 现算。
+
+        只用于**同一段内作差**，所以 naive datetime 按本地时区换算不影响结果。
+        """
+        if self.event_ts_ms is not None:
+            return int(self.event_ts_ms)
+        return int(self.event_time.timestamp() * 1000)
+
+    @property
+    def partition_key(self) -> tuple[str, str, str]:
+        """与流侧 ``PARTITION BY data_id, vehicle_code, project_code`` 同一把钥匙。"""
+        return (self.data_id, self.vehicle_code, self.project_code)
+
+
+@dataclass(frozen=True, slots=True)
+class SustainedHit:
+    """一段满足「阈值 + 持续时长」的信号命中。
+
+    字段与流侧 MATCH_RECOGNIZE 的 ``MEASURES`` 一一对应（见
+    :meth:`~adas_lakehouse.mining.compiler.RuleCompiler._render_match_recognize`）：
+    ``anchor_time`` = FIRST(A.event_time)、``sustain_start_ms`` / ``sustain_end_ms``
+    = FIRST/LAST(A.event_ts_ms)、``peak_value`` = MIN 或 MAX(A.signal_value)
+    （取哪个见 :attr:`SignalCondition.peak_aggregate`）、``sample_count`` = COUNT(A)。
+
+    Attributes:
+        closed: 这段是否由「首个不再满足条件的采样」收尾。流侧的 ``PATTERN (A+ B)``
+            必须等到 B 才出一条匹配，所以未收尾的尾段在流里只是**还没到**，不是没有。
+    """
+
+    data_id: str
+    signal: str
+    anchor_time: datetime
+    sustain_start_ms: int
+    sustain_end_ms: int
+    peak_value: float
+    sample_count: int
+    vehicle_code: str = ""
+    project_code: str = ""
+    closed: bool = True
+
+    @property
+    def duration_sec(self) -> float:
+        """持续时长（秒）= (LAST - FIRST) / 1000，与流侧的毫秒作差同一口径。"""
+        return (self.sustain_end_ms - self.sustain_start_ms) / 1000.0
+
+    def to_hit_row(self) -> dict[str, Any]:
+        """渲染成 :meth:`~adas_lakehouse.mining.executor.StreamRuleExecutor.handle_hits`
+        认识的命中行。
+
+        ``peak_value`` 的键名与 MATCH_RECOGNIZE 的输出列同名——打分那一侧
+        （``scoring.signal_severity``）就是按这个名字取实测值的。
+        """
+        return {
+            "data_id": self.data_id,
+            "event_time": self.anchor_time,
+            "signal_name": self.signal,
+            "peak_value": self.peak_value,
+            "sample_count": self.sample_count,
+            "sustain_duration_sec": self.duration_sec,
+            "vehicle_code": self.vehicle_code,
+            "project_code": self.project_code,
+        }
+
+
+def sustained_matches(
+    condition: SignalCondition,
+    samples: Iterable[SignalSample],
+    *,
+    emit_open_run: bool = False,
+) -> tuple[SustainedHit, ...]:
+    """在一串 CAN 采样上求值「阈值 + 持续 ≥ N 秒」，返回命中的时段。
+
+    这是原文唯一带数字的那条规则（[S3-04] 二：「CAN 减速度 < -4m/s² 持续 ≥ 0.5s 等，
+    准实时」）在 Python 侧的求值实现，**与编译出来的 Flink MATCH_RECOGNIZE 逐条对齐**：
+
+    ==============================  ===============================================
+    MATCH_RECOGNIZE                 本函数
+    ==============================  ===============================================
+    先按 signal_name 预过滤          只看 ``signal_name == condition.signal`` 的采样
+    PARTITION BY data/vehicle/proj   按 :attr:`SignalSample.partition_key` 分组
+    ORDER BY event_time              组内按 event_time 稳定排序
+    DEFINE A（阈值比较）             :meth:`SignalCondition.matches_point`
+    PATTERN (A+ B)                   连续满足段 + 首个不再满足的采样收尾
+    AFTER MATCH SKIP PAST LAST ROW   从收尾采样之后继续找下一段
+    WHERE 末端毫秒差 >= N * 1000     :attr:`SustainedHit.duration_sec` ≥ N（含等于）
+    ==============================  ===============================================
+
+    Args:
+        condition: 带 ``min_duration_sec`` 的信号条件。不带持续时长时退化成
+            「单点命中即一段」（急变道这类瞬时尖峰规则走这条路）。
+        samples: 采样序列，顺序随意，本函数自己排。
+        emit_open_run: 序列末尾那段还没等到「不再满足」的采样时要不要出结果。
+            默认 False = 与流侧严格一致（流里那段只是还没收尾，下一条采样到了自然会出）；
+            离线批量复算一段已经录完的信号时传 True，否则最后一段会被无声吞掉。
+
+    Returns:
+        命中时段，按 (data_id, 起始时刻) 升序。
+
+    Raises:
+        RuleValidationError: 条件的持续时长为负或零（构造期已挡，这里是纵深）。
+    """
+    min_dur = condition.min_duration_sec
+    if min_dur is not None and min_dur <= 0:
+        raise RuleValidationError("持续时长必须为正")
+
+    groups: dict[tuple[str, str, str], list[SignalSample]] = {}
+    for s in samples:
+        if s.signal_name != condition.signal:
+            # 流侧在 MATCH_RECOGNIZE **之前**就按 signal_name 过滤：别的信号混在
+            # 采样序列里会打断 A+ 的连续性，把好好的一段急减速切成两截。
+            continue
+        groups.setdefault(s.partition_key, []).append(s)
+
+    take_max = condition.peak_aggregate == "MAX"
+    hits: list[SustainedHit] = []
+    for key, rows in groups.items():
+        ordered = sorted(rows, key=lambda r: (r.event_time, r.ts_ms))
+        run: list[SignalSample] = []
+        for sample in ordered:
+            if condition.matches_point(sample.signal_value):
+                run.append(sample)
+                continue
+            if run:
+                hit = _close_run(condition, key, run, min_dur, take_max, closed=True)
+                if hit is not None:
+                    hits.append(hit)
+                run = []  # AFTER MATCH SKIP PAST LAST ROW
+        if run and emit_open_run:
+            hit = _close_run(condition, key, run, min_dur, take_max, closed=False)
+            if hit is not None:
+                hits.append(hit)
+    hits.sort(key=lambda h: (h.data_id, h.sustain_start_ms))
+    return tuple(hits)
+
+
+def _close_run(
+    condition: SignalCondition,
+    key: tuple[str, str, str],
+    run: Sequence[SignalSample],
+    min_duration_sec: float | None,
+    take_max: bool,
+    *,
+    closed: bool,
+) -> SustainedHit | None:
+    """把一段连续满足阈值的采样收成一条命中；不够时长就丢掉。"""
+    start_ms, end_ms = run[0].ts_ms, run[-1].ts_ms
+    # 原文是「持续 ≥ 0.5s」——等于 0.5 秒要算命中，所以判的是 <  才丢，不是 <=。
+    # 毫秒作差，阈值现乘 1000：0.5 这个数字不在别处预先算成 500。
+    if min_duration_sec is not None and (end_ms - start_ms) < min_duration_sec * 1000:
+        return None
+    values = [float(s.signal_value) for s in run if s.signal_value is not None]
+    peak = max(values) if take_max else min(values)
+    return SustainedHit(
+        data_id=key[0],
+        signal=condition.signal,
+        anchor_time=run[0].event_time,
+        sustain_start_ms=start_ms,
+        sustain_end_ms=end_ms,
+        peak_value=peak,
+        sample_count=len(run),
+        vehicle_code=key[1],
+        project_code=key[2],
+        closed=closed,
+    )
+
+
 def harsh_deceleration_condition() -> SignalCondition:
     """原文唯一给出具体阈值的规则条件：急减速。
 
@@ -1311,6 +1569,17 @@ def harsh_deceleration_condition() -> SignalCondition:
     阈值取自 :data:`~adas_lakehouse.mining.constants.HARSH_DECEL_THRESHOLD_MPS2`
     与 :data:`~adas_lakehouse.mining.constants.HARSH_DECEL_MIN_DURATION_SEC`，
     不在此处重写数字，保证全仓库只有一处定义。
+
+    这条条件有三种等价的用法，三条路共用同一组数字：
+
+    * 流式执行 —— 编译成 Flink MATCH_RECOGNIZE（``compiler._render_match_recognize``）；
+    * 批式执行 —— 下推给自定义 UDF ``mining_signal_sustained``（[S3-04] 三）；
+    * Python 求值 —— :func:`sustained_matches`，没有 Flink 也能把一串 CAN 采样
+      判出命中，用于本地干跑、回放复算与单测钉死边界。
+
+    ⚠️ 原文未明确，本项目设计：信号名 ``can_longitudinal_accel_mps2``。
+    原文只说「CAN 减速度」，没给信号的字面名字；部署时按车端信号字典改这一处即可，
+    阈值与持续时长不许跟着改。
     """
     return SignalCondition(
         signal="can_longitudinal_accel_mps2",

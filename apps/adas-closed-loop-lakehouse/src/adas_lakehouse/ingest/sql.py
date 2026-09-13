@@ -37,10 +37,12 @@ from .constants import (
     ARCHIVE_TIER_COST_FACTOR,
     CDC_SYNC_LATENCY_TEXT,
     COLD_TIER_COST_FACTOR,
+    KAFKA_FUTURE_TOLERANCE_SEC,
+    KAFKA_LAG_TOLERANCE_DAYS,
     OSS_CHANNEL_GATE_CHECKS,
     OSS_CHANNEL_P0_CHECKS,
 )
-from .gate import QUALITY_ISSUE_TABLE
+from .gate import DIMENSION_KEYS, OSS_CHANNEL_CHECKS, QUALITY_ISSUE_TABLE
 from .oss import FILE_META_TABLE
 from .rows import SYS_INGEST_TIME, SYS_SOURCE_SYSTEM
 
@@ -58,56 +60,14 @@ __all__ = [
 
 _SYSTEM_FIELDS = (SYS_INGEST_TIME, SYS_SOURCE_SYSTEM, "update_time")
 
-#: ⚠️ 原文未明确，本项目推断：以下两张 ODS 表归回传域 / 生产域，表模块由对应子系统登记。
-#: 在它们进入 catalog.registry 之前，本生成器用这份推断字段清单渲染 SQL；一旦注册，
-#: 生成器自动改用契约口径（见 ``_columns_of``）。分区字段与主键遵循硬性物理策略：
-#: ods_vehicle_trigger_event 按 trigger_type 分区、ods_production_kafka_event 按 event_type 分区，
-#: 且分区表主键必须包含分区字段。
-FALLBACK_SCHEMAS: dict[str, tuple[tuple[str, str, str, bool], ...]] = {
-    "ods_vehicle_trigger_event": (
-        ("event_id", "STRING", "触发事件 ID", False),
-        ("trigger_type", "STRING", "触发类型（分区字段）", False),
-        ("data_id", "STRING", "关联 clip 的 data_id", True),
-        ("vehicle_code", "STRING", "车辆编码", True),
-        ("project_code", "STRING", "所属项目", True),
-        ("trigger_time", "TIMESTAMP(3)", "触发时间", True),
-        ("gps_lat", "DOUBLE", "触发点纬度", True),
-        ("gps_lon", "DOUBLE", "触发点经度", True),
-        ("speed_kph", "DOUBLE", "触发时车速", True),
-        ("scene_tag", "STRING", "场景标签", True),
-        ("model_version", "STRING", "车端模型版本", True),
-        ("upload_status", "STRING", "回传状态", True),
-    ),
-    "ods_production_kafka_event": (
-        ("event_id", "STRING", "事件 ID", False),
-        ("event_type", "STRING", "事件类型（分区字段）", False),
-        ("data_id", "STRING", "关联 clip 的 data_id", True),
-        ("artifact_id", "STRING", "二级 ID：处理产物", True),
-        ("run_id", "STRING", "三级 ID：处理运行", True),
-        ("stage", "STRING", "产线环节", True),
-        ("event_time", "TIMESTAMP(3)", "事件时间", True),
-        ("event_status", "STRING", "事件状态", True),
-        ("payload_json", "STRING", "事件原始载荷（原样入湖）", True),
-    ),
-    #: ⚠️ 原文未明确，本项目设计：隔离表结构，与 gate.AnomalyRecord.to_issue_row() 一致。
-    #: 该表按 dt 分区（全湖 6 张分区表之一），实际定义以 quality 子系统为准。
-    QUALITY_ISSUE_TABLE: (
-        ("issue_id", "STRING", "异常记录 ID", False),
-        ("dt", "STRING", "拦截日期（分区字段）", False),
-        ("subject_id", "STRING", "被拦截对象标识", True),
-        ("data_id", "STRING", "关联 clip 的 data_id", True),
-        ("source_channel", "STRING", "来源通道：Flink CDC / Kafka / OSS 合规上传", True),
-        ("target_table", "STRING", "原定目标表", True),
-        ("severity", "STRING", "告警级别 P0~P3", True),
-        ("is_compliance_issue", "BOOLEAN", "是否合规问题（而非数据质量问题）", True),
-        ("check_codes", "STRING", "命中的检查项编码", True),
-        ("issue_reason", "STRING", "拦截原因明细", True),
-        ("closed_loop_step", "STRING", "五步异常闭环当前步骤", True),
-        ("raw_payload", "STRING", "原始载荷，供复验重放", True),
-        ("intercepted_at", "TIMESTAMP(3)", "拦截时间", True),
-        ("updated_at", "TIMESTAMP(3)", "最近更新时间", True),
-    ),
-}
+#: 过渡期用的推断字段清单：一张 ODS 表在进入 ``catalog.registry`` 之前，本生成器
+#: 靠它渲染 SQL。**现在是空的**——本模块用到的三张表（ods_vehicle_trigger_event /
+#: ods_production_kafka_event / ods_quality_issue）都已登记进契约，过渡期结束。
+#:
+#: 为什么清空而不是留着「以防万一」：手写副本一旦与契约分叉，生成的就是一份看着
+#: 完整、提交即失败（列不存在 / 列数对不上）的 SQL，而且没人会发现——真出现查不到
+#: 表的情况，``_columns_of`` 抛 KeyError 指名道姓地喊一声，比悄悄拿旧列清单顶上安全得多。
+FALLBACK_SCHEMAS: dict[str, tuple[tuple[str, str, str, bool], ...]] = {}
 
 #: OSS 合规上传通道的 Kafka 元信息消息里，**比湖表多出来的**那些字段。
 #: 它们是门禁判据与合规审计留痕（[a8] 强调、但共享契约 ods_data_file_meta 未设列），
@@ -363,12 +323,15 @@ def render_kafka_pipeline(binding: KafkaBinding) -> list[str]:
     if binding.event_time_field:
         conditions.append(
             f"`{binding.event_time_field}` IS NOT NULL\n"
-            f"  AND `{binding.event_time_field}` <= TIMESTAMPADD(SECOND, 300, CURRENT_TIMESTAMP)\n"
-            f"  AND `{binding.event_time_field}` >= TIMESTAMPADD(DAY, -30, CURRENT_TIMESTAMP)"
+            f"  AND `{binding.event_time_field}` <= "
+            f"TIMESTAMPADD(SECOND, {KAFKA_FUTURE_TOLERANCE_SEC}, CURRENT_TIMESTAMP)\n"
+            f"  AND `{binding.event_time_field}` >= "
+            f"TIMESTAMPADD(DAY, -{KAFKA_LAG_TOLERANCE_DAYS}, CURRENT_TIMESTAMP)"
         )
         notes.append(
-            "⚠️ 原文未明确，本项目设计：未来容忍 300 秒（车端与云端时钟漂移）、"
-            "滞后容忍 30 天（车端离线缓存后补传）"
+            f"⚠️ 原文未明确，本项目设计：未来容忍 {KAFKA_FUTURE_TOLERANCE_SEC} 秒"
+            f"（车端与云端时钟漂移）、滞后容忍 {KAFKA_LAG_TOLERANCE_DAYS} 天"
+            "（车端离线缓存后补传）；两个数取自 constants，与 channels.KafkaChannel 同源"
         )
     if binding.lat_field:
         conditions.append(
@@ -417,16 +380,19 @@ class _SqlCheck:
     code: str
     condition: str
     note: str = ""
+    dimension: str = ""
 
 
 def _file_meta_gate_conditions() -> list[_SqlCheck]:
-    """四项专属检查在 SQL 侧的表达。顺序与 ``gate.OSS_CHANNEL_CHECKS`` 一一对应。"""
+    """四项专属检查在 SQL 侧的表达。
+
+    检查项的**名字 / 级别 / 编码 / 维度一律取自 ``gate.OSS_CHANNEL_CHECKS``**，本函数只补
+    「这一项在 SQL 里怎么写」。以前这四样在这里各抄了一遍，Python 侧改个编码、SQL 侧
+    照旧——隔离表里同一项检查就会出现两个 rule_id。
+    """
     bucket = settings().minio.raw_bucket
-    return [
-        _SqlCheck(
-            "脱敏标记完整性",
-            "P0",
-            "redaction_marks_complete",
+    conditions = [
+        (
             "`redaction_vehicle_applied` IS TRUE"
             " AND `redaction_cloud_applied` IS TRUE"
             " AND `redaction_vehicle_operator` IS NOT NULL AND `redaction_vehicle_operator` <> ''"
@@ -436,31 +402,125 @@ def _file_meta_gate_conditions() -> list[_SqlCheck]:
             "文件需携带「车端脱敏 + 合规云脱密」双合规标记，缺失即合规风险 → P0 拒绝入湖；"
             "落表的两个 flag 列必须与审计字段一致，否则湖里会留下一个「说自己脱过敏」的假标记",
         ),
-        _SqlCheck(
-            "data_id 格式合法",
-            "P0",
-            "data_id_format_valid",
+        (
             "`data_id` IS NOT NULL"
             " AND REGEXP(`data_id`, '^COLLECT_[A-Z0-9]+_[0-9]{14}_[0-9a-f]{4,}$')",
             "全局数据 ID 格式与来源前缀合法性（血缘追溯起点）→ P0 拒绝入湖",
         ),
-        _SqlCheck(
-            "文件本体可解码",
-            "P1",
-            "file_body_decodable",
-            "`file_size_bytes` IS NOT NULL AND `file_size_bytes` > 0",
-            "图像 / 点云文件完整性与可解码性校验 → P1 拒绝入湖；"
-            "SQL 侧只能查完整性，魔数级可解码探针在 Python 侧 ingest.oss.probe_decodable",
+        (
+            "`file_size_bytes` IS NOT NULL AND `file_size_bytes` > 0"
+            " AND (`decodable_flag` IS NULL OR `decodable_flag` IS TRUE)",
+            "图像 / 点云文件完整性与可解码性校验 → P1 拒绝入湖；SQL 侧查完整性与上游探针"
+            "回填的 decodable_flag（探针未跑过时该列为 NULL，按「查不了 ≠ 查出问题」放行），"
+            "魔数级探针在 Python 侧 ingest.oss.probe_decodable",
         ),
-        _SqlCheck(
-            "元信息与 OSS 路径一致",
-            "P1",
-            "meta_oss_path_consistent",
+        (
             f"`file_path` IS NOT NULL AND `file_path` LIKE 's3://{bucket}/%'"
             " AND `checksum_md5` IS NOT NULL AND REGEXP(`checksum_md5`, '^[0-9a-fA-F]{32}$')",
             f"file_path 合法且指向智驾云 OSS（bucket={bucket}），checksum 可校验 → P1 拒绝入湖",
         ),
     ]
+    if len(conditions) != len(OSS_CHANNEL_CHECKS):  # pragma: no cover - 结构性断言
+        raise AssertionError(
+            f"SQL 侧写了 {len(conditions)} 项检查，gate.OSS_CHANNEL_CHECKS 有 "
+            f"{len(OSS_CHANNEL_CHECKS)} 项——四项专属检查必须两侧一一对应"
+        )
+    return [
+        _SqlCheck(
+            name=check.name,
+            level=check.severity.value,
+            code=check.code,
+            condition=condition,
+            note=note,
+            dimension=DIMENSION_KEYS[check.dimension],
+        )
+        for check, (condition, note) in zip(OSS_CHANNEL_CHECKS, conditions, strict=True)
+    ]
+
+
+def _chk(check: _SqlCheck) -> str:
+    """门禁视图里那一项检查的判定列名。每个条件在整份 SQL 里只写一次，其余地方引用它。"""
+    return f"chk_{check.code}"
+
+
+def _isolation_projection(
+    checks: Sequence[_SqlCheck], binding: FileMetaBinding
+) -> tuple[list[str], list[str]]:
+    """隔离分支的 (列清单, 表达式清单)，**只保留 ods_quality_issue 真实存在的列**。
+
+    自造列名是这条分支最容易翻车的地方：``subject_id`` / ``check_codes`` /
+    ``issue_reason`` / ``closed_loop_step`` 听起来都对，但契约里一个都没有——
+    INSERT 会直接失败，退一步说就算写成不带列名的 SELECT，也会按位错到别的列上。
+    所以列清单在这里与 ``catalog.registry`` 对一次账，对不上的直接不生成。
+    """
+    registered = {c[0] for c in _columns_of(QUALITY_ISSUE_TABLE)}
+
+    def _hit(code_expr: str, sep: str) -> str:
+        body = ",\n".join(
+            f"      CASE WHEN NOT `{_chk(c)}` THEN {code_expr.format(c=c)} ELSE NULL END"
+            for c in checks
+        )
+        return f"CONCAT_WS('{sep}',\n{body}\n    )"
+
+    rule_ids = _hit("'{c.code}'", ",")
+    dimensions = _hit("'{c.dimension}'", ",")
+    reason = _hit("'[{c.level}] {c.name}'", " | ")
+    names = _hit("'{c.name}'", "；")
+    # P0 项（脱敏标记完整性 / data_id 格式合法）命中就是 P0，否则 P1——
+    # 级别取自 gate.OSS_CHANNEL_CHECKS，SQL 里不写死。
+    level_branches = "".join(
+        f"      WHEN NOT `{_chk(c)}` THEN '{c.level}'\n"
+        for c in sorted(checks, key=lambda c: c.level)
+    )
+    issue_level = f"CASE\n{level_branches}      ELSE '{max(c.level for c in checks)}'\n    END"
+    # 整条报文原样留存：列清单由源表派生，加列自动跟上
+    payload = (
+        "JSON_OBJECT(\n"
+        + ",\n".join(f"      KEY '{c[0]}' VALUE `{c[0]}`" for c in file_meta_message_schema())
+        + "\n    )"
+    )
+
+    candidates: list[tuple[str, str]] = [
+        (
+            "issue_id",
+            "CONCAT('oss_file_', `file_id`, '_', DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyyMMddHHmmss'))",
+        ),
+        ("dt", "DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd')"),
+        ("data_id", "`data_id`"),
+        ("project_code", "`project_code`"),
+        ("vehicle_code", "`vehicle_code`"),
+        # 通道取值与 gate.ISSUE_CHANNEL_CODES / quality.severity.Channel 同口径
+        ("source_channel", "'oss_file'"),
+        ("target_table", f"'{FILE_META_TABLE}'"),
+        ("source_table", f"'{FILE_META_TABLE}'"),
+        ("source_system", f"'{binding.source_system}'"),
+        ("source_record_key", "CAST(`file_id` AS STRING)"),
+        ("record_key", "CAST(`file_id` AS STRING)"),
+        ("rule_id", rule_ids),
+        ("rule_ids", rule_ids),
+        ("rule_dimension", dimensions),
+        ("dimension", dimensions),
+        # severity 是检查器严重度（ERROR/WARNING），P0~P3 在 issue_level 列
+        ("severity", "'ERROR'"),
+        ("issue_level", issue_level),
+        ("issue_detail", reason),
+        ("detail", reason),
+        ("message", names),
+        ("raw_payload", payload),
+        ("replayable", "TRUE"),
+        ("isolate_time", "CURRENT_TIMESTAMP"),
+        ("detected_at", "CURRENT_TIMESTAMP"),
+        ("handle_status", "'isolated'"),
+        ("issue_status", "'isolated'"),
+        ("recheck_round", "0"),
+        ("recheck_count", "0"),
+        ("escalated", "FALSE"),
+        (SYS_INGEST_TIME, "CURRENT_TIMESTAMP"),
+        (SYS_SOURCE_SYSTEM, f"'{binding.source_system}'"),
+    ]
+    cols = [c for c, _ in candidates if c in registered]
+    exprs = [e for c, e in candidates if c in registered]
+    return cols, exprs
 
 
 def render_file_meta_pipeline(binding: FileMetaBinding | None = None) -> list[str]:
@@ -470,8 +530,11 @@ def render_file_meta_pipeline(binding: FileMetaBinding | None = None) -> list[st
     一条 INSERT 写 ``ods_quality_issue``（被拦截的，进五步异常闭环）。两条共用一次
     Kafka 消费，事件不会被读两遍。
 
+    四项检查的判定先落在一个临时视图的 ``chk_*`` 布尔列上，两条分支都引用这些列——
+    每个条件表达式在整份 SQL 里只出现一次，改条件不会漏改第二处。
+
     Returns:
-        三条语句：源表 DDL、STATEMENT SET、以及一条查询示例（元信息写入即可用）。
+        四条语句：源表 DDL、门禁判定视图、STATEMENT SET、查询示例（元信息写入即可用）。
     """
     binding = binding or default_file_meta_binding()
     cfg = settings().kafka
@@ -504,64 +567,49 @@ def render_file_meta_pipeline(binding: FileMetaBinding | None = None) -> list[st
     )
 
     checks = _file_meta_gate_conditions()
-    pass_expr = "\n    AND ".join(f"({c.condition})" for c in checks)
+    gate_view = "gated_collect_file_meta"
+    pass_expr = "\n    AND ".join(f"`{_chk(c)}`" for c in checks)
     check_comment = "\n".join(f"--   [{c.level}] {c.name}：{c.note}" for c in checks)
+
+    view = (
+        "-- 门禁判定：四项专属检查各出一个布尔列，两条分支共用。\n"
+        "-- 条件表达式只在这里写一次——写两遍迟早会改漏一处，让「通过」与「被拦」的口径打架。\n"
+        f"CREATE TEMPORARY VIEW `{gate_view}` AS\nSELECT\n  *,\n"
+        + ",\n".join(f"  ({c.condition}) AS `{_chk(c)}`" for c in checks)
+        + f"\nFROM `{src_table}`;"
+    )
 
     target_cols = [c[0] for c in _business_columns(FILE_META_TABLE)]
     select_cols = ",\n    ".join(f"`{c}`" for c in target_cols)
 
-    severity_expr = (
-        "CASE\n"
-        f"      WHEN NOT ({checks[0].condition}) THEN 'P0'\n"
-        f"      WHEN NOT ({checks[1].condition}) THEN 'P0'\n"
-        "      ELSE 'P1'\n"
-        "    END"
+    issue_cols, issue_exprs = _isolation_projection(checks, binding)
+    issue_col_sql = ", ".join(f"`{c}`" for c in issue_cols)
+    issue_select = ",\n".join(
+        f"    {expr} AS `{col}`" for col, expr in zip(issue_cols, issue_exprs, strict=True)
     )
-    compliance_expr = f"NOT ({checks[0].condition})"
 
     statement_set = (
         f"-- 合规最后一道闸：本通道有 {OSS_CHANNEL_GATE_CHECKS} 项专属检查，其中 {OSS_CHANNEL_P0_CHECKS} 项是 P0 级\n"
         f"{check_comment}\n"
         "-- 命中拒绝规则的数据进入五步异常闭环（拦截 → 隔离 → 告警 → 分流处置 → 复验）\n"
-        "-- ⚠️ 隔离表 ods_quality_issue 的列以 quality 子系统的定义为准；\n"
-        "--    若有出入，只需改下面 SELECT 的列别名，条件表达式不用动\n"
+        "-- 隔离分支的列清单由 catalog.registry 的 ods_quality_issue 派生，并显式写出列名：\n"
+        "--   契约里两套同义列名并存（source_record_key≈record_key、rule_id≈rule_ids、\n"
+        "--   issue_detail≈detail、isolate_time≈detected_at …），两套都填，读哪套都不取 NULL；\n"
+        "--   不显式写列名的 INSERT 一旦契约加列就按位错位，作业提交即失败。\n"
         "EXECUTE STATEMENT SET\nBEGIN\n\n"
         f"  -- 分支一 · 通过门禁 → 元信息写入即可用，下游 DWD 立即可引用，本体按 file_path 按需读取\n"
         f"  INSERT INTO {_fq(FILE_META_TABLE)}\n"
         f"  SELECT\n    {select_cols},\n"
         f"    CURRENT_TIMESTAMP AS `{SYS_INGEST_TIME}`,\n"
         f"    '{binding.source_system}' AS `{SYS_SOURCE_SYSTEM}`\n"
-        f"  FROM `{src_table}`\n"
+        f"  FROM `{gate_view}`\n"
         f"  WHERE {pass_expr};\n\n"
         f"  -- 分支二 · 命中拒绝规则 → 进隔离表，等待分流处置与复验\n"
-        f"  INSERT INTO {_fq(QUALITY_ISSUE_TABLE)}\n"
+        f"  -- raw_payload 存整条报文的 JSON：原始数据不丢失才谈得上复验重放\n"
+        f"  INSERT INTO {_fq(QUALITY_ISSUE_TABLE)} ({issue_col_sql})\n"
         "  SELECT\n"
-        "    CONCAT('oss_', `file_id`, '_', DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyyMMddHHmmss')) AS `issue_id`,\n"
-        "    DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd') AS `dt`,\n"
-        "    `file_id` AS `subject_id`,\n"
-        "    `data_id`,\n"
-        "    'OSS 合规上传' AS `source_channel`,\n"
-        f"    '{FILE_META_TABLE}' AS `target_table`,\n"
-        f"    {severity_expr} AS `severity`,\n"
-        f"    {compliance_expr} AS `is_compliance_issue`,\n"
-        "    CONCAT_WS(',',\n"
-        + ",\n".join(
-            f"      CASE WHEN NOT ({c.condition}) THEN '{c.code}' ELSE NULL END" for c in checks
-        )
-        + "\n    ) AS `check_codes`,\n"
-        "    CONCAT_WS(' | ',\n"
-        + ",\n".join(
-            f"      CASE WHEN NOT ({c.condition}) THEN '[{c.level}] {c.name}' ELSE NULL END"
-            for c in checks
-        )
-        + "\n    ) AS `issue_reason`,\n"
-        "    '拦截' AS `closed_loop_step`,\n"
-        "    CAST(`file_id` AS STRING) AS `raw_payload`,\n"
-        "    CURRENT_TIMESTAMP AS `intercepted_at`,\n"
-        "    CURRENT_TIMESTAMP AS `updated_at`,\n"
-        f"    CURRENT_TIMESTAMP AS `{SYS_INGEST_TIME}`,\n"
-        f"    '{binding.source_system}' AS `{SYS_SOURCE_SYSTEM}`\n"
-        f"  FROM `{src_table}`\n"
+        f"{issue_select}\n"
+        f"  FROM `{gate_view}`\n"
         f"  WHERE NOT ({pass_expr});\n\n"
         "END;"
     )
@@ -572,7 +620,7 @@ def render_file_meta_pipeline(binding: FileMetaBinding | None = None) -> list[st
         f"-- FROM {_fq(FILE_META_TABLE)}\n"
         "-- WHERE `file_type` = 'pointcloud' AND `data_id` = 'COLLECT_BP_20260301123045_b7e2';"
     )
-    return [ddl, statement_set, example]
+    return [ddl, view, statement_set, example]
 
 
 # --------------------------------------------------------------------------- StarRocks

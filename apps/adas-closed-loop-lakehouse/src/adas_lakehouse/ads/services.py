@@ -50,6 +50,9 @@ from .constants import (
     MINING_TAG_COVERAGE_WARN_THRESHOLD,
     MINING_TAG_PENDING_REVIEW_WARN_COUNT,
     MINING_TAG_SOURCES,
+    MODEL_COMPARE_DEMO_BASELINE_VERSION,
+    MODEL_COMPARE_DEMO_DATASET_NAME,
+    MODEL_COMPARE_DEMO_MODEL_VERSION,
     MODEL_REGRESSION_TOLERANCE_PP_DEFAULT,
     OTA_GATE_CONDITION_COUNT,
     OTA_GATE_DECISION_HOLD,
@@ -63,6 +66,8 @@ from .constants import (
     PRODUCTION_BLOCKED_ALERT_HOURS,
     SCENE_COVERAGE_STATUS_FLOW,
     STORAGE_COST_MOM_ALERT_THRESHOLD,
+    TRIGGER_HEAT_LEVEL_MAX,
+    TRIGGER_HEAT_LEVEL_MIN,
     TRIGGER_WOW_ANOMALY_THRESHOLD,
     TRIGGER_WOW_WINDOW_DAYS,
 )
@@ -500,11 +505,18 @@ def evaluate_ota_release_gate(
 
     三条件是**与**关系——原文是三个观察值并列后才「确认全量推送」。
 
+    比较号取 ``≥`` / ``≤`` 而不是严格不等号，依据是原文本身：99.2% / +30% / 0 起
+    这三个**实测值**在原文里的结论就是「确认全量推送」，所以门槛必须把等号算进来，
+    否则原文案例自己都过不了门。反过来，99.19% 这种「差一点」一律不放行——
+    :data:`constants.OTA_GATE_FLOAT_EPSILON` 只抵消 IEEE-754 表示误差
+    （1e-9，折算成百分点是 1e-7 pp），不放宽任何一条门槛。
+
     Args:
         ota_task_id: OTA 任务 ID。
         deploy_success_rate: 实测升级成功率（0~1）。
-        post_release_trigger_growth_rate: 实测发布后一周回传触发量环比增长率。
-        safety_issue_count: 实测安全相关问题数。
+        post_release_trigger_growth_rate: 实测发布后一周回传触发量环比增长率
+            （可为负，表示回传量下降）。
+        safety_issue_count: 实测安全相关问题数（非负）。
         software_version: 软件版本号，仅用于结论回显。
         release_channel: 发布通道；非空时必须是
             :data:`constants.OTA_RELEASE_CHANNELS` 之一。
@@ -518,7 +530,10 @@ def evaluate_ota_release_gate(
         :class:`OtaGateDecision`。
 
     Raises:
-        ValueError: 发布通道不在三档之内。
+        ValueError: 发布通道不在三档之内；或判据本身不合法——成功率落在 [0, 1] 之外、
+            安全问题数为负。这类值说明上游算错了，**不能当成一条通过的判据**：
+            一个 -1 起的安全问题数会让 ``≤ 0`` 这条门槛悄悄成立，
+            是最典型的「带病上车」漏放路径。
 
     Examples:
         原文案例（99.2% / +30% / 0 起）：
@@ -528,6 +543,14 @@ def evaluate_ota_release_gate(
         ...     post_release_trigger_growth_rate=0.30, safety_issue_count=0)
         >>> d.grey_passed, d.decision
         (True, 'full_rollout')
+
+        差 0.01 个百分点也不放行：
+
+        >>> d = evaluate_ota_release_gate(
+        ...     ota_task_id="OTA-v3.3", deploy_success_rate=0.9919,
+        ...     post_release_trigger_growth_rate=0.30, safety_issue_count=0)
+        >>> d.passed, d.blocked_by
+        (False, ('deploy_success_rate',))
 
         安全问题只要 1 起就不放行，另外两条再漂亮也没用：
 
@@ -540,6 +563,18 @@ def evaluate_ota_release_gate(
     if release_channel and release_channel not in OTA_RELEASE_CHANNELS:
         raise ValueError(
             f"发布通道 {release_channel!r} 不合法；可选：{', '.join(OTA_RELEASE_CHANNELS)}"
+        )
+    if deploy_success_rate is not None and not 0.0 <= deploy_success_rate <= 1.0:
+        raise ValueError(
+            f"升级成功率 {deploy_success_rate!r} 越界：应在 [0, 1] 之内"
+            f"（ads_ota_deployment_summary.deploy_success_rate 是比率列）。"
+            f"越界值多半是上游把分母算错了，放行门不接受这种判据"
+        )
+    if safety_issue_count is not None and safety_issue_count < 0:
+        raise ValueError(
+            f"安全相关问题数 {safety_issue_count!r} 为负：计数为负说明上游聚合错了。"
+            f"负数会让「≤ {OTA_GATE_MAX_SAFETY_ISSUE_COUNT} 起」这条门槛凭空成立，"
+            f"必须报错而不是放行"
         )
 
     conditions: list[GateCondition] = [
@@ -682,6 +717,16 @@ class TriggerGrowth:
         """环比增长率；上期为 0 时为 ``None``（无法计算环比）。"""
         return growth_rate(self.current_count, self.previous_count)
 
+    @property
+    def is_new_baseline(self) -> bool:
+        """上期为 0：算不出环比，但不是「没查到数据」。
+
+        两者在放行门上都判**不通过**（口径不变），但归因不同，运维要能分开看：
+        上期为 0 说明这是首次发布 / 新车型，得换个判据（比如看绝对量）再人工确认；
+        两期都为 0 才是「热力图还没物化出来」。
+        """
+        return self.previous_count == 0 and self.current_count > 0
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "window_days": self.window_days,
@@ -690,6 +735,7 @@ class TriggerGrowth:
             "current_count": self.current_count,
             "previous_count": self.previous_count,
             "rate": self.rate,
+            "is_new_baseline": self.is_new_baseline,
         }
 
 
@@ -1533,6 +1579,13 @@ class TriggerMiningClosedLoopService(_AdsService):
 
         Returns:
             :class:`HeatCell` 列表，按触发次数从多到少。
+
+        Raises:
+            AdsQueryError: ``min_heat_level`` 不在
+                :data:`constants.TRIGGER_HEAT_LEVEL_MIN` ~
+                :data:`constants.TRIGGER_HEAT_LEVEL_MAX` 之内。
+                档外的值会**静默返回空列表**（传 9）或**静默返回全量**（传 0），
+                大屏两种都看不出问题，所以这里报错而不是照单全收。
         """
         filters: list[Filter] = []
         if project_code:
@@ -1540,6 +1593,12 @@ class TriggerMiningClosedLoopService(_AdsService):
         if trigger_type:
             filters.append(Filter("trigger_type", "=", trigger_type))
         if min_heat_level is not None:
+            if not TRIGGER_HEAT_LEVEL_MIN <= min_heat_level <= TRIGGER_HEAT_LEVEL_MAX:
+                raise AdsQueryError(
+                    f"热力等级 {min_heat_level} 越界："
+                    f"ads_trigger_heatmap.heat_level 只有 "
+                    f"{TRIGGER_HEAT_LEVEL_MIN}~{TRIGGER_HEAT_LEVEL_MAX} 五档"
+                )
             filters.append(Filter("heat_level", ">=", min_heat_level))
         rows = self._latest(
             "ads_trigger_heatmap",
@@ -1791,13 +1850,38 @@ class TriggerMiningClosedLoopService(_AdsService):
         )
 
     def closed_loop_status(self, *, trigger_type: str, stat_date: Any = None) -> dict[str, Any]:
-        """某类触发的闭环状态：触发量、沉淀难例数与采纳情况（代表 API ``trigger/.../closed-loop``）。"""
-        cells = self.heatmap(
-            trigger_type=trigger_type, stat_date=stat_date, limit=ADS_QUERY_MAX_LIMIT
+        """某类触发的闭环状态：触发量、沉淀难例数与采纳情况（代表 API ``trigger/.../closed-loop``）。
+
+        触发量与难例数都是**聚合值**，因此走 :meth:`_AdsService._fetch_all` 翻页取全，
+        不能用单页 ``limit``——单页截断会把总量算少，而少算的总量恰恰会顺着
+        :meth:`ModelIterationEvaluationService.ota_release_gate` 的条件②
+        污染 OTA 放行结论（本模块开头第 3 条纪律）。
+
+        Args:
+            trigger_type: 触发类型，如「AEB 误触发」。
+            stat_date: 统计日期；不传取已物化的最新一天。
+
+        Returns:
+            触发量 / 网格数 / 难例数 / 采纳率 / 闭环验证条数。
+            该表还没物化出任何数据时，计数全为 0、采纳率为 ``None``。
+        """
+        day = (
+            stat_date if stat_date is not None else self.ads.latest_stat_date("ads_trigger_heatmap")
         )
+        cells: list[HeatCell] = []
+        if day is not None:
+            rows = self._fetch_all(
+                "ads_trigger_heatmap",
+                filters=[
+                    Filter("stat_date", "=", day),
+                    Filter("trigger_type", "=", trigger_type),
+                ],
+            )
+            cells = [HeatCell.from_row(r) for r in rows]
         summary = self.hard_case_adoption_summary(stat_date=stat_date)
         return {
             "trigger_type": trigger_type,
+            "stat_date": day,
             "trigger_cnt": sum(c.trigger_cnt for c in cells),
             "grid_cnt": len({c.geo_grid_id for c in cells}),
             "hard_case_cnt": sum(c.hard_case_cnt for c in cells),
@@ -1809,10 +1893,29 @@ class TriggerMiningClosedLoopService(_AdsService):
     # ---- 表 4 / 表 11 ----
 
     def scene_gap_status(self, *, stat_date: Any = None) -> dict[str, Any]:
-        """场景缺口状态（代表 API ``scene-gap/status``）：三态各有多少标签。"""
-        rows = self._latest(
-            "ads_scene_library_summary", stat_date=stat_date, limit=ADS_QUERY_MAX_LIMIT
+        """场景缺口状态（代表 API ``scene-gap/status``）：三态各有多少标签。
+
+        原文口径：场景库定义 1,200 个标签、覆盖度 82%（[S1-05] 第四章 2）。
+        三态计数与缺口合计都是**聚合值**，因此翻页取全而不是单页截断——
+        与 :meth:`closed_loop_status` 同理，少算的标签数会让「缺口补上了吗」答错。
+
+        Args:
+            stat_date: 统计日期；不传取已物化的最新一天。
+
+        Returns:
+            ``status_flow`` 三态顺序、每态标签数、标签总数与缺口合计；
+            未物化时计数全为 0。
+        """
+        day = (
+            stat_date
+            if stat_date is not None
+            else self.ads.latest_stat_date("ads_scene_library_summary")
         )
+        rows: list[Row] = []
+        if day is not None:
+            rows = self._fetch_all(
+                "ads_scene_library_summary", filters=[Filter("stat_date", "=", day)]
+            )
         counts = dict.fromkeys(SCENE_COVERAGE_STATUS_FLOW, 0)
         for row in rows:
             status = str(row.get("coverage_status") or "")
@@ -2216,6 +2319,14 @@ CATALOG_GAPS: Final[dict[str, tuple[str, ...]]] = {
         "缺「上传/处理完成率」与「入数据集量」两列（原文表 9 核心指标原话："
         "触发总量、上传/处理完成率与入数据集量）",
         "缺「周环比」列，45% 的案例只能由服务层按两个 7 天窗口现算",
+    ),
+    "ads_model_version_comparison": (
+        "缺「评测数据集名称」列（只有 dataset_id + dataset_version）。原文表 7 的案例"
+        f"是按名字引用数据集的——「{MODEL_COMPARE_DEMO_MODEL_VERSION} 与 "
+        f"{MODEL_COMPARE_DEMO_BASELINE_VERSION} 在『{MODEL_COMPARE_DEMO_DATASET_NAME}』对比」"
+        "——评测平台要显示这个名字就得回 ods_dataset_info 查，违反本表 notes 自己声明的"
+        "「零 JOIN」。同为 ADS 的 ads_data_asset_catalog.asset_name、"
+        "ads_ota_deployment_summary.project_name 都冗余了展示名，本表漏了",
     ),
 }
 

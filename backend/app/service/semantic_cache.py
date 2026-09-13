@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import hashlib
 import logging
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,23 +12,54 @@ from app.schema.chat import AskResponse
 
 logger = logging.getLogger(__name__)
 
+# 数据源无法解析时的哨兵值。写入与读取两端共用同一个值，口径一致，只是失去区分度。
+UNRESOLVED_SOURCE_ID = "unbound-source"
+
+
+def active_source_id() -> str:
+    """当前连接的数据源标识，用作缓存键的隔离维度。
+
+    取的是 db_service 实际连到的目的地指纹（driver|host|port|database|user 的
+    SHA-256，不含口令），而**不是**方言：方言只描述 SQL 语法，两个 PostgreSQL
+    数据源的方言完全相同，仅凭方言分桶会让它们互相命中对方的结果。
+
+    data_source_manager.activate() 切源时整体替换 db_service 的实例字典，这个指纹
+    随之改变，旧源的缓存键因此天然失效；切回原数据源时指纹复原，已有缓存仍可复用。
+
+    只读取**已经导入**的 db_service，不主动触发导入：缓存自身不应把建连副作用带进
+    仅使用缓存的进程（例如纯缓存单元测试）。解析不出来时退化为哨兵值。
+    """
+    module = sys.modules.get("app.service.db_service")
+    database = getattr(module, "db_service", None) if module is not None else None
+    if database is None:
+        return UNRESOLVED_SOURCE_ID
+    try:
+        identity = getattr(database, "source_id", None) or getattr(database, "database_identity", None)
+    except Exception:  # 连接已被替换或半初始化时不允许影响问数主链路
+        return UNRESOLVED_SOURCE_ID
+    return str(identity) if identity else UNRESOLVED_SOURCE_ID
+
 # =====================================================================
 # 多级语义缓存服务 (Semantic Query Cache)
 # 针对智能问数场景，解决大模型生成 SQL 延迟高、高频相似查询重复消耗 Token 痛点。
 # 架构设计：
-# 1. L1 精确哈希缓存 (Exact Query Hash Match): 基于角色、方言与清洗后问句的 SHA-256，O(1) 毫秒级命中 (<5ms)
+# 1. L1 精确哈希缓存 (Exact Query Hash Match): 基于数据源、角色、方言与清洗后问句的 SHA-256，O(1) 毫秒级命中 (<5ms)
 # 2. L2 语义向量缓存 (Semantic Vector Match): 基于 Embedding 余弦相似度，相似度 >= 0.96 视为等价意图，直接复用 DSL 与计算结果
+#    —— L1 的键与 L2 的候选过滤各自独立带数据源维度，缺任何一层都会跨源串数据
 # 3. TTL 生命周期淘汰与主动失效机制 (Cache Invalidation)
 # =====================================================================
 
 class CacheItem:
-    def __init__(self, key: str, question: str, response_data: Dict[str, Any], embedding: Optional[List[float]] = None, ttl_seconds: int = 3600, dialect: str = "doris", role: str = "user"):
+    def __init__(self, key: str, question: str, response_data: Dict[str, Any], embedding: Optional[List[float]] = None, ttl_seconds: int = 3600, dialect: str = "doris", role: str = "user", source_id: Optional[str] = None):
         self.key = key
         self.question = question
         self.response_data = response_data
         self.embedding = embedding
         self.dialect = dialect
         self.role = role
+        # L2 语义检索按条目自身的数据源过滤，键的隔离才不会被向量近邻绕过。
+        # 未显式给出时归属当前活跃数据源——执行这条查询的就是它。
+        self.source_id = source_id or active_source_id()
         self.created_at = time.time()
         self.expire_at = self.created_at + ttl_seconds
         self.hit_count = 0
@@ -55,12 +87,21 @@ class SemanticCache:
         self.semantic_hits = 0
 
     @staticmethod
-    def _generate_key(question: str, dialect: str, role: str) -> str:
+    def _resolve_source(source_id: Optional[str] = None) -> str:
+        """调用方显式给出的数据源优先，否则解析当前连接的数据源。"""
+        return str(source_id).lower() if source_id else active_source_id().lower()
+
+    @classmethod
+    def _generate_key(cls, question: str, dialect: str, role: str, source_id: Optional[str] = None) -> str:
         """
-        规范化问句并生成稳定的 SHA-256 唯一缓存键
+        规范化问句并生成稳定的 SHA-256 唯一缓存键。
+
+        键必须带数据源维度：dialect 只是方言，两个 PostgreSQL 数据源方言相同，
+        少了这一维就会跨源串数据（A 源问过的问题在 B 源直接返回 A 的结果）。
         """
         normalized_q = question.strip().lower().replace(" ", "")
-        raw_token = f"{role.lower()}::{dialect.lower()}::{normalized_q}"
+        source = cls._resolve_source(source_id)
+        raw_token = f"{source}::{role.lower()}::{dialect.lower()}::{normalized_q}"
         return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -97,13 +138,15 @@ class SemanticCache:
         self.exact_cache.pop(key, None)
         self.semantic_items = [item for item in self.semantic_items if item.key != key]
 
-    def get(self, question: str, dialect: str = "doris", role: str = "user", query_embedding: Optional[List[float]] = None) -> Optional[Tuple[Dict[str, Any], str]]:
+    def get(self, question: str, dialect: str = "doris", role: str = "user", query_embedding: Optional[List[float]] = None, source_id: Optional[str] = None) -> Optional[Tuple[Dict[str, Any], str]]:
         """
         多级缓存检索：
+        :param source_id: 数据源标识；省略时按当前活跃数据源解析
         :return: (response_data, hit_type) 或 None。hit_type: "exact" 或 "semantic"
         """
         self.total_requests += 1
-        key = self._generate_key(question, dialect, role)
+        source = self._resolve_source(source_id)
+        key = self._generate_key(question, dialect, role, source)
 
         # 1. 优先检索 L1 精确哈希匹配
         if key in self.exact_cache:
@@ -131,7 +174,11 @@ class SemanticCache:
                 if item.is_expired():
                     self.exact_cache.pop(item.key, None)
                     continue
-                if item.role.lower() != role.lower() or item.dialect.lower() != dialect.lower():
+                # 向量近邻会绕过 L1 的键隔离，所以 L2 必须独立按数据源过滤：
+                # 同方言的两个数据源问同一个问题，向量完全一致，只有这一层拦得住。
+                if (item.source_id.lower() != source
+                        or item.role.lower() != role.lower()
+                        or item.dialect.lower() != dialect.lower()):
                     valid_items.append(item)
                     continue
                 if item.embedding:
@@ -182,16 +229,20 @@ class SemanticCache:
 
         return None
 
-    def put(self, question: str, dialect: str, role: str, response_data: Dict[str, Any], embedding: Optional[List[float]] = None, ttl_seconds: Optional[int] = None) -> None:
+    def put(self, question: str, dialect: str, role: str, response_data: Dict[str, Any], embedding: Optional[List[float]] = None, ttl_seconds: Optional[int] = None, source_id: Optional[str] = None) -> None:
         """
         写入多级语义缓存
+
+        :param source_id: 数据源标识；省略时按当前活跃数据源解析。结果只能被同一个
+                          数据源上的提问复用。
         """
         validated_response = self._validated_response(response_data)
         if validated_response is None:
             return
 
         ttl = ttl_seconds if ttl_seconds is not None else self.default_ttl
-        key = self._generate_key(question, dialect, role)
+        source = self._resolve_source(source_id)
+        key = self._generate_key(question, dialect, role, source)
         item = CacheItem(
             key=key,
             question=question,
@@ -199,7 +250,8 @@ class SemanticCache:
             embedding=list(embedding) if embedding else None,
             ttl_seconds=ttl,
             dialect=dialect,
-            role=role
+            role=role,
+            source_id=source
         )
 
         # 写入 L1 精确缓存
@@ -224,6 +276,24 @@ class SemanticCache:
         self.semantic_items.clear()
         logger.info("语义缓存全量已清空重置。")
 
+    def invalidate_source(self, source_id: Optional[str] = None) -> int:
+        """
+        只清空某一个数据源的缓存，返回清掉的条目数。
+
+        切换数据源本身**不需要**调用它：缓存键已经带数据源维度，旧源的条目天然
+        命中不到，而且切回去时还能复用。它的用途是该数据源自身发生了 DDL / 数据
+        变更，需要定点失效而不牵连其他数据源。
+        """
+        source = self._resolve_source(source_id)
+        stale = [key for key, item in self.exact_cache.items() if item.source_id.lower() == source]
+        for key in stale:
+            self.exact_cache.pop(key, None)
+        before = len(self.semantic_items)
+        self.semantic_items = [item for item in self.semantic_items if item.source_id.lower() != source]
+        removed = len(stale) + (before - len(self.semantic_items))
+        logger.info("语义缓存已按数据源定点清空: %s (清除 %d 条)", source, removed)
+        return removed
+
     def get_stats(self) -> Dict[str, Any]:
         """
         获取当前缓存池命中率及状态统计
@@ -241,12 +311,14 @@ class SemanticCache:
                     "question": item.question,
                     "role": item.role,
                     "dialect": item.dialect,
+                    "source_id": item.source_id,
                     "hit_count": item.hit_count,
                     "ttl_remaining_sec": max(0, int(item.expire_at - now)),
                     "has_embedding": item.embedding is not None
                 })
 
         return {
+            "active_source_id": active_source_id(),
             "total_requests": self.total_requests,
             "total_hits": total_hits,
             "hit_ratio_percent": hit_ratio,

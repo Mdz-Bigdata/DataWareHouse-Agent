@@ -94,6 +94,9 @@ RULE_TYPE_COUNT: Final[int] = 6
 
 #: 三级挖掘漏斗。[S3-04] 四、原文：「规则先验粗筛 → 模型不确定性细筛 → 检索相似性扩散」。
 #: 规则挖掘引擎是第一层：「挖掘漏斗的第一层过滤器」（[S3-04] 开篇）。
+#: 消费方：编译出来的每条规则 SQL 的注释头都写明自己在漏斗第几层（compiler.py），
+#: VLM 选帧 SQL 写明自己是第二层（vlm.candidate_sql）——挖掘平台跑久了，
+#: 湖仓里躺着的 SQL 是唯一还能被回读的东西，漏斗位置必须写在那上面。
 FUNNEL_STAGES: Final[tuple[str, str, str]] = (
     "规则先验粗筛",
     "模型不确定性细筛",
@@ -104,6 +107,9 @@ FUNNEL_STAGES: Final[tuple[str, str, str]] = (
 
 #: 挖掘域新增表总数。[S3-01] 二、对齐原则表「数仓命名规范」行：
 #: 「新增表遵循 {层级}_{挖掘域}_{实体}_detail，共 11 张表（1 ODS + 8 DWD + 1 DWS + 1 ADS）」。
+#: 消费方：:data:`adas_lakehouse.mining.tables.MINING_NEW_TABLES` 登记「是哪 11 张」，
+#: 并在 import 期拿这两个常量与 registry 对账——数量对不上、层级挪了位、表没登记，
+#: 三种漂移都在进程起来之前就炸。
 MINING_TABLE_COUNT: Final[int] = 11
 
 #: 同上，拆到层级。
@@ -119,16 +125,29 @@ MINING_TABLE_COUNT_BY_LAYER: Final[dict[str, int]] = {
 #: Embedding 凌晨窗口的截止时钟（本地时区小时数）。
 #: [S3-01] 五、原文：「Embedding 走凌晨窗口（凌晨 6 点前完成），用时间错峰避免资源争抢」。
 #: 规则挖掘在这里的责任：rule_priority 决定命中数据进哪一档向量化队列（[S3-04] 一）。
+#:
+#: 同一个数字 controlplane/dataplane 也各持一份（``controlplane.constants`` 是那边的
+#: 唯一事实源，``dataplane.gpu`` 按它排班）。本模块**不 import 它们**——挖掘引擎
+#: 一旦依赖控制面模块，「任何一个引擎故障都不影响其他链路」（[S3-01] 三）就不成立了。
+#: 两份定义的一致性由 tests/deep/test_mining.py 的
+#: ``test_cost_tier_constants_agree_with_the_control_plane`` 钉住，与下面 keyframe
+#: 上下界的做法同一路数：用测试跨子系统对账，不用 import 制造运行期依赖。
 EMBEDDING_WINDOW_DEADLINE_HOUR: Final[int] = 6
 
 #: 优先向量化的三类高价值数据来源。
 #: [S3-01] 五、原文：「高价值数据（规则命中 / 事件抽帧 / VLM 标签）优先向量化，普通数据抽样处理」。
+#: 第一类「规则命中」由 ``backends.TagWriteRequest.source`` 逐字使用；三类齐全的那份
+#: 在 ``dataplane.gpu``，一致性同样由 tests/deep/test_mining.py 对账。
 HIGH_VALUE_SOURCES: Final[tuple[str, str, str]] = ("规则命中", "事件抽帧", "VLM 标签")
 
 # --------------------------------------------------------------------------- 部署规格
 
 #: 在线服务区单服务规格与起步副本数。
 #: [S3-01] 五、部署表「在线服务区」行：「每服务 4C8G × 2 起，无状态 + HPA 随检索 QPS 扩缩」。
+#: 本引擎**不消费**这三个数字（它跑在批/流/GPU 三区，不是在线服务区）：它们是
+#: 供部署清单与容量规划引用的公开常量，真正按它们排规格的是 ``dataplane.engines``
+#: （从 ``controlplane.constants`` 取同一组数）。此处保留一份是为了让挖掘域的
+#: 「原文数字登记表」完整可查；两处一致性同样由 tests/deep/test_mining.py 钉住。
 SERVICE_CPU_CORES: Final[int] = 4
 SERVICE_MEMORY_GB: Final[int] = 8
 SERVICE_MIN_REPLICAS: Final[int] = 2
@@ -137,10 +156,14 @@ SERVICE_MIN_REPLICAS: Final[int] = 2
 
 #: [S3-01] 六、接口表「任务类」行：「POST /api/v1/mining/rule-jobs；GET /jobs/{jobId}/progress，
 #: 任务创建与进度查询，幂等键防重复提交」。
+#: 消费方：``backends.rule_job_endpoint`` / ``backends.rule_job_progress_endpoint``——
+#: 它们是**出口**，由外部编排拼 URL 用，引擎自己不请求。
 RULE_JOBS_API_PATH: Final[str] = "/api/v1/mining/rule-jobs"
 RULE_JOB_PROGRESS_API_PATH: Final[str] = "/api/v1/mining/rule-jobs/{jobId}/progress"
 
 #: [S3-01] 六、接口表「检索类」行：「GET /api/v1/scene/tag-coverage」——场景缺口识别的对外出口。
+#: 消费方：``gaps.tag_coverage_endpoint``（拼 URL）与 ``gaps.coverage_sql``
+#: （渲染出来的 SQL 注释头写明自己是这个接口背后的查询）。
 TAG_COVERAGE_API_PATH: Final[str] = "/api/v1/scene/tag-coverage"
 
 # --------------------------------------------------------------------------- VLM 推理挖掘

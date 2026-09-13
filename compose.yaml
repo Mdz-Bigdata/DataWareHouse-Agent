@@ -147,6 +147,15 @@ services:
     environment:
       DB_TYPE: ${CORE_DB_TYPE:-sqlite}
       DB_URL: ${CORE_DB_URL:-}
+      # User memory (query history, preference overrides, error corrections) is
+      # runtime data, not an image artifact. Keep it on the named volume below:
+      # the image's own filesystem is rebuilt by every `up --build`, so a path
+      # inside it loses the user's whole memory without a single error message.
+      # Must stay under /app/data -- mounting the volume at /app itself would
+      # shadow the application code that the Dockerfile COPYs there.
+      USER_MEMORY_PATH: ${CORE_USER_MEMORY_PATH:-/app/data/user_memory.json}
+    volumes:
+      - core-backend-data:/app/data
     restart: unless-stopped
 
   core-web:
@@ -488,6 +497,7 @@ services:
 
 volumes:
   embedding-cache:
+  core-backend-data:
   warehouse-postgres-data:
   data-engine-ontology:
   data-engine-logs:

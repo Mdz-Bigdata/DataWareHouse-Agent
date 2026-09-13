@@ -33,6 +33,7 @@ from typing import Final
 
 from ..catalog import registry
 from ..config import settings
+from .constants import MINING_TABLE_COUNT, MINING_TABLE_COUNT_BY_LAYER
 
 __all__ = [
     "TableRef",
@@ -49,6 +50,7 @@ __all__ = [
     "ODS_VEHICLE_TRIGGER_EVENT",
     "VEHICLE_SIGNAL_STREAM",
     "ALL_REFS",
+    "MINING_NEW_TABLES",
     "qualified",
     "stream_sql",
     "columns_of",
@@ -235,6 +237,37 @@ DWD_MINING_IMAGE_TAG_DETAIL = TableRef(
     source="[S3-03] 二、管道出口两张标签事实表（image 级）",
     role="read",
 )
+
+
+#: 挖掘平台**新增**的 11 张表，按层级分组。
+#:
+#: [S3-01] 二、对齐原则表「数仓命名规范」行逐字：「新增表遵循
+#: {层级}_{挖掘域}_{实体}_detail，共 11 张表（1 ODS + 8 DWD + 1 DWS + 1 ADS）」。
+#: 数字本身在 :data:`~adas_lakehouse.mining.constants.MINING_TABLE_COUNT_BY_LAYER`，
+#: 这里只登记**是哪 11 张**，并在 import 期与 registry 对账（见本模块末尾）。
+#:
+#: ⚠️ 原文只给了数量与命名规范，没有逐张点名。下面这份名单里，
+#: ODS/DWD 的 9 张与 DWS/ADS 的 2 张都在原文四篇里出现过字面表名（ods_mining_rule_config
+#: [S3-04] 一、dws_mining_tag_coverage_daily [S3-03] 四、其余见各自 TableRef 的 source），
+#: 唯一由本项目补的是 dwd_scene_gap_detail（任务书给定）。挖掘域在 registry 里另有
+#: ods_mining_task 与 dws_mining_efficiency_daily 两张**先于本平台**就存在的表
+#: （出自系列一/二的 87 张显式清单），故不计入「新增」——这也是为什么本域
+#: registry 有 13 张、原文说新增 11 张，两者并不矛盾。
+MINING_NEW_TABLES: Final[dict[str, tuple[str, ...]]] = {
+    "ods": ("ods_mining_rule_config",),
+    "dwd": (
+        "dwd_mining_result_detail",
+        "dwd_mining_task_detail",
+        "dwd_mining_image_frame_detail",
+        "dwd_mining_image_tag_detail",
+        "dwd_mining_data_tag_detail",
+        "dwd_mining_tag_dict_detail",
+        "dwd_mining_image_vector_detail",
+        "dwd_scene_gap_detail",
+    ),
+    "dws": ("dws_mining_tag_coverage_daily",),
+    "ads": ("ads_mining_tag_dashboard",),
+}
 
 
 ALL_REFS: Final[tuple[TableRef, ...]] = (
@@ -543,3 +576,24 @@ KEYFRAME_READ_COLUMNS: Final[tuple[str, ...]] = projection(
     "project_code",
     "vehicle_code",
 )
+
+
+# --------------------------------------------------------------------------- import 期自检
+
+# 「新增 11 张表」这个数字不能只写在注释里：注释不会因为 registry 改了而变红。
+# 三条断言分别挡住三种漂移：名单与原文数字对不上、层级分布变了、名单里的表没登记。
+_NEW_BY_LAYER = {layer: len(names) for layer, names in MINING_NEW_TABLES.items()}
+assert _NEW_BY_LAYER == MINING_TABLE_COUNT_BY_LAYER, (
+    f"挖掘平台新增表的层级分布 {_NEW_BY_LAYER} 与原文口径 {MINING_TABLE_COUNT_BY_LAYER} 不符"
+    "（[S3-01] 二：1 ODS + 8 DWD + 1 DWS + 1 ADS）"
+)
+_NEW_FLAT = [n for names in MINING_NEW_TABLES.values() for n in names]
+assert len(_NEW_FLAT) == MINING_TABLE_COUNT, (
+    f"挖掘平台新增表共 {len(_NEW_FLAT)} 张，原文说 {MINING_TABLE_COUNT} 张（[S3-01] 二）"
+)
+for _name in _NEW_FLAT:
+    _spec = registry.by_name(_name)  # 没登记会抛 KeyError，import 期就炸
+    assert _spec.layer.value == next(
+        layer for layer, names in MINING_NEW_TABLES.items() if _name in names
+    ), f"{_name} 在 registry 里的层级是 {_spec.layer.value}，与本模块登记的不符"
+del _NEW_BY_LAYER, _NEW_FLAT, _name, _spec

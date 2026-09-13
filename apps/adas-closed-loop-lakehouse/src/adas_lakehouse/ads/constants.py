@@ -374,8 +374,12 @@ ADS_RESULT_CACHE_TTL_SECONDS: Final[int] = 60
 INDUSTRY_L4_DAILY_RAW_DATA_TB: Final[int] = 10
 #: 真正被用于模型迭代的数据不到 2%——其余成为「数据暗物质」（[S1-全景] 第一章）
 INDUSTRY_DATA_UTILIZATION_RATIO: Final[float] = 0.02
-#: 特斯拉 FSD 累计行驶里程已突破 167 亿公里（[S1-全景] 第一章）
-INDUSTRY_TESLA_FSD_BILLION_KM: Final[float] = 167.0
+#: 特斯拉 FSD 累计行驶里程已突破 167 亿公里（[S1-全景] 第一章）。
+#: 单位是**亿公里**（10⁸ km），不是 billion（10⁹ km）——旧名 ``..._BILLION_KM``
+#: 把量级说大了 10 倍，照着它换算会得出「1670 亿公里」。值仍逐字取原文的 167。
+INDUSTRY_TESLA_FSD_HUNDRED_MILLION_KM: Final[float] = 167.0
+#: 同一个数字换算成公里的绝对值，避免调用方自己乘错量级。
+INDUSTRY_TESLA_FSD_KM: Final[float] = INDUSTRY_TESLA_FSD_HUNDRED_MILLION_KM * 1e8
 #: 每增加 1000 万公里针对性场景数据，该场景下的接管率可降低 15%~25%（[S1-全景] 第一章）
 INDUSTRY_TARGETED_KM_PER_GAIN: Final[int] = 10_000_000
 INDUSTRY_TAKEOVER_DROP_MIN: Final[float] = 0.15

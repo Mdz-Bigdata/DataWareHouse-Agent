@@ -1222,11 +1222,28 @@ if ScriptExportSubmitter.__doc__:  # pragma: no cover - 纯文档处理
     )
 
 
+def _render_table(rows: list[dict[str, str]]) -> str:
+    """把自检矩阵渲染成 Markdown 表格。"""
+    headers = list(rows[0])
+    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    lines.extend("| " + " | ".join(r[h] for h in headers) + " |" for r in rows)
+    return "\n".join(lines)
+
+
 def _main(argv: list[str] | None = None) -> int:
-    """命令行入口：校验产品矩阵、渲染并（可选）写出 SQL。"""
+    """命令行入口：两项自检（catalog 对账 + 服务化出口）、渲染并（可选）写出 SQL。
+
+    两项自检都是「开箱即用」的护栏，缺一不可，所以都在这里跑一次：
+
+      · :func:`schema.verify_against_catalog`——服务层按老口径查、湖表已经改了；
+      · :func:`services.verify_service_exits`——11 张表有没有表是**查得到但没出口**的，
+        以及 [S1-全景] 第九章的代表 API 有没有既没实现也没登记去处。
+
+    任一自检有问题即非零退出，CI 直接当断言用。
+    """
     parser = argparse.ArgumentParser(
         prog="python -m adas_lakehouse.ads.materialize",
-        description="ADS 数据产品矩阵：产品矩阵自检 + 两段 SQL 生成",
+        description="ADS 数据产品矩阵：产品矩阵自检 + 服务化出口自检 + 两段 SQL 生成",
     )
     parser.add_argument("--write", action="store_true", help="把 SQL 写入 flink/sql/ 与 ddl/")
     parser.add_argument("--root", default=None, help="项目根目录（默认自动推断）")
@@ -1234,6 +1251,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     from .products import render_matrix
     from .schema import verify_against_catalog
+    from .services import service_exit_matrix, verify_service_exits
 
     print(render_matrix())
     print()
@@ -1246,12 +1264,24 @@ def _main(argv: list[str] | None = None) -> int:
     else:
         print(f"✅ 产品矩阵与 catalog 注册表一致（{len(PRODUCTS)} 张 ADS 表）")
 
+    print()
+    print(_render_table(service_exit_matrix()))
+    print()
+    exit_problems = verify_service_exits()
+    if exit_problems:
+        print("⚠️ 服务化出口自检未通过：")
+        for check, issues in exit_problems.items():
+            for issue in issues:
+                print(f"  · {check}: {issue}")
+    else:
+        print(f"✅ {len(PRODUCTS)} 张 ADS 表全部有服务化出口，原文代表 API 已全部落地或登记去处")
+
     if args.write:
         written = write_sql_files(args.root)
         print(f"\n已写出 {len(written)} 个 SQL 文件：")
         for path in written:
             print(f"  · {path}")
-    return 1 if problems else 0
+    return 1 if (problems or exit_problems) else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

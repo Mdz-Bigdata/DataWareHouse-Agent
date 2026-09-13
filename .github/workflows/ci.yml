@@ -1,0 +1,250 @@
+# =============================================================================
+# DataWareHouse-Agent CI
+#
+# 在此之前仓库**没有任何 CI**：backend 的数百个用例、adas 的 1372 个用例 +
+# make check、engine 自带的 eval.yml（放在 apps/data-agent-engine/.github/ 下，
+# GitHub 只认仓库根的 .github/workflows，所以它一次都没被触发过）——全部从未
+# 被自动执行。本文件把它们接上。
+#
+# 运行环境约束：GitHub runner **没有数据库、没有 Docker 守护进程、没有外网凭据**。
+# 依赖外部服务的用例靠根 pytest.ini 声明的 marker 排除（见 PYTEST_MARKER_FILTER），
+# 而不是删用例——用例必须保留，在有依赖的环境里照常跑。
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支上新的 push 取消旧的排队任务，省 runner 时间。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # CI 没有外部依赖，排除需要它们的用例。marker 定义见根 pytest.ini。
+  PYTEST_MARKER_FILTER: >-
+    not requires_db and not requires_docker and not requires_network
+    and not requires_llm_key
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 密钥闸门——最先跑，泄露比测试失败更急。
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: 密钥扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # backend/llm_config.json 含各厂商 API Key，backend/user_memory.json 含
+      # 个人问数历史。两者已写进 .gitignore，但 .gitignore 管不住**已跟踪**的文件，
+      # 必须显式问 git 索引。
+      - name: 禁止跟踪含密钥的运行时文件
+        run: |
+          set -uo pipefail
+          failed=0
+          for f in backend/llm_config.json backend/user_memory.json; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error file=${f}::${f} 仍被 git 跟踪。执行 'git rm --cached ${f}' 并提交（本地文件会保留），然后用 backend/llm_config.example.json 作为模板。"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      # --forbid-present：actions/checkout 只落地被跟踪的文件，所以「文件存在」
+      # 就等价于「仍被跟踪」。这是上一步的双保险，并额外做明文密钥内容扫描。
+      - name: 扫描明文密钥
+        run: python .github/scripts/scan_secrets.py --forbid-present
+
+  # ---------------------------------------------------------------------------
+  # 2. 代码卫生——硬编码开发机绝对路径会让容器化部署静默失效。
+  # ---------------------------------------------------------------------------
+  hygiene:
+    name: 代码卫生
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 只扫一方代码；apps/ 是外部引入的子项目，docs/ 下有 Agent 生成的产物，
+      # 都不在本闸门的职责范围内。
+      - name: 禁止硬编码开发机绝对路径
+        run: |
+          set -uo pipefail
+          if grep -rnE '(/Users/|/home/)[A-Za-z0-9._-]+/' \
+               backend/app platform_gateway integrations tools tests \
+               --include='*.py' --include='*.ts' --include='*.tsx' \
+               --exclude-dir=__pycache__; then
+            echo "::error::源码里出现硬编码的开发机绝对路径。改用 backend/app/core/paths.py 里的 repo_root()/backend_dir()/llm_config_path()，或环境变量 DWH_REPO_ROOT / DWH_BACKEND_DIR / DWH_LLM_CONFIG_PATH。"
+            exit 1
+          fi
+          echo "未发现硬编码绝对路径。"
+
+  # ---------------------------------------------------------------------------
+  # 3. backend——智能问数后端（基线命令与 README/本地一致）。
+  # ---------------------------------------------------------------------------
+  backend:
+    name: backend 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          # pytest 是测试期依赖，不在 requirements.txt（那是运行时清单）里。
+          # pyyaml 同理：tests/test_s7_ci.py 用它真正解析本 workflow 的结构，
+          # 没装的话那条用例会自行 skip，CI 里就白跑了。
+          pip install "pytest>=8.0" pyyaml
+
+      # 没有 llm_config.json 时 ask_agent 会静默退化成无 Key 模式；给个空模板，
+      # 让配置读取这条分支在 CI 里也是「读到了但没有 Key」，与真实部署一致。
+      - name: 准备无密钥的模型配置
+        run: cp backend/llm_config.example.json backend/llm_config.json
+
+      - name: 运行 backend 测试
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: python -m pytest tests/ -q -m "$PYTEST_MARKER_FILTER"
+
+  # ---------------------------------------------------------------------------
+  # 4. platform——平台网关 / 统一启动器（仓库根的 tests/platform）。
+  # ---------------------------------------------------------------------------
+  platform:
+    name: platform 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: platform_gateway/requirements.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r platform_gateway/requirements.txt
+          pip install "pytest>=8.0"
+
+      # pythonpath 由根 pytest.ini 提供，无需再 export PYTHONPATH。
+      - name: 运行 platform 测试
+        run: python -m pytest tests/platform -q -m "$PYTEST_MARKER_FILTER"
+
+  # ---------------------------------------------------------------------------
+  # 5. adas——智驾数据闭环湖仓。零运行时第三方依赖，只装 dev 分组。
+  # ---------------------------------------------------------------------------
+  adas:
+    name: adas make check (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 该包 requires-python >= 3.11，两端各测一次。
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: apps/adas-closed-loop-lakehouse/pyproject.toml
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "apps/adas-closed-loop-lakehouse[dev]"
+
+      # make check = validate + ports + lint + fmt-check + test。
+      # PORTS_ARGS：runner 上没有 Docker 守护进程，也不该把 runner 自身的
+      # LISTEN 端口当成本项目的冲突，故走退化解析并跳过宿主机端口探测。
+      - name: make check
+        working-directory: apps/adas-closed-loop-lakehouse
+        run: make check PORTS_ARGS="--no-docker --skip-listen"
+
+  # ---------------------------------------------------------------------------
+  # 6. engine——apps/data-agent-engine 自带 eval.yml，但它放在子目录的 .github 下，
+  #    GitHub 不会触发。这里把它的门禁接进来。
+  #    该目录当前尚未纳入版本控制，所以先探测再决定是否执行，避免整条 CI 红。
+  # ---------------------------------------------------------------------------
+  engine:
+    name: engine eval 门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 探测 engine 是否已入库
+        id: probe
+        run: |
+          if [ -f apps/data-agent-engine/backend/requirements.txt ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/data-agent-engine 尚未纳入版本控制，跳过 engine 门禁。该目录入库后本 job 会自动开始执行。"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.probe.outputs.present == 'true'
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/data-agent-engine/backend/requirements.txt
+
+      - name: 安装依赖
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: 构造样本库
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        run: python -m seed.seed --out seed/sample.db --seed 42
+
+      - name: 本体编译（YAML → SQLite）
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        run: python -m ontology_compile --yaml ontology --out /tmp/ontology.db --commit
+
+      - name: eval 门禁（SQLite 本体存储）
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        env:
+          DATA_AGENT_ONTOLOGY_STORE: sqlite
+          DATA_AGENT_ONTOLOGY_DB: /tmp/ontology.db
+        run: python -m eval.eval
+
+      - name: eval 门禁（默认本体存储）
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        run: python -m eval.eval
+
+      - name: 引擎单元测试
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        run: python -m unittest discover -s tests
+
+      - name: DSH 侧配置回归
+        if: steps.probe.outputs.present == 'true'
+        working-directory: apps/data-agent-engine/backend
+        run: python -m unittest discover -s ../dsh-side

@@ -1,0 +1,131 @@
+{
+  "_comment": [
+    "敏感列密级目录（元数据，不是代码）。app/service/guardrail.py 的 ColumnSecurityCatalog",
+    "启动时装载；文件缺失只是拦截面变窄（builtin_patterns 仍兜底支付账户/凭据/证件号），",
+    "不会让系统起不来。也支持 .yaml/.yml（需要 PyYAML；当前 backend venv 没装，所以默认发 json）。",
+    "",
+    "为什么单独一个文件：guardrail_rules.json 管的是「规则怎么执法」（阈值/灰度/严重级），",
+    "本文件管的是「哪些列是敏感的」——后者随数据源变化，属于元数据治理产物，应该能被",
+    "元数据平台生成/覆盖，而不是改代码。",
+    "",
+    "装载顺序与优先级（先命中先返回）：",
+    "  table.column 精确 > column 精确 > 限定列的裸列名回退 > 语义层/本体元数据回调",
+    "  > exclusions（只挡下面两层） > guardrail_rules 的 columns 子串兼容层 > patterns",
+    "",
+    "本清单以活库 postgresql://…/blog_converter（public schema, 24 张表）的",
+    "information_schema.columns 实际列名为准，reason 里注明依据；改数据源时应重新盘点。",
+    "推断候选：guardrail.propose_column_security_levels() 出清单，人工审阅后",
+    "guardrail.approve_column_security_candidates(...) 才生效，推断结果永不自动执法。"
+  ],
+  "version": 1,
+  "source": "blog_converter@localhost:5432 information_schema.columns",
+
+  "columns": [
+    {
+      "column": "users.bank_card_info",
+      "level": "L3",
+      "owner": "risk",
+      "reason": "支付账户：银行卡信息（jsonb，半结构化，可含卡号/持卡人/开户行）"
+    },
+    {
+      "column": "users.wechat_info",
+      "level": "L3",
+      "owner": "risk",
+      "reason": "支付账户：微信收款信息（jsonb）"
+    },
+    {
+      "column": "users.alipay_info",
+      "level": "L3",
+      "owner": "risk",
+      "reason": "支付账户：支付宝收款信息（jsonb）"
+    },
+    {
+      "column": "withdrawal_requests.account_info",
+      "level": "L3",
+      "owner": "risk",
+      "reason": "提现收款账户明细（jsonb），与上面三列同一类风险"
+    },
+    {
+      "column": "users.hashed_password",
+      "level": "L3",
+      "owner": "security",
+      "reason": "登录凭据摘要，任何角色都不该出现在取数结果里"
+    },
+    {
+      "column": "users.phone",
+      "level": "L3",
+      "owner": "security",
+      "reason": "手机号 PII"
+    },
+    {
+      "column": "users.invitation_code",
+      "level": "L3",
+      "owner": "security",
+      "reason": "邀请码可被用来冒用邀请关系，按凭据处理"
+    },
+    {
+      "column": "users.email",
+      "level": "L2",
+      "severity": "warning",
+      "owner": "security",
+      "reason": "邮箱 PII，内部角色可用于运营分析，先观察不拦截"
+    },
+    {
+      "column": "orders.user_email",
+      "level": "L2",
+      "severity": "warning",
+      "owner": "security",
+      "reason": "订单上的下单邮箱，与 users.email 同源"
+    },
+    {
+      "column": "orders.logistics_info",
+      "level": "L2",
+      "severity": "warning",
+      "owner": "ops",
+      "reason": "物流信息（jsonb）可能含收件人姓名/电话/地址"
+    },
+    {
+      "column": "transactions.extra_data",
+      "level": "L2",
+      "severity": "warning",
+      "owner": "ops",
+      "reason": "交易扩展字段（jsonb），历史上被塞过支付渠道回执"
+    }
+  ],
+
+  "patterns": [
+    {
+      "id": "live.payment_account_blob",
+      "match": "^(bank_card|alipay|wechat|unionpay|paypal|account|settle|payout)_(info|detail|details|account|no)$",
+      "type": "regex",
+      "level": "L3",
+      "reason": "活库里支付账户列的统一命名形态：<渠道>_info",
+      "examples": ["bank_card_info", "alipay_info", "wechat_info", "account_info", "payout_no"],
+      "counter_examples": ["bank_card_info_updated_at", "account_info_type", "wechat_info_count"]
+    },
+    {
+      "id": "live.credential",
+      "match": "^(hashed_password|password_hash|salt|otp_secret)$",
+      "type": "regex",
+      "level": "L3",
+      "reason": "凭据列",
+      "examples": ["hashed_password", "password_hash"],
+      "counter_examples": ["password_updated_at", "password_strength_level"]
+    }
+  ],
+
+  "exclusions": [
+    {
+      "id": "live.phone_type",
+      "match": "^(phone_type|phone_kind|phone_area|card_type|card_level|email_type)$",
+      "type": "regex",
+      "reason": "描述字段的类型/形态，不承载敏感值本身；否则 phone/card 子串模式会误伤"
+    },
+    {
+      "id": "live.masked",
+      "match": "_(masked|mask|suffix4|last4)$",
+      "type": "regex",
+      "reason": "已脱敏的展示列（如 phone_masked），按脱敏结果放行"
+    }
+  ]
+}

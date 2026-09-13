@@ -41,6 +41,7 @@ from .errors import (
 from .products import BusinessPlatform
 
 __all__ = [
+    "Handler",
     "Principal",
     "TokenAuthenticator",
     "TokenBucketRateLimiter",
@@ -48,6 +49,8 @@ __all__ = [
     "AuditLog",
     "ApiRoute",
     "ApiGateway",
+    "is_gateway_error",
+    "error_status",
 ]
 
 _LOG = logging.getLogger(__name__)
@@ -363,7 +366,13 @@ class ApiGateway:
 
 
 def is_gateway_error(exc: BaseException) -> bool:
-    """判断一个异常是否属于网关层拒绝（便于上层映射 HTTP 4xx）。"""
+    """判断一个异常是否属于网关层拒绝（便于上层映射 HTTP 4xx）。
+
+    **这是供外部传输层调用的公开 API**，本模块内部不调用它：
+    :meth:`ApiGateway.handle` 按原样上抛异常，是否区分「网关拒绝」与
+    「业务服务报错」由包在外面的那层（Flask / FastAPI / gRPC）决定——
+    本网关刻意做成传输无关的，不自己产出状态码。
+    """
     return isinstance(
         exc, (AuthenticationError, AuthorizationError, RateLimitExceededError, RouteNotFoundError)
     )
@@ -372,7 +381,12 @@ def is_gateway_error(exc: BaseException) -> bool:
 def error_status(exc: BaseException) -> int:
     """把异常映射成 HTTP 状态码，供使用方的传输层复用。
 
-    ⚠️ 原文未明确，本项目设计：原文没规定错误码体系，这里给一套常识映射。
+    与 :func:`is_gateway_error` 一样是**供外部传输层调用的公开 API**：
+    ``handle()`` 抛什么就是什么，状态码由接入方在自己的框架里贴。
+
+    ⚠️ 原文未明确，本项目设计：原文没规定错误码体系，这里给一套常识映射——
+    401 认证 / 403 鉴权 / 429 限流 / 404 路由 / 503 依赖不可用 /
+    400 其余 ADS 错误（调用方参数问题）/ 500 非 ADS 异常。
     """
     if isinstance(exc, AuthenticationError):
         return 401

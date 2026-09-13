@@ -5,6 +5,10 @@
         https://mp.weixin.qq.com/s/qhddTZf_P_g81s5z1RkPPA
   [a5]  全景综述特辑《智驾数据闭环的湖仓架构全景》 2026-09-08
         https://mp.weixin.qq.com/s/UmHoxjBwRtZT0PgwjkL9DQ
+  [a6]  系列二第 6 篇《数据质量门禁设计：智驾数据入湖的五步校验链路》 2026-09-05
+        https://mp.weixin.qq.com/s/e7lf3LrjX9JMHMvVnu4Anw
+        —— [a8] 第六章「命中拒绝规则的数据进入**第六篇讲过的**五步异常闭环」，
+        本子系统落地那条闭环时用到的数字在此登记。
 
 本模块只登记数字与原文措辞，不含逻辑。凡标注「⚠️ 原文未明确，本项目设计：」的
 常量，是原文没有给出、由本项目为了工程可落地而补的参数，不要当成原文口径引用。
@@ -104,6 +108,29 @@ QUALITY_BRANCH_COUNT: Final[int] = 3
 ALERT_LEVELS: Final[tuple[str, str, str, str]] = ("P0", "P1", "P2", "P3")
 
 # ===========================================================================
+# 二之二、[a6] 五步异常闭环里、由本子系统执行的那几个数字
+#     规则引擎与 SLA 归 ``adas_lakehouse.quality``；下面两个数字是入湖通道自己要用的，
+#     逐字登记在这里，取值与 ``quality.thresholds`` 同名常量必须一致——
+#     一致性由 tests/deep/test_ingest.py::test_a6_numbers_do_not_drift_from_quality 守住
+#     （本包对 quality 一律延迟 import，不在 import 期为整套规则集付代价）。
+# ===========================================================================
+
+#: [a6] 第五章第 ⑤ 步：「重新执行全部门禁规则，通过则写入 ODS 并回填处理状态；
+#: 不通过退回隔离，**超 3 轮升级 P0**」。见 ``gate.AnomalyClosedLoop.recheck``。
+MAX_RECHECK_ROUNDS: Final[int] = 3
+
+#: [a6] 4.2 Kafka 消息流「重复率监控」：「事件 ID 幂等去重（Paimon 主键 Upsert），
+#: **重复率 > 5% 告警**」——处理方式是「自动去重 + 超限告警」，两件事缺一不可。
+#: 见 ``channels.IngestChannel.run``（自动去重）与 ``IngestReport.duplicate_rate``（超限告警）。
+DUPLICATE_RATE_ALERT_THRESHOLD: Final[float] = 0.05
+
+#: [a6] 第五章第 ③ 步的告警对象：「通知数据 owner + 平台值班」。
+ALERT_NOTIFY_TARGETS: Final[tuple[str, str]] = ("数据 owner", "平台值班")
+
+#: [a6] 第五章第 ④ 步分流处置的三个分支：A 自动修复 / B 人工修复 / C 弃置归档。
+TRIAGE_BRANCH_COUNT: Final[int] = 3
+
+# ===========================================================================
 # 三、[a5] 与入湖相邻的治理数字（存储生命周期由 lifecycle 子系统落地，此处登记出处）
 # ===========================================================================
 
@@ -184,6 +211,15 @@ DECODE_PROBE_BYTES: Final[int] = 32
 
 #: ⚠️ 原文未明确，本项目设计：Flink SQL Gateway REST 调用超时（秒）。
 SQL_GATEWAY_TIMEOUT_SEC: Final[int] = 30
+
+#: ⚠️ 原文未明确，本项目设计：Kafka 通道「时空合理」的事件时间容忍窗口。
+#: [a6] 4.2 只说「不早于车辆出厂时间、不晚于服务器时间 + 容忍窗口（防车端时钟漂移）」，
+#: 没给窗口大小。未来侧取 300 秒（与 quality.thresholds.CLOCK_DRIFT_TOLERANCE_SECONDS
+#: 同口径），滞后侧取 30 天（覆盖车端离线缓存后补传）。
+#: **Python 侧（channels.KafkaChannel）与 SQL 侧（sql.render_kafka_pipeline）共用这两个值**，
+#: 各写各的会让同一条事件在流作业里被放行、在补数脚本里被拒——两处必须同源。
+KAFKA_FUTURE_TOLERANCE_SEC: Final[int] = 300
+KAFKA_LAG_TOLERANCE_DAYS: Final[int] = 30
 
 #: ⚠️ 原文未明确，本项目设计：本地回放 / 补数模式下单批最大记录数。
 #: 与 [a8]「一个采集任务数百个文件」同量级，保证一个采集任务可一批灌完。

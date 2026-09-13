@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Final
 
 from ..domains import DataDomain, Layer
 from ..naming import lint, parse
@@ -44,6 +45,8 @@ __all__ = [
     "RESERVED_TABLE_OPTIONS",
     "SYSTEM_COLUMNS",
     "SYSTEM_FIELD_SPEC",
+    "VARIANT_MIN_ENGINE",
+    "VARIANT_TYPE",
     "BucketTier",
     "ChangelogMode",
     "ChangelogProducer",
@@ -369,6 +372,28 @@ NON_BUSINESS_PK_NAMES: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------- 字段与系统字段
 
 
+#: 半结构化列用的类型字面量。全湖只有 dwd_mining_image_vector_detail.vector_meta 用它。
+VARIANT_TYPE: Final[str] = "VARIANT"
+
+#: VARIANT 列对执行引擎的最低要求（[a9] 第 03 节）。
+#:
+#: **这不是理论值，是实测出来的**：本仓 ``docker/flink/Dockerfile`` 钉的是
+#: Flink 1.20.1 + Paimon 1.0.1，在该栈上执行 ``ddl/20_dwd.sql`` 会在
+#: ``dwd_mining_image_vector_detail`` 这一条上报::
+#:
+#:     org.apache.calcite.sql.validate.SqlValidatorException:
+#:     Unknown identifier 'VARIANT'
+#:
+#: 报错来自 Flink 的 SQL 解析器（Calcite），不是 Paimon——换 Paimon 版本救不了，
+#: 必须是 Flink 本身认识 VARIANT 这个类型。同一份 DDL 里另外 87 张表在该栈上全部建表成功，
+#: 所以这是**单点**缺口，不是全局不可用。见 source-deviations A-12。
+VARIANT_MIN_ENGINE: Final[dict[str, str]] = {
+    "flink": "2.1",
+    "spark": "4.0",
+    "file_format": "parquet",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class Column:
     """一个字段。type 用 Flink/Paimon SQL 类型字面量。"""
@@ -378,10 +403,28 @@ class Column:
     comment: str = ""
     nullable: bool = True
 
-    def render(self) -> str:
+    def render(self, *, variant_fallback_type: str | None = None) -> str:
+        """渲染一行列定义。
+
+        :param variant_fallback_type: **默认 None = 不降级**，渲染结果与从前逐字节一致。
+            给一个类型字面量（实践里是 ``STRING``）时，:data:`VARIANT_TYPE` 列改用该类型
+            渲染，并在列注释里留下降级痕迹——这是给钉在 Flink
+            < :data:`VARIANT_MIN_ENGINE`\\ ``['flink']`` 的部署留的逃生口，
+            默认关闭，不改变任何既有产物。
+        """
+        col_type = self.type
+        comment = self.comment
+        if variant_fallback_type and col_type.upper() == VARIANT_TYPE:
+            col_type = variant_fallback_type
+            marker = (
+                f"[{VARIANT_TYPE}→{variant_fallback_type} 降级："
+                f"本引擎低于 Flink {VARIANT_MIN_ENGINE['flink']}，"
+                f"按 JSON 文本承接，shredding 与 variant_get 下推不可用]"
+            )
+            comment = f"{comment} {marker}" if comment else marker
         null = "" if self.nullable else " NOT NULL"
-        cmt = f" COMMENT {sql_literal(self.comment)}" if self.comment else ""
-        return f"  `{self.name}` {self.type}{null}{cmt}"
+        cmt = f" COMMENT {sql_literal(comment)}" if comment else ""
+        return f"  `{self.name}` {col_type}{null}{cmt}"
 
 
 #: 系统字段定义（两组，按层选用）。见 domains.Layer.system_fields。
@@ -625,14 +668,35 @@ class TableSpec:
         return problems
 
     def _system_field_problems(self) -> list[str]:
-        """系统字段规范：两组字段按层挂载，且不许串层。"""
+        """系统字段规范：两组字段按层挂载，不许串层，且形状必须与规范一致。"""
         problems: list[str] = []
-        names = {c.name for c in self.all_columns()}
+        columns = self.all_columns()
+        names = {c.name for c in columns}
 
         expected, _purpose = SYSTEM_FIELD_SPEC[self.layer]
         for fname in expected:
             if fname not in names:
                 problems.append(f"缺少 {self.layer.value} 层系统字段 {fname!r}")
+
+        # 只按名字查「在不在」是不够的：all_columns() 是「业务字段优先」——
+        # 某张表若自己声明了一个同名业务列，系统字段就不会再被追加，而名字检查照样通过，
+        # 于是 DDL 里挂出去的是业务列的类型（比如 update_time STRING），
+        # 系统字段规范在类型这一维被静默架空。这里把类型与可空性一并对齐。
+        for col in columns:
+            spec_col = SYSTEM_COLUMNS.get(col.name)
+            if spec_col is None:
+                continue
+            if col.type.upper() != spec_col.type.upper():
+                problems.append(
+                    f"系统字段 {col.name!r} 类型应为 {spec_col.type}，实际 {col.type}"
+                    "（业务列不得以同名覆盖系统字段的类型）"
+                )
+            if col.nullable != spec_col.nullable:
+                want = "NOT NULL" if not spec_col.nullable else "可空"
+                problems.append(
+                    f"系统字段 {col.name!r} 可空性应为 {want}"
+                    f"（{'NOT NULL' if not col.nullable else '可空'} ≠ 规范）"
+                )
 
         # 反向：ODS 层用 _source_system「换掉」update_time，两组不许混挂
         forbidden = set(SYSTEM_COLUMNS) - set(expected)
@@ -648,13 +712,22 @@ class TableSpec:
 
     # ---- 渲染 ----
 
-    def render_ddl(self, *, catalog: str = "paimon", database: str = "adas_lakehouse") -> str:
+    def render_ddl(
+        self,
+        *,
+        catalog: str = "paimon",
+        database: str = "adas_lakehouse",
+        variant_fallback_type: str | None = None,
+    ) -> str:
         """渲染 Flink SQL 建表语句。
 
         主键一律 ``NOT ENFORCED``：Paimon 不在写入时强制校验唯一性（由上游保证），
         但会基于主键做 Upsert 合并——这对 CDC 实时入湖场景至关重要（[a10] 第五章①）。
+
+        :param variant_fallback_type: 默认 None = 不降级，产物与从前一致。
+            见 :meth:`Column.render`。
         """
-        cols = [c.render() for c in self.all_columns()]
+        cols = [c.render(variant_fallback_type=variant_fallback_type) for c in self.all_columns()]
         pk = ", ".join(f"`{k}`" for k in self.primary_key)
         cols.append(f"  PRIMARY KEY ({pk}) NOT ENFORCED")
 

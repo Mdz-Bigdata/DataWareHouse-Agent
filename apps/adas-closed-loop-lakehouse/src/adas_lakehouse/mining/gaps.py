@@ -32,6 +32,7 @@ from typing import Any
 from ..ids import new_run_id
 from ._sqlfmt import literal
 from .backends import BackendError, ResultSink, SqlBackend
+from .constants import TAG_COVERAGE_API_PATH
 from .rules import RuleDefinition, RulePriority
 from .tables import (
     DWD_MINING_RESULT_DETAIL,
@@ -51,6 +52,8 @@ __all__ = [
     "evaluate_gap",
     "SceneGapDetector",
     "coverage_sql",
+    "tag_coverage_endpoint",
+    "gap_insert_sql",
 ]
 
 #: 覆盖率达到多少算「已满足」。
@@ -333,7 +336,7 @@ def coverage_sql(
         preds.append(f"`hit_time` >= {literal(since)}")
 
     return (
-        "-- 场景覆盖度（[S3-01] 六：GET /api/v1/scene/tag-coverage）\n"
+        f"-- 场景覆盖度（[S3-01] 六：GET {TAG_COVERAGE_API_PATH}）\n"
         "SELECT\n"
         "  `matched_tag_id` AS `scene_label`,\n"
         "  `rule_id`,\n"
@@ -446,8 +449,21 @@ class SceneGapDetector:
         return out
 
 
+def tag_coverage_endpoint(base_url: str) -> str:
+    """场景覆盖度查询的 OpenAPI 端点——场景缺口识别的对外出口。
+
+    原文（[S3-01] 六、接口表「检索类」行）：``GET /api/v1/scene/tag-coverage``。
+    背后那条 SQL 是 :func:`coverage_sql`；本函数是供外部编排（网关 / 采集排产系统）
+    调用的公开出口，本引擎自己不请求它。
+    """
+    return f"{base_url.rstrip('/')}{TAG_COVERAGE_API_PATH}"
+
+
 def gap_insert_sql(gaps: Sequence[SceneGap]) -> str:
     """把缺口渲染成一条 INSERT，给不方便走 Sink 的场合（如导出 SQL 脚本）用。
+
+    供外部编排/导出脚本调用的公开 API，本模块内部走的是
+    :class:`SceneGapDetector` + :class:`~adas_lakehouse.mining.backends.ResultSink`。
 
     Raises:
         ValueError: 缺口列表为空。

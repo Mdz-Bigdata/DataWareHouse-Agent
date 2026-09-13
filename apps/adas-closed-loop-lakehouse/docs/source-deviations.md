@@ -375,6 +375,142 @@ ads_badcase_root_cause_distribution ads_ota_deployment_summary
 
 ---
 
+### A-10 ★ 血缘图库节点：五类节点 vs 五跳遍历路径
+
+[a13] 二明确「图库里共**五类节点**」并逐一点名：
+**Clip / Artifact / Run / DatasetVersion / Badcase**。
+
+[a13] 五「正向追踪」给的遍历路径却是五跳：
+**clip → 产物 → 数据集 → 训练 → 评测**。
+
+矛盾在于：后两跳的「训练」「评测」**不在前面那份五类节点清单里**。要么节点清单漏了两类，
+要么这条路径有两跳不在图库上走。原文没有给出 Training / Evaluation 节点的 `MERGE` 语句
+（4.1 的建图语句只涉及 Clip / Artifact / Run / DatasetVersion），也没有给它们的 ID 规则。
+
+**本项目取舍：以节点清单为准，路径后两跳改由湖仓完成。**
+
+| | 原文 | 本项目 |
+|---|---|---|
+| 节点类型 | 五类：Clip / Artifact / Run / DatasetVersion / Badcase | **逐字照抄五类**，见 `lineage/model.py` 的 `NodeLabel` 与 `constants.NODE_LABEL_COUNT = 5` |
+| 正向追踪路径 | clip → 产物 → 数据集 → 训练 → 评测（五跳） | 图库段止于 `DatasetVersion`；「→ 训练 → 评测」两跳按 `dataset_version_id` 回湖仓关联训练域 / 评测域的表 |
+
+理由三条：
+
+1. **有建图语句的才算数**。节点清单在 4.1 有对应的 `MERGE` 语句逐条印证，
+   遍历路径里的「训练/评测」两跳则没有任何建图语句、ID 规则或约束与之对应——
+   两边都是原文，但一边有可执行的证据，另一边只有一句叙述。
+2. **与 [a13] 六的分工一致**。「图库找关系、湖仓取明细」是本篇自己立的护栏；
+   训练任务与评测结果本来就是湖仓里的明细表，拉进图库反而违反同篇的护栏。
+3. **不假装走完了**。`lineage/query.py` 的 `forward_trace()` 在结果里附一条 note
+   显式说明图库段止于 DatasetVersion、后两跳在湖仓——结论可复现，不靠读代码才知道。
+
+**本次比对的结论（2026-09-13 逐处核对）**：实现侧**没有**出现过
+`Clip/Artifact/Run/Dataset/Model` 这组节点——三处定义
+（`lineage/constants.py:110`、`lineage/model.py` 的 `NodeLabel`、
+`docker/neo4j/init-constraints.cypher` 的五条唯一约束）与原文五类**逐字一致**，
+`Dataset` / `Model` 两个标签在全仓不存在。原先登记里「没有 Training / Evaluation 节点」
+那半句是对的，但它被写在 B-9（本项目设计）而不是本节（口径冲突）——
+性质登记错了：那不是本项目填的空白，是原文自己两处对不上、本项目选了边。
+本次把它挪进 A 节并给出上面的选边理由。
+
+回归守护：`tests/deep/test_s7_verification.py::TestLineageNodeLabels`。
+
+---
+
+### A-11 ★ 存储保留期：第二章 180 天 vs 第三章 90 天（[a14]）
+
+[a14] 同一篇里两套阈值对不上，此前只在 `lifecycle/policy.py` 的模块 docstring 里
+说明过，**没有登记进本文档**。补登如下。
+
+| 出处 | 口径 | 阈值 |
+|---|---|---|
+| [a14] 第二章「五级分层模型」 | 按**通用访问温度** | 温 = 创建 30 天内或 30 天内有访问；冷 = 连续 **90** 天无访问；归档 = 连续 **180** 天无访问且过保留策略阈值 |
+| [a14] 第三章「OSS 保留期表」 | 按**数据类型** | 原始数据 30/90/365；中间产物 90/180/365；数据集 180/365/永久；模型 90/180/永久；临时 7 天删 |
+| [a14] 第四章案例（240GB 原始数据） | 实走 | 03-01 落湖 → 04-30 转低频 → 07-29 转归档，标注写「连续 **90** 天无访问，归档流转」 |
+
+两处冲突，本项目分别选边：
+
+**冲突一：同一份原始数据，第二章要 90 天才转低频，第三章 30 天就转低频。**
+取**第三章**。理由：第四章的案例走的就是第三章口径（原始数据 30 天标准 → 低频），
+第二章的通用温度阈值降级为「数据类型未知时的兜底」。
+落点 `policy.RETENTION_SCHEDULE`（主规则）与 `policy.TIER_MODEL_THRESHOLDS`（兜底）。
+
+**冲突二：冷 → 归档是 180 天（第二章）还是 90 天（第四章案例）。**
+**两个都保留，各挂一档介质**——原文第二章给归档级 C2 的介质本来就是
+「OSS 归档 / 深度归档」两档，正好一档一个口径：
+
+| 无访问天数 | 目标介质 | 出处 | 常量 |
+|---|---|---|---|
+| 连续 **90** 天 | `oss_archive`（0.15x） | 第四章案例口径 | `COLD_TO_ARCHIVE_NO_ACCESS_DAYS = 90` |
+| 连续 **180** 天 | `oss_deep_archive`（0.05x） | 第二章通用口径 | `DEEP_ARCHIVE_NO_ACCESS_DAYS = 180` |
+
+选这种调和而不是二选一，理由有三：
+
+1. **90 天不是孤证**。[a5] 第八章③ 把同一处矛盾原样复制了一遍——分层表写
+   「归档：连续 180 天无访问」，同章成本账却写「30 天无访问降冷 → 90 天无访问归档」。
+   两篇独立给出同一个 90 天的案例口径。
+2. **抹掉任何一个数字都会留下死常量**。原文第二章的五档介质相对单价里，
+   深度归档 0.05x 若没有任何进入条件，就是个没人调用的常量——一个登记在册却永不触发的
+   档位，比口径冲突更难发现。
+3. 第二章「**且过保留策略阈值**」那半句一并落地：没过保留期的不进深度归档，
+   所以 180 天这一档并不会抢 90 天那一档的数据。
+
+回归守护：`tests/deep/test_s7_verification.py::TestRetentionConflict`。
+
+---
+
+### A-12 ★ VARIANT 列与本仓钉住的引擎版本对不上（实测）
+
+这一条不是原文的矛盾，是**本项目内部的契约与运行环境对不上**，因为
+「46 个 `render_*_sql()` 产出的 SQL 从没在真实引擎上跑过」。2026-09-13 第一次
+真跑，当场暴露。
+
+- 契约侧：`dwd_mining_image_vector_detail.vector_meta` 是 `VARIANT`（依据 [a9]，
+  Paimon PMC 李劲松），`vector/variant.py` 的 `SQL_ENGINE_REQUIREMENT` 写明它要
+  **Spark 4.0+ 或 Flink 2.1+**。
+- 环境侧：`docker/flink/Dockerfile` 钉的是 **Flink 1.20.1 + Paimon 1.0.1**。
+
+于是在本仓 `make up` 起的栈上执行 `ddl/20_dwd.sql`，到这张表就断：
+
+```
+org.apache.calcite.sql.validate.SqlValidatorException: Unknown identifier 'VARIANT'
+```
+
+报错来自 Flink 的 SQL 解析器（Calcite），不是 Paimon——**换 Paimon 版本救不了**，
+必须 Flink 本身认识 VARIANT。
+
+**实测边界（同一套栈，MinIO + Flink JM/TM）**：
+
+| 对象 | 结果 |
+|---|---|
+| 88 张表里的另外 **87 张** | 全部 `CREATE TABLE` 成功，`SHOW TABLES` 数得出 87 行 |
+| `dwd_mining_image_vector_detail` | ❌ 仅因 `VARIANT` 一列失败；把该列换成 `STRING` 后同一份表体建表成功 |
+| `ods_collect_task` 写入 + 回读 | ✅ `INSERT` 提交成功、`SELECT` 读回 1 行，证明不只是元数据能建 |
+| `flink/sql/` 里四份 Paimon DDL（quality 1 / lifecycle 2 / tags 4 / sampling 1，共 8 张表） | 全部建表成功 |
+| `flink/sql/vector_image_vector_detail.sql` | ❌ 同一处 VARIANT |
+
+**本项目取舍：契约不动，给运行环境加一个默认关闭的降级开关。**
+
+`VARIANT` 是 [a9] 的硬要求，改成 `STRING` 会把 shredding 与 `variant_get` 谓词下推
+一起丢掉，那是降级不是等价替换，所以**不改注册表**。给需要在低版本引擎上真跑的人留一条
+显式的逃生口：
+
+```bash
+python3 scripts/export_ddl.py --variant-fallback STRING --out /tmp/ddl-1.20
+```
+
+默认不传就是原样输出 `VARIANT`——**开关默认关闭，既有产物逐字节不变**。
+降级导出的文件头会写明降级已启用、产物不是契约口径，列注释里也留降级痕迹，
+避免有人把降级产物覆盖回仓库的 `ddl/`。
+
+常量落点 `catalog/spec.py` 的 `VARIANT_TYPE` / `VARIANT_MIN_ENGINE`，
+回归守护 `tests/deep/test_s7_verification.py::TestVariantEngineGap`——
+它会读 `docker/flink/Dockerfile` 里钉的 `FLINK_VERSION` 与 `VARIANT_MIN_ENGINE` 比对，
+将来谁把 Flink 升到 2.1+，这条测试会提醒把降级开关和本条登记一起撤掉。
+
+
+---
+
 ## B. 本项目设计：302 处「⚠️ 原文未明确」
 
 > **计数口径**：302 是**设计决策**的处数。直接 grep 会得到 303：
@@ -535,7 +671,11 @@ HNSW 索引落 StarRocks。索引参数（cosine、M=16、efConstruction=200）�
   会退化，本项目补了约束。
 - `model.py`（4 处）— 图库只有五类节点（[a13] 二原话：**Clip / Artifact / Run /
   DatasetVersion / Badcase**），**没有 Training / Evaluation / Model 节点**，
-  本项目在边界内建模并标注；其中 Badcase 是唯一一个原文没有给出对账事实表的节点
+  本项目在边界内建模并标注。
+  ⚠️ 更正（2026-09-13）：「没有 Training / Evaluation 节点」这一条**不属于本节**——
+  它不是原文留白，是 [a13] 自己两处对不上（五类节点清单 vs 五跳遍历路径）、本项目选了边，
+  已改登记在 [A-10](#a-10--血缘图库节点五类节点-vs-五跳遍历路径)。本节保留的是
+  节点建模细节本身的留白。其中 Badcase 是唯一一个原文没有给出对账事实表的节点
   （[a13] 3.1 的四张元信息表里没有 Badcase 表），本项目把它的事实源定在评测域已登记的
   `dwd_badcase_detail` 上，并给该表补了冗余列 `traced_artifact_ids`，
   见 `model.NODE_SOURCE_TABLES` 的 ⚠️。

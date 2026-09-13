@@ -29,7 +29,7 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -52,11 +52,15 @@ from .constants import (
     EVENT_WINDOW_BEFORE_SEC,
 )
 from .rules import (
+    ConditionGroup,
     ExecutionMode,
     RuleDefinition,
     RuleType,
+    SignalCondition,
+    SignalSample,
     rules_by_mode,
     sort_by_priority,
+    sustained_matches,
 )
 from .scoring import (
     DEFAULT_WEIGHTS,
@@ -86,6 +90,7 @@ __all__ = [
     "ExecutionReport",
     "BatchRuleExecutor",
     "StreamRuleExecutor",
+    "task_insert_sql",
 ]
 
 #: 一轮批处理最多往 Python 侧拉多少行做打分与打标。
@@ -339,11 +344,10 @@ class BatchRuleExecutor:
             started=started,
         )
         wall_start = time.monotonic()
+        finish = _monotonic_finisher(record, started, wall_start)
         try:
             if not rule.is_runnable:
-                record.finish(
-                    TaskStatus.SKIPPED, error=f"规则状态为 {rule.rule_status.value}，不调度"
-                )
+                finish(TaskStatus.SKIPPED, error=f"规则状态为 {rule.rule_status.value}，不调度")
                 return record
 
             base = self.compiler.plan.base
@@ -379,7 +383,7 @@ class BatchRuleExecutor:
             if dry_run or hit_count == 0:
                 if not dry_run:
                     self.watermarks.commit(wm)
-                record.finish(TaskStatus.SUCCESS, error="" if not dry_run else "dry-run，未写入")
+                finish(TaskStatus.SUCCESS, error="" if not dry_run else "dry-run，未写入")
                 self._record_task(record, skip=dry_run)
                 return record
 
@@ -411,14 +415,13 @@ class BatchRuleExecutor:
 
             # 结果都落了才推进水位
             self.watermarks.commit(wm)
-            record.finish(TaskStatus.SUCCESS)
+            finish(TaskStatus.SUCCESS)
         except (BackendError, CompileError, ValueError, KeyError) as exc:
-            record.finish(TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}")
+            finish(TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}")
             logger.exception("规则 %s 执行失败", rule.rule_id)
         finally:
-            if record.elapsed_seconds == 0.0 and record.finished_at is None:
-                record.finish(TaskStatus.FAILED, error="未知错误")
-            record.elapsed_seconds = max(record.elapsed_seconds, time.monotonic() - wall_start)
+            if record.finished_at is None:
+                finish(TaskStatus.FAILED, error="未知错误")
         self._record_task(record, skip=dry_run)
         return record
 
@@ -437,6 +440,7 @@ class BatchRuleExecutor:
         标签服务打标」，这条路只是把打标推迟，不是绕过。调用方务必安排补打标。
         """
         started = now or datetime.now()
+        wall_start = time.monotonic()
         record = _new_record(
             rule,
             task_id=f"{run_id}_{rule.rule_id}_pushdown",
@@ -467,9 +471,12 @@ class BatchRuleExecutor:
             record.scanned_row_count = record.hit_count
             record.tag_written_count = 0  # 打标推迟到下游批次
             self.watermarks.commit(wm)
-            record.finish(TaskStatus.SUCCESS, error="pushdown 模式：打标由下游批次补")
+            finish = _monotonic_finisher(record, started, wall_start)
+            finish(TaskStatus.SUCCESS, error="pushdown 模式：打标由下游批次补")
         except (BackendError, CompileError, ValueError) as exc:
-            record.finish(TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}")
+            _monotonic_finisher(record, started, wall_start)(
+                TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}"
+            )
             logger.exception("规则 %s pushdown 执行失败", rule.rule_id)
         self._record_task(record)
         return record
@@ -557,8 +564,8 @@ class BatchRuleExecutor:
             breakdown = score_hit(
                 rule,
                 existing_hit_count=existing_hit_count + i,
-                observed_signal_value=_as_float(data.get("signal_value") or data.get("peak_value")),
-                collected_at=_as_datetime(data.get("collect_start_time") or data.get("event_time")),
+                observed_signal_value=_as_float(_first_present(data, "signal_value", "peak_value")),
+                collected_at=_as_datetime(_first_present(data, "collect_start_time", "event_time")),
                 now=now,
                 weights=self.weights,
             )
@@ -618,6 +625,7 @@ class StreamRuleExecutor:
             :meth:`handle_hits` 累计，或直接查 dwd_mining_result_detail。
         """
         started = now or datetime.now()
+        wall_start = time.monotonic()
         record = _new_record(
             rule,
             task_id=f"{run_id}_{rule.rule_id}",
@@ -625,22 +633,21 @@ class StreamRuleExecutor:
             mode=ExecutionMode.NEAR_REALTIME,
             started=started,
         )
+        finish = _monotonic_finisher(record, started, wall_start)
         try:
             if not rule.is_runnable:
-                record.finish(
-                    TaskStatus.SKIPPED, error=f"规则状态为 {rule.rule_status.value}，不调度"
-                )
+                finish(TaskStatus.SKIPPED, error=f"规则状态为 {rule.rule_status.value}，不调度")
             else:
                 query = self.compiler.compile_stream(
                     rule, run_id=run_id, task_id=record.task_id, now=started
                 )
                 self.backend.execute(query.insert_sql)
-                record.finish(
+                finish(
                     TaskStatus.SUCCESS,
                     error=f"流作业已提交，窗口 前{EVENT_WINDOW_BEFORE_SEC}秒/后{EVENT_WINDOW_AFTER_SEC}秒",
                 )
         except (BackendError, CompileError, ValueError) as exc:
-            record.finish(TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}")
+            finish(TaskStatus.FAILED, error=f"{type(exc).__name__}: {exc}")
             logger.exception("规则 %s 流作业提交失败", rule.rule_id)
         self._record_task(record)
         return record
@@ -701,7 +708,7 @@ class StreamRuleExecutor:
             breakdown = score_hit(
                 rule,
                 existing_hit_count=existing_hit_count + i,
-                observed_signal_value=_as_float(hit.get("peak_value") or hit.get("signal_value")),
+                observed_signal_value=_as_float(_first_present(hit, "peak_value", "signal_value")),
                 collected_at=event_time,
                 now=moment,
                 weights=self.weights,
@@ -750,6 +757,80 @@ class StreamRuleExecutor:
             record.backfill_dispatched += dispatched
         return tagged, dispatched
 
+    # ---- CAN 信号规则的 Python 侧求值 ----
+
+    @staticmethod
+    def signal_condition_of(rule: RuleDefinition) -> SignalCondition | None:
+        """摘出规则条件树里的第一个信号条件；没有就返回 None。
+
+        公开出来是因为调用方（网关、回放工具）要先问「这条规则是不是信号类、
+        阈值和持续时长各是多少」，再决定喂什么采样进来。
+        """
+        cond = rule.condition()
+        if isinstance(cond, SignalCondition):
+            return cond
+        if isinstance(cond, ConditionGroup):
+            for node in cond.walk():
+                if isinstance(node, SignalCondition):
+                    return node
+        return None
+
+    def evaluate_signal_samples(
+        self,
+        rule: RuleDefinition,
+        samples: Sequence[SignalSample],
+        *,
+        emit_open_run: bool = False,
+    ) -> list[dict[str, Any]]:
+        """在一批 CAN 采样上直接求值规则，产出 :meth:`handle_hits` 认识的命中行。
+
+        为什么执行器要有这条不经 Flink 的路：准实时规则平时由长驻 Flink 作业产出命中，
+        但有三种场合拿不到 Flink——本地干跑、故障后按采样回放补命中、以及把
+        「阈值 -4m/s²、持续 ≥ 0.5s」这组原文数字钉进单测。没有这条路，
+        原文唯一给了数字的那条规则在 Python 侧就**只能渲染 SQL、不能求值**，
+        对不对只有把作业提交到真实 Flink 才知道。
+
+        语义与编译产物同源：两边都走
+        :func:`~adas_lakehouse.mining.rules.sustained_matches`
+        所描述的那套（先按 signal_name 收窄 → 连续满足段 → 首个不满足的采样收尾 →
+        毫秒作差 ≥ 阈值）。
+
+        Args:
+            rule: 规则。必须是准实时模式且条件树里有信号条件。
+            samples: CAN 采样序列。
+            emit_open_run: 末段还没等到「不再满足」的采样时要不要出结果，
+                见 :func:`~adas_lakehouse.mining.rules.sustained_matches`。
+
+        Returns:
+            命中行列表，可直接喂给 :meth:`handle_hits`（含 ``data_id`` / ``event_time``
+            / ``peak_value``，打分与补抽帧都读得到）。
+
+        Raises:
+            CompileError: 规则不是准实时模式，或条件树里压根没有信号条件。
+        """
+        if rule.effective_mode is not ExecutionMode.NEAR_REALTIME:
+            raise CompileError(
+                f"规则 {rule.rule_id} 的执行模式是 {rule.effective_mode.value}，"
+                "信号采样求值只服务准实时规则"
+            )
+        cond = self.signal_condition_of(rule)
+        if cond is None:
+            raise CompileError(
+                f"规则 {rule.rule_id} 的条件树里没有信号条件，喂 CAN 采样没有意义；"
+                f"原文规定：{rule.rule_type.spec.condition_note}"
+            )
+        hits = sustained_matches(cond, samples, emit_open_run=emit_open_run)
+        logger.info(
+            "规则 %s 在 %d 条采样上求值：命中 %d 段（阈值 %s %s，持续 ≥ %ss）",
+            rule.rule_id,
+            len(samples),
+            len(hits),
+            cond.op.sql,
+            cond.threshold,
+            cond.min_duration_sec,
+        )
+        return [h.to_hit_row() for h in hits]
+
     @staticmethod
     def _needs_backfill(rule: RuleDefinition) -> bool:
         """哪些规则的命中要触发补抽帧。
@@ -771,6 +852,25 @@ class StreamRuleExecutor:
 
 
 # --------------------------------------------------------------------------- 工具
+
+
+def _monotonic_finisher(record: RuleRunRecord, started: datetime, wall_start: float):
+    """返回一个「用单调钟收尾」的闭包。
+
+    为什么不直接 ``record.finish(status)``：那样 finished_at 取的是挂钟当下，而
+    ``executed_at`` 是调用方传进来的 ``now``。回刷与单测为了可重放常常把 now 定在
+    过去某一刻，两者一减就是几万秒——``duration_sec`` 变成垃圾还不算，
+    ``sla_breached`` 会被这几万秒顶成 true，执行追溯表上凭空多出一片「突破 4 小时
+    SLA」的假记录（[S3-04] 三承诺的是「亿级以下 4 小时内跑完」，假超时等于把这条
+    承诺的度量搞坏）。所以耗时一律用单调钟量，结束时刻 = 起始时刻 + 实测耗时。
+    VLM 引擎（vlm.VlmInferenceEngine.run）早就是这个写法，这里与它对齐。
+    """
+
+    def finish(status: TaskStatus, *, error: str = "") -> None:
+        elapsed = max(0.0, time.monotonic() - wall_start)
+        record.finish(status, at=started + timedelta(seconds=elapsed), error=error)
+
+    return finish
 
 
 def _new_record(
@@ -797,6 +897,19 @@ def _new_record(
         rule_priority=rule.rule_priority.rank,
         project_code=rule.project_code,
     )
+
+
+def _first_present(row: dict[str, Any], *keys: str) -> Any:
+    """按顺序取第一个**存在且非 None** 的值。
+
+    刻意不用 ``row.get(a) or row.get(b)``：实测值 0.0 是合法信号值，
+    用 ``or`` 会把它当成缺失往后找，于是严重度按「没观测到」算成 0 分。
+    """
+    for key in keys:
+        value = row.get(key)
+        if value is not None:
+            return value
+    return None
 
 
 def _as_float(value: Any) -> float | None:
@@ -841,6 +954,9 @@ def _artifact_id_for(rule: RuleDefinition, row: dict[str, Any]) -> str:
 
 def task_insert_sql(records: Sequence[RuleRunRecord]) -> str:
     """把执行追溯渲染成一条 INSERT，供导出脚本使用。
+
+    供外部编排/导出脚本调用的公开 API，两个执行器自己走的是
+    :class:`~adas_lakehouse.mining.backends.ResultSink`（见 ``_record_task``）。
 
     Raises:
         ValueError: 记录列表为空。

@@ -82,6 +82,7 @@ from ..ids import ArtifactStatus, new_run_id
 from ._sqlfmt import ident, join_predicates, literal
 from .backends import BackendError, SqlBackend
 from .constants import (
+    FUNNEL_STAGES,
     INFERENCE_MAX_KEYFRAMES,
     INFERENCE_MIN_KEYFRAMES,
     VLM_CAPTION_TAG_CATEGORY,
@@ -114,6 +115,7 @@ __all__ = [
     "DESENSITIZE_PASSED",
     "REVIEW_PENDING",
     "INFER_ALGO_VERSION",
+    "INFER_EXEC_MODE",
     "VlmInferError",
     "VlmOutputError",
     "InferCandidate",
@@ -123,6 +125,8 @@ __all__ = [
     "EchoVlmClient",
     "InferBatch",
     "plan_batches",
+    "partition_sendable",
+    "keyframe_watermark_column",
     "CheckpointStore",
     "InMemoryCheckpointStore",
     "JsonFileCheckpointStore",
@@ -475,6 +479,36 @@ class InferBatch:
         return tuple(seen)
 
 
+def partition_sendable(
+    candidates: Sequence[InferCandidate],
+) -> tuple[list[InferCandidate], list[tuple[str, str]]]:
+    """把候选分成「能送进模型的」与「被合规红线拦下的」两堆。
+
+    拦下来的那堆必须**带着原因返回**，而不是只在日志里留一行：
+    未脱敏的帧被悄悄丢掉，等于这批 clip 的标签覆盖率凭空少一块，
+    而追溯表上看起来一切正常（[S3-04] 一要求执行追溯让效果「可度量」）。
+
+    Returns:
+        ``(可送的候选, [(image_id, 拦截原因)])``。
+    """
+    ok: list[InferCandidate] = []
+    blocked: list[tuple[str, str]] = []
+    for c in candidates:
+        if c.is_sendable:
+            ok.append(c)
+        elif c.desensitize_status != DESENSITIZE_PASSED:
+            blocked.append(
+                (
+                    c.image_id,
+                    f"脱敏状态 {c.desensitize_status!r} 不是 {DESENSITIZE_PASSED}，"
+                    "合规红线：未脱敏一律不送进模型",
+                )
+            )
+        else:
+            blocked.append((c.image_id, "缺 image_object_key，没有图可送"))
+    return ok, blocked
+
+
 def plan_batches(
     candidates: Sequence[InferCandidate],
     *,
@@ -501,13 +535,12 @@ def plan_batches(
     """
     if batch_size < 1:
         raise ValueError(f"batch_size 必须为正，收到 {batch_size}")
-    sendable = [c for c in candidates if c.is_sendable]
-    dropped = len(candidates) - len(sendable)
-    if dropped:
+    sendable, blocked = partition_sendable(candidates)
+    if blocked:
         logger.warning(
             "作业 %s 有 %d 张候选帧未过脱敏闸或缺对象存储 key，不送进模型（合规红线）",
             job_id,
-            dropped,
+            len(blocked),
         )
     ordered = sorted(sendable, key=lambda c: (-c.keyframe_score, c.image_id))
     return tuple(
@@ -1046,7 +1079,7 @@ class VlmInferenceEngine:
             preds.append(f"{a}.`data_id` IN ({ids})")
         cols = ",\n  ".join(f"{a}.{ident(c)} AS {ident(c)}" for c in KEYFRAME_READ_COLUMNS)
         header = (
-            "-- VLM 推理挖掘 · 选帧（漏斗第二层的入口）\n"
+            f"-- VLM 推理挖掘 · 选帧（三级漏斗第二层 {FUNNEL_STAGES[1]} 的入口，上游是第一层 {FUNNEL_STAGES[0]}）\n"
             f"-- [S3-02] 二「推理抽帧」：进入 VLM 推理范围的 clip，每 clip 打分选 "
             f"{INFERENCE_MIN_KEYFRAMES}~{INFERENCE_MAX_KEYFRAMES} 关键帧\n"
             "-- [S3-04] 四：对候选里信息密度最高的帧做语义确认"
@@ -1176,8 +1209,12 @@ class VlmInferenceEngine:
         # 固定的 now（单测、回刷），那样算出来的 duration_sec 是「现在离那个时刻多久」，
         # 动辄几万秒，直接把执行追溯表的耗时列变成垃圾。
         wall_start = _monotonic()
+        # 合规红线拦下的帧要在回报里看得见，不能只剩日志里一行（见 partition_sendable）
+        _, blocked = partition_sendable(candidates)
         batches = plan_batches(candidates, job_id=jid, batch_size=self.batch_size)
         report = VlmInferReport(record=record, batches_total=len(batches))
+        report.rejected.extend(blocked)
+        record.rejected_count += len(blocked)
         done = self.checkpoints.completed(jid) if resume else set()
         if done:
             logger.info("作业 %s 断点续跑：已完成 %d 批，本轮跳过", jid, len(done))
@@ -1203,13 +1240,34 @@ class VlmInferenceEngine:
                     exc,
                 )
                 continue
+            except VlmOutputError as exc:
+                # 输出不合格**不重试**（重试多半还是不合格，见 VlmOutputError 的 docstring），
+                # 整批判废计入 rejected；断点也不打——模型换版本后下一轮还会再试这一批，
+                # 那是「换了个说得清的理由再来一次」，不是无休止重试。
+                self._reject_batch(batch, report, record, f"推理产出不合格: {exc}")
+                continue
 
-            report.batches_run += 1
             tags, captions, rejected = self._to_write_requests(batch, outputs, jid, rid, started)
             report.rejected.extend(rejected)
             record.rejected_count += len(rejected)
 
-            written = self.tag_sink.write_tags(tags) if tags else 0
+            try:
+                written = self.tag_sink.write_tags(tags) if tags else 0
+            except (BackendError, OSError) as exc:
+                # 标签服务写不进去 = 这批图一条标签都没有。必须记成**失败批次**并跳过打点，
+                # 否则断点会把它标成已完成，那批图就永久没有标签，而且没人会发现。
+                report.batches_failed.append((batch.batch_index, f"统一标签服务写入失败: {exc}"))
+                record.failed_batch_count += 1
+                logger.error(
+                    "作业 %s 批次 %d 打标失败（不打断点，下轮重跑）: %s",
+                    jid,
+                    batch.batch_index,
+                    exc,
+                )
+                continue
+            # 写库成功才算这一批「实跑」过——打标失败的那批在 batches_failed 里，
+            # 两边都计一次会让「实跑 + 失败 > 总批次」这种数对不上的账出现在追溯里
+            report.batches_run += 1
             record.tag_written_count += written
             record.caption_written_count += sum(1 for t in tags if t.is_caption)
             tagged_images = {t.image_id for t in tags}
@@ -1246,15 +1304,37 @@ class VlmInferenceEngine:
 
     # ---- 内部 ----
 
+    def _reject_batch(
+        self, batch: InferBatch, report: VlmInferReport, record: VlmRunRecord, reason: str
+    ) -> None:
+        """整批判废：逐图记进 rejected，不打断点，也不算失败批次。
+
+        「判废」与「失败」是两回事，追溯表上也不该混：失败的批次下一轮会原样重试
+        （多半是 GPU/网络的偶发），判废的批次是模型这一版给不出合格产出，
+        重试没有意义——但断点仍然不打，换了模型版本再跑时它还在队列里。
+        """
+        for cand in batch.candidates:
+            report.rejected.append((cand.image_id, reason))
+        record.rejected_count += batch.size
+        logger.error(
+            "作业 %s 批次 %d 整批判废（不重试、不打断点）: %s",
+            batch.job_id,
+            batch.batch_index,
+            reason,
+        )
+
     def _infer_with_retry(self, batch: InferBatch, record: VlmRunRecord) -> list[VlmOutput]:
         """带重试地跑一个批次。
 
         只重试 :class:`VlmInferError`（调用侧失败，重试有意义）。
-        :class:`VlmOutputError` 不在这里处理——输出不合格重试还是不合格，
-        它在 :meth:`_to_write_requests` 里被判废并计入 rejected。
+        :class:`VlmOutputError` **刻意不捕获**，直接向上抛给 :meth:`run`——
+        输出不合格重试还是不合格，run 那边把整批判废并计入 rejected
+        （见 :meth:`_reject_batch`）。落进 :meth:`_to_write_requests` 的那一路
+        judge 的是另一种不合格：模型回了一个不在本批候选里的 image_id。
 
         Raises:
             VlmInferError: 打光 max_attempts 仍失败。
+            VlmOutputError: 模型产出结构不合格（不重试）。
         """
         last: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):

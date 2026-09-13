@@ -45,6 +45,7 @@ __all__ = [
     "LowCoverageSignal",
     "compute_daily_coverage",
     "detect_low_coverage",
+    "fill_coverage_trend",
     "CoverageReader",
 ]
 
@@ -96,6 +97,16 @@ class CoverageRow:
     rejected_tag_count: int = 0
     conflict_invalid_count: int = 0
     avg_confidence: float | None = None
+    #: 该类别下 deprecated 态的字典标签数（registry 列 ``deprecated_tag_count``）。
+    deprecated_tag_count: int = 0
+    #: 存在缺口的标签数（registry 列 ``gap_tag_count``）。
+    #: ⚠️ 原文未明确，本项目设计：原文的列注释只写「对照 dwd_scene_gap_detail」，
+    #: 没给口径。本项目取「字典里 active、当日却一条有效记录都没有」的标签数——
+    #: 字典认这个场景、湖里当天一条都没打上，这正是「定向采集需求」最直接的形态。
+    gap_tag_count: int = 0
+    #: 近 7 日覆盖率变化（registry 列 ``coverage_trend_7d``）。
+    #: 单日算不出来，由 :func:`fill_coverage_trend` 按历史回填；None 表示历史不足。
+    coverage_trend_7d: float | None = None
 
     # ---- 派生指标 ----
 
@@ -157,6 +168,9 @@ class CoverageRow:
             "conflict_invalid_count": self.conflict_invalid_count,
             "avg_confidence": self.avg_confidence,
             "low_coverage_flag": self.is_low_coverage,
+            "deprecated_tag_count": self.deprecated_tag_count,
+            "gap_tag_count": self.gap_tag_count,
+            "coverage_trend_7d": self.coverage_trend_7d,
         }
 
 
@@ -222,6 +236,9 @@ def compute_daily_coverage(
             total_image_count=total_image_count,
             candidate_tag_count=(candidate_counts or {}).get(cat, 0),
             active_tag_count=len(book.by_category(cat, active_only=True)),
+            deprecated_tag_count=sum(
+                1 for e in book.by_category(cat) if e.status is TagStatus.DEPRECATED
+            ),
         )
         for cat in TagCategory
     }
@@ -272,7 +289,48 @@ def compute_daily_coverage(
         row.distinct_tag_count = len(distinct[cat])
         confs = conf_sum[cat]
         row.avg_confidence = round(sum(confs) / len(confs), 4) if confs else None
+        # 缺口 = 字典里 active、当日却一条有效记录都没命中的标签。
+        # active_tag_count 是「字典认多少个」，distinct_tag_count 是「当天用上了几个」，
+        # 差额就是缺口——这一列原先从不落值，日指标表里永远是 NULL。
+        row.gap_tag_count = max(row.active_tag_count - row.distinct_tag_count, 0)
     return list(rows.values())
+
+
+def fill_coverage_trend(
+    history: Sequence[CoverageRow],
+    *,
+    window_days: int = LOW_COVERAGE_CONSECUTIVE_DAYS,
+) -> list[CoverageRow]:
+    """按历史回填 ``coverage_trend_7d``，原地改并返回同一批行。
+
+    ⚠️ 原文未明确，本项目设计：原文的列注释只写「近 7 日覆盖率变化，持续走低即定向采集
+    需求信号」，没给算法。本项目取**窗口首尾差**：当日覆盖率 − 窗口内最早一天的覆盖率，
+    正数在涨、负数在跌，量纲与覆盖率一致（都是 0~1 的比率），大屏上可直接当箭头用。
+    取首尾差而不是拟合斜率，是因为它和 :func:`detect_low_coverage` 的「连续 N 天」
+    共用同一个窗口长度，两个指标解释起来是同一件事，不会一个说涨一个说跌。
+
+    窗口内不足两天的行保持 ``None``——历史不够就明说算不出，不拿 0.0 冒充「没变化」。
+
+    :param history: 多天多类别的日指标行，顺序无所谓，内部按类别 + 日期排序
+    :param window_days: 窗口长度，默认与「长期」判定同为 7 天
+    :raises ValueError: 窗口长度非法
+    """
+    if window_days < 2:
+        raise ValueError(f"window_days 至少为 2 才谈得上变化，收到 {window_days}")
+    by_cat: dict[TagCategory, list[CoverageRow]] = {}
+    for row in history:
+        by_cat.setdefault(row.tag_category, []).append(row)
+    for series in by_cat.values():
+        series.sort(key=lambda r: r.stat_date)
+        for idx, row in enumerate(series):
+            start = max(0, idx - window_days + 1)
+            if idx == start:
+                row.coverage_trend_7d = None
+                continue
+            row.coverage_trend_7d = round(
+                row.data_coverage_ratio - series[start].data_coverage_ratio, 4
+            )
+    return list(history)
 
 
 def detect_low_coverage(
